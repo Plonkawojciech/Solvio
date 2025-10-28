@@ -1,17 +1,19 @@
-// app/(protected)/layout.tsx
-import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar"
-import { AppSidebar } from "@/components/protected/main/sidebar"
+import { AppSidebar } from '@/components/protected/main/sidebar'
+import { SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar'
+import Link from 'next/link'
 
-export default function ProtectedLayout({ children }: { children: React.ReactNode }) {
-  return (
+export default function ProtectedLayout({
+  children,
+}: {
+  children: React.ReactNode
+}) {
+  return <>
     <SidebarProvider>
       <AppSidebar />
-      <main className="pl-[var(--sidebar-width)] p-4">
+      <main>
         <SidebarTrigger />
         {children}
       </main>
     </SidebarProvider>
-
-
-  )
+  </>
 }
