@@ -3,6 +3,7 @@ import { AuthButton } from './auth-button'
 import { createClient } from '@/lib/supabase/server'
 import { LogoutButton } from './logout-button'
 import { Button } from './ui/button'
+import { ModeToggle } from './dark-mode-toggle'
 
 export default async function Header() {
   const supabase = await createClient()
@@ -36,6 +37,7 @@ export default async function Header() {
             </Button>
           </div>
         )}
+        <ModeToggle />
       </div>
     </header>
   )
