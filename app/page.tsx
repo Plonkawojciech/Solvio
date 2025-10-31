@@ -1,13 +1,20 @@
-'use client'
-
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import {
-  ChartsGalleryPreview,
-} from '@/components/WeeklyCharts'
+import { ChartsGalleryPreview } from '@/components/WeeklyCharts'
+import { createClient } from '../lib/supabase/server'
+import { redirect } from 'next/navigation'
 
-export default function Page() {
+export default async function Page() {
+  const supabase = await createClient()
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (user) {
+    redirect('/protected')
+  }
   return (
     <main className="flex flex-col min-h-screen bg-background text-foreground">
       <section className="flex flex-col items-center justify-center text-center px-6 sm:px-10 py-24 sm:py-36">
