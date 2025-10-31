@@ -62,11 +62,10 @@ const pieChartData = [
   { category: 'Ubrania', value: 187, fill: 'var(--color-clothing)' },
 ]
 const pieChartConfig = {
-  entertainment: { label: 'Rozrywka', color: 'hsl(var(--chart-1))' },
-  transport: { label: 'Transport', color: 'hsl(var(--chart-2))' },
-  clothing: { label: 'Ubrania', color: 'hsl(var(--chart-3))' },
+  entertainment: { label: 'Rozrywka', color: 'hsl(14 90% 55%)' }, // żywy pomarańcz-czerwony
+  transport: { label: 'Transport', color: 'hsl(220 85% 60%)' }, // jasny niebieski
+  clothing: { label: 'Ubrania', color: 'hsl(150 65% 45%)' }, // zielono–turkusowy
 }
-
 const chartComponents = [
   {
     title: 'Analiza Wydatków Dziennych',
@@ -120,15 +119,13 @@ export function ChartsGalleryPreview() {
               </CarouselItem>
             ))}
           </CarouselContent>
-
-          {/* POPRAWKA: Strzałki przeniesione do środka <Carousel> */}
           <CarouselPrevious className="absolute -left-10 top-1/2 -translate-y-1/2 h-10 w-10 hidden md:flex" />
           <CarouselNext className="absolute -right-10 top-1/2 -translate-y-1/2 h-10 w-10 hidden md:flex" />
         </Carousel>
       </div>
 
       <div className="py-6 text-center text-sm text-muted-foreground">
-        <h4 className="font-medium text-lg">
+        <h4 className="font-medium text-lg text-foreground">
           {chartComponents[current]?.title}
         </h4>
         <p className="mt-1">{chartComponents[current]?.description}</p>
@@ -152,8 +149,6 @@ export function ChartsGalleryPreview() {
   )
 }
 
-// --- Komponenty poszczególnych wykresów (bez zmian) ---
-
 function AreaChartComponent() {
   return (
     <ChartContainer config={areaChartConfig} className="w-full h-[300px] p-4">
@@ -174,9 +169,20 @@ function AreaChartComponent() {
                 month: 'short',
               })
             }
+            stroke="hsl(var(--muted-foreground))"
+            tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
           />
-          <YAxis tickLine={false} axisLine={false} tickMargin={8} />
-          <Tooltip content={<ChartTooltipContentPrimitive indicator="dot" />} />
+          <YAxis
+            tickLine={false}
+            axisLine={false}
+            tickMargin={8}
+            stroke="hsl(var(--muted-foreground))"
+            tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
+          />
+          <Tooltip
+            cursor={{ stroke: 'hsl(var(--muted-foreground))' }}
+            content={<ChartTooltipContentPrimitive indicator="dot" />}
+          />
           <Area
             dataKey="transport"
             type="natural"
@@ -208,9 +214,23 @@ function BarChartComponent() {
             vertical={false}
             stroke="hsl(var(--muted-foreground) / 0.1)"
           />
-          <XAxis dataKey="month" tickLine={false} axisLine={false} />
-          <YAxis tickLine={false} axisLine={false} />
-          <Tooltip content={<ChartTooltipContentPrimitive />} />
+          <XAxis
+            dataKey="month"
+            tickLine={false}
+            axisLine={false}
+            stroke="hsl(var(--muted-foreground))"
+            tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
+          />
+          <YAxis
+            tickLine={false}
+            axisLine={false}
+            stroke="hsl(var(--muted-foreground))"
+            tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
+          />
+          <Tooltip
+            cursor={{ fill: 'hsl(var(--muted))' }}
+            content={<ChartTooltipContentPrimitive />}
+          />
           <Bar
             dataKey="subscriptions"
             fill="var(--color-subscriptions)"
@@ -237,7 +257,14 @@ function PieChartComponent() {
             innerRadius={60}
             strokeWidth={3}
           />
-          <ChartLegend content={<ChartLegendContent nameKey="category" />} />
+          <ChartLegend
+            content={
+              <ChartLegendContent
+                nameKey="category"
+                className="text-muted-foreground"
+              />
+            }
+          />
         </PieChart>
       </ResponsiveContainer>
     </ChartContainer>
