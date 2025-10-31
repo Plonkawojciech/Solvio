@@ -35,9 +35,9 @@ export default function Page() {
 
       {/* PRODUCT PREVIEW */}
       <section className="flex justify-center px-6 sm:px-10 mb-32">
-        <Card className="w-full max-w-5xl shadow-xl border border-border/60 bg-card/60 backdrop-blur-sm">
+        <Card className="w-full p-0 max-w-5xl shadow-xl border border-border/60 bg-card/60 backdrop-blur-sm">
           <CardContent className="p-0">
-            <div className="aspect-[16/9] w-full rounded-xl overflow-hidden bg-gradient-to-br from-muted to-background flex items-center justify-center">
+            <div className="aspect-[16/9] w-full rounded-xl overflow-hidden bg-gradient-to-br from-muted to-background flex items-center justify-center ">
               {/* ChartAreaInteractive musi mieć full width i height */}
               <ChartsGalleryPreview />
             </div>

@@ -7,7 +7,6 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
-  Legend,
   Pie,
   PieChart,
   ResponsiveContainer,
@@ -15,37 +14,23 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
 import {
   ChartContainer,
-  ChartTooltip as ChartTooltipPrimitive,
   ChartTooltipContent as ChartTooltipContentPrimitive,
   ChartLegend,
   ChartLegendContent,
 } from '@/components/ui/chart'
 import {
   Carousel,
+  type CarouselApi,
   CarouselContent,
   CarouselItem,
   CarouselNext,
   CarouselPrevious,
 } from '@/components/ui/carousel'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+import { Card, CardContent } from '@/components/ui/card'
 
-// --- Wykres 1: Area Chart (Wydatki w czasie) ---
+// --- Definicje Danych i Konfiguracji (bez zmian) ---
 const areaChartData = [
   { date: '2024-10-01', groceries: 120, transport: 40 },
   { date: '2024-10-02', groceries: 80, transport: 50 },
@@ -56,246 +41,205 @@ const areaChartData = [
   { date: '2024-10-07', groceries: 170, transport: 60 },
 ]
 const areaChartConfig = {
-  groceries: { label: 'Zakupy', color: 'var(--chart-1)' },
-  transport: { label: 'Transport', color: 'var(--chart-2)' },
+  groceries: { label: 'Zakupy', color: 'hsl(var(--chart-1))' },
+  transport: { label: 'Transport', color: 'hsl(var(--chart-2))' },
 }
 
-function AreaChartInteractive() {
-  const [timeRange, setTimeRange] = React.useState('7d')
-
-  const filteredData = areaChartData.filter((item) => {
-    const date = new Date(item.date)
-    const now = new Date('2024-10-07')
-    const daysToSubtract = timeRange === '7d' ? 7 : 90
-    const startDate = new Date(now)
-    startDate.setDate(startDate.getDate() - daysToSubtract)
-    return date >= startDate
-  })
-
-  return (
-    <Card className="h-full w-full">
-      <CardHeader className="flex flex-row items-center gap-2 space-y-0 border-b py-5">
-        <div className="grid flex-1 gap-1 text-left">
-          <CardTitle>Analiza Wydatków</CardTitle>
-          <CardDescription>
-            Suma wydatków na zakupy i transport w wybranym okresie
-          </CardDescription>
-        </div>
-        <Select value={timeRange} onValueChange={setTimeRange}>
-          <SelectTrigger
-            className="w-[160px] rounded-lg"
-            aria-label="Wybierz okres"
-          >
-            <SelectValue placeholder="Wybierz okres" />
-          </SelectTrigger>
-          <SelectContent className="rounded-xl">
-            <SelectItem value="90d" className="rounded-lg">
-              Ostatnie 90 dni
-            </SelectItem>
-            <SelectItem value="7d" className="rounded-lg">
-              Ostatnie 7 dni
-            </SelectItem>
-          </SelectContent>
-        </Select>
-      </CardHeader>
-      <CardContent className="px-2 pt-4 sm:px-6 sm:pt-6">
-        <ChartContainer
-          config={areaChartConfig}
-          className="aspect-auto h-[250px] w-full"
-        >
-          <AreaChart data={filteredData}>
-            <defs>
-              <linearGradient id="fillGroceries" x1="0" y1="0" x2="0" y2="1">
-                <stop
-                  offset="5%"
-                  stopColor="var(--color-groceries)"
-                  stopOpacity={0.8}
-                />
-                <stop
-                  offset="95%"
-                  stopColor="var(--color-groceries)"
-                  stopOpacity={0.1}
-                />
-              </linearGradient>
-              <linearGradient id="fillTransport" x1="0" y1="0" x2="0" y2="1">
-                <stop
-                  offset="5%"
-                  stopColor="var(--color-transport)"
-                  stopOpacity={0.8}
-                />
-                <stop
-                  offset="95%"
-                  stopColor="var(--color-transport)"
-                  stopOpacity={0.1}
-                />
-              </linearGradient>
-            </defs>
-            <CartesianGrid vertical={false} />
-            <XAxis
-              dataKey="date"
-              tickFormatter={(value) =>
-                new Date(value).toLocaleDateString('pl-PL', {
-                  month: 'short',
-                  day: 'numeric',
-                })
-              }
-            />
-            <YAxis />
-            <ChartTooltipPrimitive
-              cursor={false}
-              content={<ChartTooltipContentPrimitive indicator="dot" />}
-            />
-            <Area
-              dataKey="transport"
-              type="natural"
-              fill="url(#fillTransport)"
-              stroke="var(--color-transport)"
-              stackId="a"
-            />
-            <Area
-              dataKey="groceries"
-              type="natural"
-              fill="url(#fillGroceries)"
-              stroke="var(--color-groceries)"
-              stackId="a"
-            />
-            <ChartLegend content={<ChartLegendContent />} />
-          </AreaChart>
-        </ChartContainer>
-      </CardContent>
-    </Card>
-  )
-}
-
-// --- Wykres 2: Bar Chart (Wydatki miesięczne) ---
 const barChartData = [
   { month: 'Styczeń', subscriptions: 50, housing: 450, food: 220 },
   { month: 'Luty', subscriptions: 55, housing: 460, food: 240 },
   { month: 'Marzec', subscriptions: 50, housing: 455, food: 210 },
 ]
 const barChartConfig = {
-  subscriptions: { label: 'Subskrypcje', color: 'var(--chart-1)' },
-  housing: { label: 'Mieszkanie', color: 'var(--chart-2)' },
-  food: { label: 'Jedzenie', color: 'var(--chart-3)' },
+  subscriptions: { label: 'Subskrypcje', color: 'hsl(var(--chart-1))' },
+  housing: { label: 'Mieszkanie', color: 'hsl(var(--chart-2))' },
+  food: { label: 'Jedzenie', color: 'hsl(var(--chart-3))' },
 }
 
-function BarChartMonthly() {
-  return (
-    <Card className="h-full w-full">
-      <CardHeader>
-        <CardTitle>Podsumowanie Miesięczne</CardTitle>
-        <CardDescription>
-          Porównanie wydatków w kluczowych kategoriach
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <ChartContainer
-          config={barChartConfig}
-          className="aspect-auto h-[280px] w-full"
-        >
-          <BarChart data={barChartData} layout="vertical">
-            <CartesianGrid horizontal={false} />
-            <XAxis type="number" />
-            <YAxis dataKey="month" type="category" width={80} />
-            <Tooltip
-              cursor={{ fill: 'hsl(var(--muted))' }}
-              content={<ChartTooltipContentPrimitive hideLabel />}
-            />
-            <Legend />
-            <Bar
-              dataKey="subscriptions"
-              stackId="a"
-              fill="var(--color-subscriptions)"
-              radius={[0, 4, 4, 0]}
-            />
-            <Bar dataKey="housing" stackId="a" fill="var(--color-housing)" />
-            <Bar
-              dataKey="food"
-              stackId="a"
-              fill="var(--color-food)"
-              radius={[0, 4, 4, 0]}
-            />
-          </BarChart>
-        </ChartContainer>
-      </CardContent>
-    </Card>
-  )
-}
-
-// --- Wykres 3: Pie Chart (Struktura wydatków) ---
 const pieChartData = [
-  { category: 'Rozrywka', value: 275, fill: 'var(--chart-1)' },
-  { category: 'Transport', value: 200, fill: 'var(--chart-2)' },
-  { category: 'Ubrania', value: 187, fill: 'var(--chart-3)' },
-  { category: 'Zdrowie', value: 173, fill: 'var(--chart-4)' },
-  { category: 'Inne', value: 90, fill: 'var(--chart-5)' },
+  { category: 'Rozrywka', value: 275, fill: 'var(--color-entertainment)' },
+  { category: 'Transport', value: 200, fill: 'var(--color-transport)' },
+  { category: 'Ubrania', value: 187, fill: 'var(--color-clothing)' },
 ]
 const pieChartConfig = {
-  value: { label: 'Wartość' },
-  category: { label: 'Kategoria' },
+  entertainment: { label: 'Rozrywka', color: 'hsl(var(--chart-1))' },
+  transport: { label: 'Transport', color: 'hsl(var(--chart-2))' },
+  clothing: { label: 'Ubrania', color: 'hsl(var(--chart-3))' },
 }
 
-function PieChartStructure() {
-  return (
-    <Card className="h-full w-full">
-      <CardHeader>
-        <CardTitle>Struktura Wydatków</CardTitle>
-        <CardDescription>
-          Procentowy udział kategorii w budżecie (Październik)
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="flex items-center justify-center">
-        <ChartContainer
-          config={pieChartConfig}
-          className="aspect-square h-[280px] w-full max-w-[280px]"
-        >
-          <ResponsiveContainer>
-            <PieChart>
-              <Tooltip
-                cursor={false}
-                content={<ChartTooltipContentPrimitive hideLabel />}
-              />
-              <Pie
-                data={pieChartData}
-                dataKey="value"
-                nameKey="category"
-                innerRadius={60}
-              />
-              <ChartLegend
-                content={<ChartLegendContent nameKey="category" />}
-                className="-translate-y-2 flex-wrap gap-2 [&>*]:basis-1/4 [&>*]:justify-center"
-              />
-            </PieChart>
-          </ResponsiveContainer>
-        </ChartContainer>
-      </CardContent>
-    </Card>
-  )
-}
+const chartComponents = [
+  {
+    title: 'Analiza Wydatków Dziennych',
+    description: 'Suma wydatków na zakupy i transport w ostatnim tygodniu.',
+    component: <AreaChartComponent />,
+  },
+  {
+    title: 'Podsumowanie Miesięczne',
+    description: 'Porównanie wydatków w kluczowych kategoriach.',
+    component: <BarChartComponent />,
+  },
+  {
+    title: 'Struktura Wydatków',
+    description: 'Procentowy udział kategorii w miesięcznym budżecie.',
+    component: <PieChartComponent />,
+  },
+]
 
 // --- Główny komponent galerii ---
 export function ChartsGalleryPreview() {
+  const [api, setApi] = React.useState<CarouselApi>()
+  const [current, setCurrent] = React.useState(0)
+
+  React.useEffect(() => {
+    if (!api) return
+    setCurrent(api.selectedScrollSnap())
+    api.on('select', () => setCurrent(api.selectedScrollSnap()))
+  }, [api])
+
   return (
-    <Carousel className="w-full max-w-xl mx-auto">
-      <CarouselContent>
-        <CarouselItem>
-          <div className="p-1">
-            <AreaChartInteractive />
-          </div>
-        </CarouselItem>
-        <CarouselItem>
-          <div className="p-1">
-            <BarChartMonthly />
-          </div>
-        </CarouselItem>
-        <CarouselItem>
-          <div className="p-1">
-            <PieChartStructure />
-          </div>
-        </CarouselItem>
-      </CarouselContent>
-      <CarouselPrevious className="ml-12" />
-      <CarouselNext className="mr-12" />
-    </Carousel>
+    <div className="w-full h-full flex flex-col justify-center items-center px-4 md:px-12">
+      <div className="w-full relative">
+        <Carousel
+          setApi={setApi}
+          opts={{ align: 'center', loop: true }}
+          className="w-full"
+        >
+          <CarouselContent className="-ml-4">
+            {chartComponents.map((chart, index) => (
+              <CarouselItem
+                key={index}
+                className="pl-4 md:basis-1/2 lg:basis-2/3"
+              >
+                <div className="p-1 h-full">
+                  <Card className="h-full w-full shadow-md">
+                    <CardContent className="p-0 h-full">
+                      {chart.component}
+                    </CardContent>
+                  </Card>
+                </div>
+              </CarouselItem>
+            ))}
+          </CarouselContent>
+
+          {/* POPRAWKA: Strzałki przeniesione do środka <Carousel> */}
+          <CarouselPrevious className="absolute -left-10 top-1/2 -translate-y-1/2 h-10 w-10 hidden md:flex" />
+          <CarouselNext className="absolute -right-10 top-1/2 -translate-y-1/2 h-10 w-10 hidden md:flex" />
+        </Carousel>
+      </div>
+
+      <div className="py-6 text-center text-sm text-muted-foreground">
+        <h4 className="font-medium text-lg">
+          {chartComponents[current]?.title}
+        </h4>
+        <p className="mt-1">{chartComponents[current]?.description}</p>
+      </div>
+
+      <div className="flex gap-2">
+        {chartComponents.map((_, index) => (
+          <button
+            key={index}
+            onClick={() => api?.scrollTo(index)}
+            className={`h-2 w-2 rounded-full transition-all duration-300 ${
+              current === index
+                ? 'w-5 bg-primary'
+                : 'bg-muted hover:bg-muted-foreground/50'
+            }`}
+            aria-label={`Przejdź do slajdu ${index + 1}`}
+          />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// --- Komponenty poszczególnych wykresów (bez zmian) ---
+
+function AreaChartComponent() {
+  return (
+    <ChartContainer config={areaChartConfig} className="w-full h-[300px] p-4">
+      <ResponsiveContainer>
+        <AreaChart data={areaChartData}>
+          <CartesianGrid
+            vertical={false}
+            stroke="hsl(var(--muted-foreground) / 0.1)"
+          />
+          <XAxis
+            dataKey="date"
+            tickLine={false}
+            axisLine={false}
+            tickMargin={8}
+            tickFormatter={(value) =>
+              new Date(value).toLocaleDateString('pl-PL', {
+                day: 'numeric',
+                month: 'short',
+              })
+            }
+          />
+          <YAxis tickLine={false} axisLine={false} tickMargin={8} />
+          <Tooltip content={<ChartTooltipContentPrimitive indicator="dot" />} />
+          <Area
+            dataKey="transport"
+            type="natural"
+            fill="var(--color-transport)"
+            fillOpacity={0.4}
+            stroke="var(--color-transport)"
+            stackId="a"
+          />
+          <Area
+            dataKey="groceries"
+            type="natural"
+            fill="var(--color-groceries)"
+            fillOpacity={0.4}
+            stroke="var(--color-groceries)"
+            stackId="a"
+          />
+        </AreaChart>
+      </ResponsiveContainer>
+    </ChartContainer>
+  )
+}
+
+function BarChartComponent() {
+  return (
+    <ChartContainer config={barChartConfig} className="w-full h-[300px] p-4">
+      <ResponsiveContainer>
+        <BarChart data={barChartData}>
+          <CartesianGrid
+            vertical={false}
+            stroke="hsl(var(--muted-foreground) / 0.1)"
+          />
+          <XAxis dataKey="month" tickLine={false} axisLine={false} />
+          <YAxis tickLine={false} axisLine={false} />
+          <Tooltip content={<ChartTooltipContentPrimitive />} />
+          <Bar
+            dataKey="subscriptions"
+            fill="var(--color-subscriptions)"
+            radius={4}
+          />
+          <Bar dataKey="housing" fill="var(--color-housing)" radius={4} />
+          <Bar dataKey="food" fill="var(--color-food)" radius={4} />
+        </BarChart>
+      </ResponsiveContainer>
+    </ChartContainer>
+  )
+}
+
+function PieChartComponent() {
+  return (
+    <ChartContainer config={pieChartConfig} className="w-full h-[300px] p-4">
+      <ResponsiveContainer>
+        <PieChart>
+          <Tooltip content={<ChartTooltipContentPrimitive hideLabel />} />
+          <Pie
+            data={pieChartData}
+            dataKey="value"
+            nameKey="category"
+            innerRadius={60}
+            strokeWidth={3}
+          />
+          <ChartLegend content={<ChartLegendContent nameKey="category" />} />
+        </PieChart>
+      </ResponsiveContainer>
+    </ChartContainer>
   )
 }
