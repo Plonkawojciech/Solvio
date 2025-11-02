@@ -50,19 +50,33 @@
 }
 @layer base {
   :root {
-    --chart-1: oklch(0.646 0.222 41.116);
-    --chart-2: oklch(0.6 0.118 184.704);
-    --chart-3: oklch(0.398 0.07 227.392);
-    --chart-4: oklch(0.828 0.189 84.429);
-    --chart-5: oklch(0.769 0.188 70.08);
+    /* Paleta (niebieski, fiolet, turkus) - zostaje bez zmian */
+    --chart-1: 220 85% 60%;  /* Główny Niebieski */
+    --chart-2: 190 70% 65%;  /* Turkus/Cyjan */
+    --chart-3: 260 75% 65%;  /* Fiolet */
+    --chart-4: 210 80% 70%;  /* Jaśniejszy Niebieski */
+    --chart-5: 200 75% 55%;  /* Ciemniejszy Turkus */
+    --chart-6: 270 80% 70%;  /* Jaśniejszy Fiolet */
+
+    /* 👇 POPRAWKA: Przywrócono mapowanie dla Dashboardu 👇 
+       Twój `page.tsx` używa tych zmiennych.
+    */
+    --color-groceries: hsl(var(--chart-1));
+    --color-transport: hsl(var(--chart-2));
+    --color-food: hsl(var(--chart-3));
+    --color-entertainment: hsl(var(--chart-4));
+    --color-utilities: hsl(var(--chart-5));
+    --color-other: hsl(var(--chart-6));
   }
 
   .dark {
-    --chart-1: oklch(0.488 0.243 264.376);
-    --chart-2: oklch(0.696 0.17 162.48);
-    --chart-3: oklch(0.769 0.188 70.08);
-    --chart-4: oklch(0.627 0.265 303.9);
-    --chart-5: oklch(0.645 0.246 16.439);
+    /* Wersja dla trybu ciemnego - zostaje bez zmian */
+    --chart-1: 220 85% 65%;  
+    --chart-2: 190 70% 70%;  
+    --chart-3: 260 75% 70%;  
+    --chart-4: 210 80% 75%;  
+    --chart-5: 200 75% 60%;  
+    --chart-6: 270 80% 75%;  
   }
 }
 
@@ -170,5 +184,32 @@
   }
   body {
     @apply bg-background text-foreground;
+  }
+}
+
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+
+  /* Stylizowanie domyślnego tooltipa Recharts - zostaje bez zmian */
+  .recharts-default-tooltip {
+    background-color: var(--color-popover) !important;
+    color: var(--color-popover-foreground) !important;
+    border: 1px solid var(--color-border) !important;
+    border-radius: var(--radius-md) !important;
+    padding: 0.5rem 0.75rem !important;
+    box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  }
+  
+  /* Styl dla etykiety w tooltipie (np. "Oct 27") */
+  .recharts-tooltip-label {
+    color: var(--color-muted-foreground) !important;
+    font-size: 0.875rem; /* text-sm */
+    margin-bottom: 0.25rem; /* mb-1 */
   }
 }
