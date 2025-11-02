@@ -31,7 +31,6 @@ import {
 } from '@/components/ui/carousel'
 import { Card, CardContent } from '@/components/ui/card'
 
-// --- Definicje Danych i Konfiguracji (bez zmian) ---
 const areaChartData = [
   { date: '2024-10-01', groceries: 120, transport: 40 },
   { date: '2024-10-02', groceries: 80, transport: 50 },
@@ -42,46 +41,46 @@ const areaChartData = [
   { date: '2024-10-07', groceries: 170, transport: 60 },
 ]
 const areaChartConfig = {
-  groceries: { label: 'Zakupy', color: 'hsl(var(--chart-1))' },
+  groceries: { label: 'Groceries', color: 'hsl(var(--chart-1))' },
   transport: { label: 'Transport', color: 'hsl(var(--chart-2))' },
 }
 
 const barChartData = [
-  { month: 'Styczeń', subscriptions: 50, housing: 450, food: 220 },
-  { month: 'Luty', subscriptions: 55, housing: 460, food: 240 },
-  { month: 'Marzec', subscriptions: 50, housing: 455, food: 210 },
+  { month: 'January', subscriptions: 50, housing: 450, food: 220 },
+  { month: 'February', subscriptions: 55, housing: 460, food: 240 },
+  { month: 'March', subscriptions: 50, housing: 455, food: 210 },
 ]
 const barChartConfig = {
-  subscriptions: { label: 'Subskrypcje', color: 'hsl(var(--chart-5))' },
-  housing: { label: 'Mieszkanie', color: 'hsl(var(--chart-1))' },
-  food: { label: 'Jedzenie', color: 'hsl(var(--chart-3))' },
+  subscriptions: { label: 'Subscriptions', color: 'hsl(var(--chart-5))' },
+  housing: { label: 'Housing', color: 'hsl(var(--chart-1))' },
+  food: { label: 'Food', color: 'hsl(var(--chart-3))' },
 }
 
 const pieChartData = [
-  { category: 'Rozrywka', value: 275, fill: 'hsl(var(--chart-4))' },
+  { category: 'Entertainment', value: 275, fill: 'hsl(var(--chart-4))' },
   { category: 'Transport', value: 200, fill: 'hsl(var(--chart-2))' },
-  { category: 'Ubrania', value: 187, fill: 'hsl(var(--chart-6))' },
+  { category: 'Clothing', value: 187, fill: 'hsl(var(--chart-6))' },
 ]
 const pieChartConfig = {
-  entertainment: { label: 'Rozrywka', color: 'hsl(var(--chart-1))' },
-  transport: { label: 'Transport', color: 'hsl(var(--chart-2))' },
-  clothing: { label: 'Ubrania', color: 'hsl(var(--chart-3))' },
+  Entertainment: { label: 'Entertainment', color: 'hsl(var(--chart-4))' },
+  Transport: { label: 'Transport', color: 'hsl(var(--chart-2))' },
+  Clothing: { label: 'Clothing', color: 'hsl(var(--chart-6))' },
 }
 
 const chartComponents = [
   {
-    title: 'Analiza Wydatków Dziennych',
-    description: 'Suma wydatków na zakupy i transport w ostatnim tygodniu.',
+    title: 'Daily Spending Analysis',
+    description: 'Total spending on groceries and transport in the last week.',
     component: <AreaChartComponent />,
   },
   {
-    title: 'Podsumowanie Miesięczne',
-    description: 'Porównanie wydatków w kluczowych kategoriach.',
+    title: 'Monthly Summary',
+    description: 'Comparison of spending in key categories.',
     component: <BarChartComponent />,
   },
   {
-    title: 'Struktura Wydatków',
-    description: 'Procentowy udział kategorii w miesięcznym budżecie.',
+    title: 'Spending Structure',
+    description: 'Percentage share of categories in the monthly budget.',
     component: <PieChartComponent />,
   },
 ]
@@ -142,13 +141,14 @@ export function ChartsGalleryPreview() {
                 ? 'w-5 bg-primary'
                 : 'bg-muted hover:bg-muted-foreground/50'
             }`}
-            aria-label={`Przejdź do slajdu ${index + 1}`}
+            aria-label={`Go to slide ${index + 1}`}
           />
         ))}
       </div>
     </div>
   )
 }
+
 function AreaChartComponent() {
   return (
     <ChartContainer config={areaChartConfig} className="w-full h-[300px] p-4">
@@ -164,7 +164,7 @@ function AreaChartComponent() {
             axisLine={false}
             tickMargin={8}
             tickFormatter={(value) =>
-              new Date(value).toLocaleDateString('pl-PL', {
+              new Date(value).toLocaleDateString("en-US", {
                 day: 'numeric',
                 month: 'short',
               })
@@ -181,11 +181,11 @@ function AreaChartComponent() {
           />
           <Tooltip
             cursor={{ stroke: 'hsl(var(--muted-foreground))' }}
-            content={<ChartTooltipContentPrimitive indicator="dot" />}
+            content={<ChartTooltipContentPrimitive 
+              indicator="dot" 
+              formatter={(value) => `$${Number(value).toFixed(2)}`} // Added currency formatting
+            />}
           />
-          {/* 👇 POPRAWKA: Przywrócono 'fill' i 'stroke' 
-              Używamy kolorów zdefiniowanych w configu.
-          */}
           <Area
             dataKey="transport"
             type="natural"
@@ -232,11 +232,10 @@ function BarChartComponent() {
           />
           <Tooltip
             cursor={{ fill: 'hsl(var(--muted))' }}
-            content={<ChartTooltipContentPrimitive />}
+            content={<ChartTooltipContentPrimitive 
+              formatter={(value) => `$${Number(value).toFixed(2)}`} // Added currency formatting
+            />}
           />
-          {/* 👇 POPRAWKA: Przywrócono 'fill' 
-              Używamy kolorów zdefiniowanych w configu.
-          */}
           <Bar
             dataKey="subscriptions"
             fill="hsl(var(--chart-5))"
@@ -276,7 +275,6 @@ function PieChartComponent() {
             innerRadius={60}
             strokeWidth={3}
           >
-            {/* Ta część jest poprawna i zostaje bez zmian */}
             {pieChartData.map((entry, index) => (
               <Cell 
                 key={`cell-${index}`} 
