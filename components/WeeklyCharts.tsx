@@ -62,10 +62,11 @@ const pieChartData = [
   { category: 'Ubrania', value: 187, fill: 'var(--color-clothing)' },
 ]
 const pieChartConfig = {
-  entertainment: { label: 'Rozrywka', color: 'hsl(14 90% 55%)' }, // żywy pomarańcz-czerwony
-  transport: { label: 'Transport', color: 'hsl(220 85% 60%)' }, // jasny niebieski
-  clothing: { label: 'Ubrania', color: 'hsl(150 65% 45%)' }, // zielono–turkusowy
+  entertainment: { label: 'Rozrywka', color: 'hsl(var(--chart-1))' },
+  transport: { label: 'Transport', color: 'hsl(var(--chart-2))' },
+  clothing: { label: 'Ubrania', color: 'hsl(var(--chart-3))' },
 }
+
 const chartComponents = [
   {
     title: 'Analiza Wydatków Dziennych',
@@ -148,7 +149,6 @@ export function ChartsGalleryPreview() {
     </div>
   )
 }
-
 function AreaChartComponent() {
   return (
     <ChartContainer config={areaChartConfig} className="w-full h-[300px] p-4">

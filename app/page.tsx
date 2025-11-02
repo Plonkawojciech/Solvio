@@ -4,6 +4,7 @@ import { Input } from '@/components/ui/input'
 import { ChartsGalleryPreview } from '@/components/WeeklyCharts'
 import { createClient } from '../lib/supabase/server'
 import { redirect } from 'next/navigation'
+import Link from 'next/link'
 
 export default async function Page() {
   const supabase = await createClient()
@@ -28,9 +29,12 @@ export default async function Page() {
 
         <div className="flex w-full max-w-md gap-2">
           <Input placeholder="Twój e-mail" className="text-base h-12" />
-          <Button size="lg" className="h-12 px-6">
-            Dołącz
-          </Button>
+
+          <Link href="/auth/sign-up">
+            <Button size="lg" className="h-12 px-6">
+              Dołącz
+            </Button>
+          </Link>
         </div>
 
         <p className="text-sm text-muted-foreground mt-4">
@@ -76,9 +80,11 @@ export default async function Page() {
         <h2 className="text-3xl font-semibold mb-6">
           Oszczędzaj czas i zyskaj jasny obraz finansów
         </h2>
-        <Button size="lg" className="px-8 h-12 text-base">
-          Zacznij z Solvio
-        </Button>
+        <Link href="/auth/sign-up">
+          <Button size="lg" className="px-8 h-12 text-base">
+            Zacznij z Solvio
+          </Button>
+        </Link>
       </section>
     </main>
   )
