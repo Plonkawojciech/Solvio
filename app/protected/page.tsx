@@ -1,5 +1,3 @@
-import { createClient } from "@/lib/supabase/server";
-import { redirect } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -8,22 +6,24 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Activity, CreditCard, DollarSign, PlusCircle } from "lucide-react";
+import { Activity, CreditCard, DollarSign } from "lucide-react"; 
 
 import { RecentExpensesTable } from "@/components/protected/dashboard/recent-expenses-table";
 import { SpendingChart } from "@/components/protected/dashboard/spending-chart";
 import { SpendingByCategoryChart } from "@/components/protected/dashboard/spending-by-category-chart";
 import { BudgetOverview } from "@/components/protected/dashboard/budget-overview";
-// --- Rozbudowane Demo Dane ---
+import { AddExpenseTrigger } from "@/components/protected/dashboard/add-expense-trigger";
+
+// --- Demo Dane (Przetłumaczone na Angielski) ---
 const recentExpenses = [
-  { id: "tx_1", description: "Kawa w Starbucks", category: "Food", amount: 5.75, date: "2025-10-31" },
-  { id: "tx_2", description: "Miesięczny bilet ZTM", category: "Transport", amount: 65.00, date: "2025-10-30" },
-  { id: "tx_3", description: "Subskrypcja Netflix", category: "Entertainment", amount: 15.99, date: "2025-10-29" },
-  { id: "tx_4", description: "Zakupy spożywcze Biedronka", category: "Groceries", amount: 120.40, date: "2025-10-29" },
-  { id: "tx_5", description: "Bilety do kina", category: "Entertainment", amount: 30.00, date: "2025-10-28" },
-  { id: "tx_6", description: "Rachunek za prąd", category: "Utilities", amount: 75.50, date: "2025-10-28" },
-  { id: "tx_7", description: "Tankowanie paliwa", category: "Transport", amount: 50.00, date: "2025-10-27" },
-  { id: "tx_8", description: "Lunch w biurze", category: "Food", amount: 12.00, date: "2025-10-27" },
+  { id: "tx_1", description: "Coffee at Starbucks", category: "Food", amount: 5.75, date: "2025-10-31" },
+  { id: "tx_2", description: "Monthly Transit Pass", category: "Transport", amount: 65.00, date: "2025-10-30" },
+  { id: "tx_3", description: "Netflix Subscription", category: "Entertainment", amount: 15.99, date: "2025-10-29" },
+  { id: "tx_4", description: "Groceries (Main Shop)", category: "Groceries", amount: 120.40, date: "2025-10-29" },
+  { id: "tx_5", description: "Cinema Tickets", category: "Entertainment", amount: 30.00, date: "2025-10-28" },
+  { id: "tx_6", description: "Electricity Bill", category: "Utilities", amount: 75.50, date: "2025-10-28" },
+  { id: "tx_7", description: "Gas Refueling", category: "Transport", amount: 50.00, date: "2025-10-27" },
+  { id: "tx_8", description: "Office Lunch", category: "Food", amount: 12.00, date: "2025-10-27" },
 ];
 
 const dailySpendingData = [
@@ -32,7 +32,6 @@ const dailySpendingData = [
   { date: 'Oct 31', total: 5.75 },
 ];
 
-// Dane są teraz powiązane ze zmiennymi CSS zdefiniowanymi w pliku CSS
 const categorySpendingData = [
   { name: 'Groceries', total: 450.20, fill: "var(--color-groceries)" },
   { name: 'Transport', total: 115.50, fill: "var(--color-transport)" },
@@ -52,37 +51,25 @@ const budgetData = [
 
 
 export default async function ProtectedPage() {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-
-  if (!user) {
-    redirect("/");
-  }
 
   return (
-    // Używamy flex-col z odstępem
     <div className="flex flex-col gap-8">
 
       {/* Rząd 1: Tytuł strony i Akcje */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-4">
         
-        {/* 👇 PROPOZYCJA ULEPSZENIA: Zgrupowanie tytułu i dodanie podtytułu 👇 */}
         <div>
           <h2 className="text-3xl font-bold tracking-tight">
             Dashboard
           </h2>
           <p className="text-muted-foreground hidden sm:block pt-1">
             Here's an overview of your finances.
-            {/* Można też użyć e-maila: Welcome back, {user.email}! */}
           </p>
         </div>
 
         <div className="flex items-center space-x-2">
-          {/* Tu możesz dodać np. wybór zakresu dat */}
           <Button variant="outline">Last 30 Days</Button>
-          <Button>
-            <PlusCircle className="mr-2 h-4 w-4" /> Add Expense
-          </Button>
+          <AddExpenseTrigger />
         </div>
       </div>
 
@@ -137,28 +124,25 @@ export default async function ProtectedPage() {
           </CardContent>
         </Card>
       </div>
+      
       {/* Rząd 3: Ostatnie wydatki i Wykres kategorii */}
       <div className="grid gap-4 grid-cols-1 xl:grid-cols-3">
-        {/* Kolumna 1 i 2: Tabela (większa) */}
         <Card className="xl:col-span-2">
           <CardHeader>
             <CardTitle>Recent Expenses</CardTitle>
             <CardDescription>Your 8 most recent transactions.</CardDescription>
           </CardHeader>
           <CardContent>
-            {/* Przekazujemy więcej danych do tabeli */}
             <RecentExpensesTable data={recentExpenses} />
           </CardContent>
         </Card>
 
-        {/* Kolumna 3: Wykres kołowy */}
         <Card>
           <CardHeader>
             <CardTitle>Spending by Category</CardTitle>
             <CardDescription>Breakdown of your spending.</CardDescription>
           </CardHeader>
           <CardContent>
-            {/* Nowy komponent wykresu */}
             <SpendingByCategoryChart data={categorySpendingData} />
           </CardContent>
         </Card>
@@ -172,7 +156,6 @@ export default async function ProtectedPage() {
             <CardDescription>Tracking your monthly budgets.</CardDescription>
           </CardHeader>
           <CardContent>
-            {/* Nowy komponent budżetów */}
             <BudgetOverview data={budgetData} />
           </CardContent>
         </Card>
@@ -182,7 +165,6 @@ export default async function ProtectedPage() {
             <CardDescription>Your spending for the last 7 days.</CardDescription>
           </CardHeader>
           <CardContent className="pl-2">
-            {/* Używamy ponownie starego komponentu */}
             <SpendingChart data={dailySpendingData} />
           </CardContent>
         </Card>
