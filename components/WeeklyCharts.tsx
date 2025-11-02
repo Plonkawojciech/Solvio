@@ -13,6 +13,7 @@ import {
   Tooltip,
   XAxis,
   YAxis,
+  Cell,
 } from 'recharts'
 import {
   ChartContainer,
@@ -51,21 +52,24 @@ const barChartData = [
   { month: 'Marzec', subscriptions: 50, housing: 455, food: 210 },
 ]
 const barChartConfig = {
-  subscriptions: { label: 'Subskrypcje', color: 'hsl(var(--chart-1))' },
-  housing: { label: 'Mieszkanie', color: 'hsl(var(--chart-2))' },
+  subscriptions: { label: 'Subskrypcje', color: 'hsl(var(--chart-5))' },
+  housing: { label: 'Mieszkanie', color: 'hsl(var(--chart-1))' },
   food: { label: 'Jedzenie', color: 'hsl(var(--chart-3))' },
 }
 
 const pieChartData = [
-  { category: 'Rozrywka', value: 275, fill: 'var(--color-entertainment)' },
-  { category: 'Transport', value: 200, fill: 'var(--color-transport)' },
-  { category: 'Ubrania', value: 187, fill: 'var(--color-clothing)' },
+  { category: 'Rozrywka', value: 275, fill: 'hsl(var(--chart-4))' },
+  { category: 'Transport', value: 200, fill: 'hsl(var(--chart-2))' },
+  { category: 'Ubrania', value: 187, fill: 'hsl(var(--chart-6))' },
 ]
 const pieChartConfig = {
-  entertainment: { label: 'Rozrywka', color: 'hsl(14 90% 55%)' }, // żywy pomarańcz-czerwony
-  transport: { label: 'Transport', color: 'hsl(220 85% 60%)' }, // jasny niebieski
-  clothing: { label: 'Ubrania', color: 'hsl(150 65% 45%)' }, // zielono–turkusowy
+  Rozrywka: { label: 'Rozrywka', color: 'hsl(var(--chart-4))' },
+  Transport: { label: 'Transport', color: 'hsl(var(--chart-2))' },
+  Ubrania: { label: 'Ubrania', color: 'hsl(var(--chart-6))' },
 }
+
+// --- Reszta komponentu (bez zmian, oprócz komponentów wykresów) ---
+
 const chartComponents = [
   {
     title: 'Analiza Wydatków Dziennych',
@@ -84,7 +88,6 @@ const chartComponents = [
   },
 ]
 
-// --- Główny komponent galerii ---
 export function ChartsGalleryPreview() {
   const [api, setApi] = React.useState<CarouselApi>()
   const [current, setCurrent] = React.useState(0)
@@ -149,6 +152,8 @@ export function ChartsGalleryPreview() {
   )
 }
 
+// --- Poprawione komponenty wykresów ---
+
 function AreaChartComponent() {
   return (
     <ChartContainer config={areaChartConfig} className="w-full h-[300px] p-4">
@@ -183,20 +188,23 @@ function AreaChartComponent() {
             cursor={{ stroke: 'hsl(var(--muted-foreground))' }}
             content={<ChartTooltipContentPrimitive indicator="dot" />}
           />
+          {/* 👇 POPRAWKA: Przywrócono 'fill' i 'stroke' 
+              Używamy kolorów zdefiniowanych w configu.
+          */}
           <Area
             dataKey="transport"
             type="natural"
-            fill="var(--color-transport)"
+            fill="hsl(var(--chart-2))"
+            stroke="hsl(var(--chart-2))"
             fillOpacity={0.4}
-            stroke="var(--color-transport)"
             stackId="a"
           />
           <Area
             dataKey="groceries"
             type="natural"
-            fill="var(--color-groceries)"
+            fill="hsl(var(--chart-1))"
+            stroke="hsl(var(--chart-1))"
             fillOpacity={0.4}
-            stroke="var(--color-groceries)"
             stackId="a"
           />
         </AreaChart>
@@ -231,13 +239,24 @@ function BarChartComponent() {
             cursor={{ fill: 'hsl(var(--muted))' }}
             content={<ChartTooltipContentPrimitive />}
           />
+          {/* 👇 POPRAWKA: Przywrócono 'fill' 
+              Używamy kolorów zdefiniowanych w configu.
+          */}
           <Bar
             dataKey="subscriptions"
-            fill="var(--color-subscriptions)"
+            fill="hsl(var(--chart-5))"
             radius={4}
           />
-          <Bar dataKey="housing" fill="var(--color-housing)" radius={4} />
-          <Bar dataKey="food" fill="var(--color-food)" radius={4} />
+          <Bar
+            dataKey="housing"
+            fill="hsl(var(--chart-1))"
+            radius={4}
+          />
+          <Bar
+            dataKey="food"
+            fill="hsl(var(--chart-3))"
+            radius={4}
+          />
         </BarChart>
       </ResponsiveContainer>
     </ChartContainer>
@@ -249,14 +268,29 @@ function PieChartComponent() {
     <ChartContainer config={pieChartConfig} className="w-full h-[300px] p-4">
       <ResponsiveContainer>
         <PieChart>
-          <Tooltip content={<ChartTooltipContentPrimitive hideLabel />} />
+          <Tooltip 
+            content={<ChartTooltipContentPrimitive 
+              hideLabel 
+              formatter={(value) => `$${Number(value).toFixed(2)}`}
+            />} 
+          />
           <Pie
             data={pieChartData}
             dataKey="value"
             nameKey="category"
             innerRadius={60}
             strokeWidth={3}
-          />
+          >
+            {/* Ta część jest poprawna i zostaje bez zmian */}
+            {pieChartData.map((entry, index) => (
+              <Cell 
+                key={`cell-${index}`} 
+                fill={entry.fill}
+                stroke="hsl(var(--background))"
+                strokeWidth={3}
+              />
+            ))}
+          </Pie>
           <ChartLegend
             content={
               <ChartLegendContent
