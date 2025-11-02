@@ -1,11 +1,11 @@
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
 import { ChartsGalleryPreview } from '@/components/WeeklyCharts'
 import Footer from '@/components/footer'
 import { createClient } from '../lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
+import JoinAccessList from '@/components/landing_page/join_access_list'
 
 export default async function Page() {
   const supabase = await createClient()
@@ -31,15 +31,7 @@ export default async function Page() {
             Scan. Save time. Gain control.
           </p>
 
-          <div className="flex w-full max-w-md gap-2">
-            <Input placeholder="Your e-mail" className="text-base h-12" />
-
-            <Link href="/auth/sign-up">
-              <Button size="lg" className="h-12 px-6">
-                Sign Up
-              </Button>
-            </Link>
-          </div>
+          <JoinAccessList />
 
           <p className="text-sm text-muted-foreground mt-4">
             Join the early access list

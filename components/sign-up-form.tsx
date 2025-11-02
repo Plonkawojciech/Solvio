@@ -16,11 +16,16 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+type SignUpFormProps = React.ComponentPropsWithoutRef<"div"> & {
+  initialEmail?: string;
+};
+
 export function SignUpForm({
   className,
+  initialEmail = "",
   ...props
-}: React.ComponentPropsWithoutRef<"div">) {
-  const [email, setEmail] = useState("");
+}: SignUpFormProps) {
+  const [email, setEmail] = useState(initialEmail);
   const [password, setPassword] = useState("");
   const [repeatPassword, setRepeatPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
