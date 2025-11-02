@@ -63,21 +63,11 @@ const pieChartData = [
   { category: 'Ubrania', value: 187, fill: 'hsl(var(--chart-6))' },
 ]
 const pieChartConfig = {
-<<<<<<< HEAD
-  Rozrywka: { label: 'Rozrywka', color: 'hsl(var(--chart-4))' },
-  Transport: { label: 'Transport', color: 'hsl(var(--chart-2))' },
-  Ubrania: { label: 'Ubrania', color: 'hsl(var(--chart-6))' },
-}
-
-// --- Reszta komponentu (bez zmian, oprócz komponentów wykresów) ---
-
-=======
   entertainment: { label: 'Rozrywka', color: 'hsl(var(--chart-1))' },
   transport: { label: 'Transport', color: 'hsl(var(--chart-2))' },
   clothing: { label: 'Ubrania', color: 'hsl(var(--chart-3))' },
 }
 
->>>>>>> 3663c464230bb202e093b69380a4928098b01ec2
 const chartComponents = [
   {
     title: 'Analiza Wydatków Dziennych',
