@@ -2,18 +2,18 @@ import { AppSidebar } from '@/components/protected/main/sidebar'
 import { SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { Toaster } from 'sonner'
 
 export default async function ProtectedLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
-
-  const supabase = await createClient();
-  const user = await supabase.auth.getClaims();
+  const supabase = await createClient()
+  const user = await supabase.auth.getClaims()
 
   if (!user) {
-    redirect("/");
+    redirect('/')
   }
 
   return (
@@ -21,12 +21,11 @@ export default async function ProtectedLayout({
       <div className="flex min-h-screen">
         <AppSidebar />
         <main className="flex-1 overflow-auto p-6 md:p-10">
-
-
           <div className="md:hidden mb-4">
             <SidebarTrigger />
           </div>
           {children}
+          <Toaster position="top-right" richColors />
         </main>
       </div>
     </SidebarProvider>
