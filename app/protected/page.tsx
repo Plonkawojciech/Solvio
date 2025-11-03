@@ -1,67 +1,113 @@
-import { Button } from "@/components/ui/button";
+import { Button } from '@/components/ui/button'
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card";
-import { Activity, CreditCard, DollarSign } from "lucide-react"; 
+} from '@/components/ui/card'
+import { Activity, CreditCard, DollarSign } from 'lucide-react'
 
-import { RecentExpensesTable } from "@/components/protected/dashboard/recent-expenses-table";
-import { SpendingChart } from "@/components/protected/dashboard/spending-chart";
-import { SpendingByCategoryChart } from "@/components/protected/dashboard/spending-by-category-chart";
-import { BudgetOverview } from "@/components/protected/dashboard/budget-overview";
-import { AddExpenseTrigger } from "@/components/protected/dashboard/add-expense-trigger";
+import { RecentExpensesTable } from '@/components/protected/dashboard/recent-expenses-table'
+import { SpendingChart } from '@/components/protected/dashboard/spending-chart'
+import { SpendingByCategoryChart } from '@/components/protected/dashboard/spending-by-category-chart'
+import { BudgetOverview } from '@/components/protected/dashboard/budget-overview'
+import { AddExpenseTrigger } from '@/components/protected/dashboard/add-expense-trigger'
 
 // --- Demo Dane (Przetłumaczone na Angielski) ---
 const recentExpenses = [
-  { id: "tx_1", description: "Coffee at Starbucks", category: "Food", amount: 5.75, date: "2025-10-31" },
-  { id: "tx_2", description: "Monthly Transit Pass", category: "Transport", amount: 65.00, date: "2025-10-30" },
-  { id: "tx_3", description: "Netflix Subscription", category: "Entertainment", amount: 15.99, date: "2025-10-29" },
-  { id: "tx_4", description: "Groceries (Main Shop)", category: "Groceries", amount: 120.40, date: "2025-10-29" },
-  { id: "tx_5", description: "Cinema Tickets", category: "Entertainment", amount: 30.00, date: "2025-10-28" },
-  { id: "tx_6", description: "Electricity Bill", category: "Utilities", amount: 75.50, date: "2025-10-28" },
-  { id: "tx_7", description: "Gas Refueling", category: "Transport", amount: 50.00, date: "2025-10-27" },
-  { id: "tx_8", description: "Office Lunch", category: "Food", amount: 12.00, date: "2025-10-27" },
-];
+  {
+    id: 'tx_1',
+    description: 'Coffee at Starbucks',
+    category: 'Food',
+    amount: 5.75,
+    date: '2025-10-31',
+  },
+  {
+    id: 'tx_2',
+    description: 'Monthly Transit Pass',
+    category: 'Transport',
+    amount: 65.0,
+    date: '2025-10-30',
+  },
+  {
+    id: 'tx_3',
+    description: 'Netflix Subscription',
+    category: 'Entertainment',
+    amount: 15.99,
+    date: '2025-10-29',
+  },
+  {
+    id: 'tx_4',
+    description: 'Groceries (Main Shop)',
+    category: 'Groceries',
+    amount: 120.4,
+    date: '2025-10-29',
+  },
+  {
+    id: 'tx_5',
+    description: 'Cinema Tickets',
+    category: 'Entertainment',
+    amount: 30.0,
+    date: '2025-10-28',
+  },
+  {
+    id: 'tx_6',
+    description: 'Electricity Bill',
+    category: 'Utilities',
+    amount: 75.5,
+    date: '2025-10-28',
+  },
+  {
+    id: 'tx_7',
+    description: 'Gas Refueling',
+    category: 'Transport',
+    amount: 50.0,
+    date: '2025-10-27',
+  },
+  {
+    id: 'tx_8',
+    description: 'Office Lunch',
+    category: 'Food',
+    amount: 12.0,
+    date: '2025-10-27',
+  },
+]
 
 const dailySpendingData = [
-  { date: 'Oct 25', total: 30.00 }, { date: 'Oct 26', total: 15.50 }, { date: 'Oct 27', total: 62.00 },
-  { date: 'Oct 28', total: 105.50 }, { date: 'Oct 29', total: 136.39 }, { date: 'Oct 30', total: 65.00 },
+  { date: 'Oct 25', total: 30.0 },
+  { date: 'Oct 26', total: 15.5 },
+  { date: 'Oct 27', total: 62.0 },
+  { date: 'Oct 28', total: 105.5 },
+  { date: 'Oct 29', total: 136.39 },
+  { date: 'Oct 30', total: 65.0 },
   { date: 'Oct 31', total: 5.75 },
-];
+]
 
 const categorySpendingData = [
-  { name: 'Groceries', total: 450.20, fill: "var(--color-groceries)" },
-  { name: 'Transport', total: 115.50, fill: "var(--color-transport)" },
-  { name: 'Food', total: 205.75, fill: "var(--color-food)" },
-  { name: 'Entertainment', total: 90.00, fill: "var(--color-entertainment)" },
-  { name: 'Utilities', total: 150.00, fill: "var(--color-utilities)" },
-  { name: 'Other', total: 45.30, fill: "var(--color-other)" },
-];
+  { name: 'Groceries', total: 450.2, fill: 'var(--color-groceries)' },
+  { name: 'Transport', total: 115.5, fill: 'var(--color-transport)' },
+  { name: 'Food', total: 205.75, fill: 'var(--color-food)' },
+  { name: 'Entertainment', total: 90.0, fill: 'var(--color-entertainment)' },
+  { name: 'Utilities', total: 150.0, fill: 'var(--color-utilities)' },
+  { name: 'Other', total: 45.3, fill: 'var(--color-other)' },
+]
 
 const budgetData = [
-  { id: "b_1", name: 'Groceries', spent: 450.20, budget: 600 },
-  { id: "b_2", name: 'Entertainment', spent: 90.00, budget: 100 },
-  { id: "b_3", name: 'Transport', spent: 115.50, budget: 100 },
-  { id: "b_4", name: 'Food (Restaurants)', spent: 205.75, budget: 250 },
-];
+  { id: 'b_1', name: 'Groceries', spent: 450.2, budget: 600 },
+  { id: 'b_2', name: 'Entertainment', spent: 90.0, budget: 100 },
+  { id: 'b_3', name: 'Transport', spent: 115.5, budget: 100 },
+  { id: 'b_4', name: 'Food (Restaurants)', spent: 205.75, budget: 250 },
+]
 // --- Koniec Demo Danych ---
 
-
 export default async function ProtectedPage() {
-
   return (
     <div className="flex flex-col gap-8">
-
       {/* Rząd 1: Tytuł strony i Akcje */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-4">
-        
         <div>
-          <h2 className="text-3xl font-bold tracking-tight">
-            Dashboard
-          </h2>
+          <h2 className="text-3xl font-bold tracking-tight">Dashboard</h2>
           <p className="text-muted-foreground hidden sm:block pt-1">
             Here's an overview of your finances.
           </p>
@@ -84,7 +130,9 @@ export default async function ProtectedPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">$1,056.75</div>
-            <p className="text-xs text-muted-foreground">+3.1% from last month</p>
+            <p className="text-xs text-muted-foreground">
+              +3.1% from last month
+            </p>
           </CardContent>
         </Card>
         <Card>
@@ -96,7 +144,9 @@ export default async function ProtectedPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">+61</div>
-            <p className="text-xs text-muted-foreground">+12% from last month</p>
+            <p className="text-xs text-muted-foreground">
+              +12% from last month
+            </p>
           </CardContent>
         </Card>
         <Card>
@@ -108,7 +158,9 @@ export default async function ProtectedPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">$34.09</div>
-            <p className="text-xs text-muted-foreground">-1.5% from last month</p>
+            <p className="text-xs text-muted-foreground">
+              -1.5% from last month
+            </p>
           </CardContent>
         </Card>
         <Card>
@@ -124,7 +176,7 @@ export default async function ProtectedPage() {
           </CardContent>
         </Card>
       </div>
-      
+
       {/* Rząd 3: Ostatnie wydatki i Wykres kategorii */}
       <div className="grid gap-4 grid-cols-1 xl:grid-cols-3">
         <Card className="xl:col-span-2">
@@ -162,14 +214,15 @@ export default async function ProtectedPage() {
         <Card>
           <CardHeader>
             <CardTitle>Spending Overview</CardTitle>
-            <CardDescription>Your spending for the last 7 days.</CardDescription>
+            <CardDescription>
+              Your spending for the last 7 days.
+            </CardDescription>
           </CardHeader>
           <CardContent className="pl-2">
             <SpendingChart data={dailySpendingData} />
           </CardContent>
         </Card>
       </div>
-
     </div>
-  );
+  )
 }
