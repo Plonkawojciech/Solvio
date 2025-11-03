@@ -15,7 +15,7 @@ export default async function Page() {
   } = await supabase.auth.getUser()
 
   if (user) {
-    redirect('/protected')
+    redirect('/dashboard')
   }
   return (
     <>
@@ -76,7 +76,7 @@ export default async function Page() {
           <h2 className="text-3xl font-semibold mb-6">
             Save time and get a clear picture of your finances
           </h2>
-          <Link href="/auth/sign-up">
+          <Link href="/sign-up">
             <Button size="lg" className="px-8 h-12 text-base">
               Get Started with Solvio
             </Button>

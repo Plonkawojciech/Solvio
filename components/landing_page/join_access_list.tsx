@@ -11,7 +11,7 @@ export default function JoinAccessList() {
 
     const handleClick = () => {
         if (!email) return
-        router.push(`/auth/sign-up?email=${encodeURIComponent(email)}`)
+        router.push(`/sign-up?email=${encodeURIComponent(email)}`)
     }
 
     return (

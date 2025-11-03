@@ -10,8 +10,6 @@ function Card({ className, ...props }: React.ComponentProps<'div'>) {
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       whileHover={{
-        y: -4,
-        scale: 1.01,
         boxShadow: '0 8px 30px rgba(0,0,0,0.08)',
       }}
       transition={{ duration: 0.25, ease: 'easeOut' }}

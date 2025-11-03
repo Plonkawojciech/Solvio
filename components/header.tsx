@@ -1,5 +1,4 @@
 import Link from 'next/link'
-import { AuthButton } from './auth-button'
 import { createClient } from '@/lib/supabase/server'
 import { LogoutButton } from './logout-button'
 import { Button } from './ui/button'
@@ -15,7 +14,7 @@ export default async function Header() {
   return (
     <header className="flex items-center justify-between px-6 sm:px-10 py-4 border-b border-border/40 sticky top-0 bg-background/80 backdrop-blur-md z-50">
       <Link
-        href={user ? '/protected' : '/'}
+        href={user ? '/dashboard' : '/'}
         className="text-xl font-semibold tracking-tight"
       >
         Solvio
@@ -30,10 +29,10 @@ export default async function Header() {
         ) : (
           <div className="flex gap-2">
             <Button asChild size="sm" variant={'outline'}>
-              <Link href="/auth/login">Sign in</Link>
+              <Link href="/login">Sign in</Link>
             </Button>
             <Button asChild size="sm" variant={'default'}>
-              <Link href="/auth/sign-up">Sign up</Link>
+              <Link href="/sign-up">Sign up</Link>
             </Button>
           </div>
         )}

@@ -19,10 +19,10 @@ import {
 import Footer from "@/components/footer"
 
 const items = [
-  { label: "Dashboard", href: "/protected/dashboard", icon: Home },
-  { label: "Expenses", href: "/protected/expenses", icon: DollarSign },
-  { label: "Reports", href: "/protected/reports", icon: FileText },
-  { label: "Settings", href: "/protected/settings", icon: Settings },
+  { label: "Dashboard", href: "/dashboard", icon: Home },
+  { label: "Expenses", href: "/expenses", icon: DollarSign },
+  { label: "Reports", href: "/reports", icon: FileText },
+  { label: "Settings", href: "/settings", icon: Settings },
 ]
 
 export function AppSidebar() {
