@@ -99,14 +99,16 @@ export default async function ProtectedPage() {
     <div className="flex flex-col gap-8">
       <div className="flex flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-4">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight">Panel finansowy</h2>
+          <h2 className="text-3xl font-bold tracking-tight">
+            Financial Dashboard
+          </h2>
           <p className="text-muted-foreground hidden sm:block pt-1">
-            Podsumowanie Twoich ostatnich wydatków.
+            Summary of your recent expenses.
           </p>
         </div>
 
         <div className="flex items-center space-x-2">
-          <Button variant="outline">Ostatnie 30 dni</Button>
+          <Button variant="outline">Last 30 days</Button>
           <AddExpenseTrigger />
         </div>
       </div>
@@ -115,7 +117,7 @@ export default async function ProtectedPage() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium min-h-10 flex items-center">
-              Suma wydatków (30 dni)
+              Total Expenses (30 days)
             </CardTitle>
             <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
@@ -124,7 +126,7 @@ export default async function ProtectedPage() {
               {totalSpent.toFixed(2)} PLN
             </div>
             <p className="text-xs text-muted-foreground">
-              Łącznie w ostatnich 30 dniach
+              Total in the last 30 days
             </p>
           </CardContent>
         </Card>
@@ -132,40 +134,40 @@ export default async function ProtectedPage() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium min-h-10 flex items-center">
-              Liczba transakcji
+              Number of Transactions
             </CardTitle>
             <CreditCard className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{totalTransactions}</div>
-            <p className="text-xs text-muted-foreground">W tym miesiącu</p>
+            <p className="text-xs text-muted-foreground">This month</p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium min-h-10 flex items-center">
-              Średni dzienny wydatek
+              Average Daily Spending
             </CardTitle>
             <Activity className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{avgDaily.toFixed(2)} PLN</div>
-            <p className="text-xs text-muted-foreground">Średnia dzienna</p>
+            <p className="text-xs text-muted-foreground">Daily average</p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium min-h-10 flex items-center">
-              Najczęstsza kategoria
+              Most Frequent Category
             </CardTitle>
             <span className="h-4 w-4 text-muted-foreground">🏷️</span>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{topCategory}</div>
             <p className="text-xs text-muted-foreground">
-              Kategoria z najwyższymi wydatkami
+              Category with the highest expenses
             </p>
           </CardContent>
         </Card>
@@ -174,13 +176,13 @@ export default async function ProtectedPage() {
       <div className="grid gap-4 grid-cols-1 xl:grid-cols-3">
         <Card className="xl:col-span-2">
           <CardHeader>
-            <CardTitle>Ostatnie wydatki</CardTitle>
-            <CardDescription>Twoje najnowsze transakcje.</CardDescription>
+            <CardTitle>Recent Expenses</CardTitle>
+            <CardDescription>Your latest transactions.</CardDescription>
           </CardHeader>
           <CardContent>
             {recentExpenses.length === 0 ? (
               <p className="text-muted-foreground text-sm">
-                Brak wydatków dla Twojego konta.
+                No expenses found for your account.
               </p>
             ) : (
               <RecentExpensesTable data={recentExpenses} currency="PLN" />
@@ -190,8 +192,8 @@ export default async function ProtectedPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Wydatki według kategorii</CardTitle>
-            <CardDescription>Podział Twoich wydatków.</CardDescription>
+            <CardTitle>Expenses by Category</CardTitle>
+            <CardDescription>Breakdown of your expenses.</CardDescription>
           </CardHeader>
           <CardContent>
             <SpendingByCategoryChart
@@ -205,8 +207,8 @@ export default async function ProtectedPage() {
       <div className="grid gap-4 grid-cols-1 lg:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>Budżet</CardTitle>
-            <CardDescription>Kontrola miesięcznych budżetów.</CardDescription>
+            <CardTitle>Budget</CardTitle>
+            <CardDescription>Monthly budget tracking.</CardDescription>
           </CardHeader>
           <CardContent>
             <BudgetOverview data={budgetData} currency="PLN" />
@@ -214,8 +216,10 @@ export default async function ProtectedPage() {
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle>Wydatki tygodniowe</CardTitle>
-            <CardDescription>Twoje wydatki z ostatnich 7 dni.</CardDescription>
+            <CardTitle>Weekly Spending</CardTitle>
+            <CardDescription>
+              Your expenses from the last 7 days.
+            </CardDescription>
           </CardHeader>
           <CardContent className="pl-2">
             <SpendingChart data={dailySpendingData} currency="PLN" />

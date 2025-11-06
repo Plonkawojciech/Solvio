@@ -3,6 +3,8 @@ import { createClient } from '@/lib/supabase/server'
 import { LogoutButton } from './logout-button'
 import { Button } from './ui/button'
 import { ModeToggle } from './dark-mode-toggle'
+import { HeaderLoginDialog } from './header-login-dialog'
+import { HeaderSignupDialog } from './header-signup-dialog'
 
 export default async function Header() {
   const supabase = await createClient()
@@ -28,12 +30,8 @@ export default async function Header() {
           </div>
         ) : (
           <div className="flex gap-2">
-            <Button asChild size="sm" variant={'outline'}>
-              <Link href="/login">Sign in</Link>
-            </Button>
-            <Button asChild size="sm" variant={'default'}>
-              <Link href="/sign-up">Sign up</Link>
-            </Button>
+            <HeaderLoginDialog />
+            <HeaderSignupDialog />
           </div>
         )}
         <ModeToggle />
