@@ -12,8 +12,8 @@ export function AddExpenseTrigger({ onAction }: { onAction?: () => void }) {
 
   const handleAction = React.useCallback(() => {
     onAction?.()
-    router.refresh()         // ⬅️ kluczowe odświeżenie danych SSR
-    setIsSheetOpen(false)    // domknięcie po sukcesie
+    router.refresh()         
+    setIsSheetOpen(false)
   }, [onAction, router])
 
   return (
