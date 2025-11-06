@@ -16,9 +16,8 @@ type ChartData = {
   total: number;
 };
 
-export function SpendingChart({ data }: { data: ChartData[] }) {
+export function SpendingChart({ data, currency }: { data: ChartData[]; currency: string }) {
   return (
-    // ResponsiveContainer jest kluczowy, aby wykres dopasował się do karty
     <ResponsiveContainer width="100%" height={350}>
       <BarChart data={data}>
         <CartesianGrid strokeDasharray="3 3" vertical={false} />
@@ -34,7 +33,7 @@ export function SpendingChart({ data }: { data: ChartData[] }) {
           fontSize={12}
           tickLine={false}
           axisLine={false}
-          tickFormatter={(value) => `$${value}`}
+          tickFormatter={(value) => `${value} ${currency}`}
         />
         
         <Tooltip

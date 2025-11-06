@@ -1,14 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { Button } from '@/components/ui/button'
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
-import { Activity, CreditCard, DollarSign } from 'lucide-react'
-
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Activity, CreditCard, DollarSign, Tag } from 'lucide-react'
 import { RecentExpensesTable } from '@/components/protected/dashboard/recent-expenses-table'
 import { SpendingChart } from '@/components/protected/dashboard/spending-chart'
 import { SpendingByCategoryChart } from '@/components/protected/dashboard/spending-by-category-chart'
@@ -16,38 +9,31 @@ import { BudgetOverview } from '@/components/protected/dashboard/budget-overview
 import { AddExpenseTrigger } from '@/components/protected/dashboard/add-expense-trigger'
 
 export default async function ProtectedPage() {
-  const supabase = createClient()
 
-  console.log('🔍 [Dashboard] Fetching expenses...')
+  const supabase = createClient()
 
   const { data: expenses, error } = await (
     await supabase
   )
     .from('expenses')
-    .select(
-      `
+    .select(`
       id,
       title,
       amount,
       date,
       category_id,
       categories (name)
-    `
-    )
+    `)
     .order('date', { ascending: false })
     .limit(30)
 
-  if (error) {
-    console.error('❌ Supabase error:', error)
-  } else {
-    console.log('✅ [Dashboard] Expenses loaded:', expenses)
-  }
+  if (error) console.error('❌ Supabase error:', error)
 
   const recentExpenses =
     expenses?.map((e) => ({
       id: e.id,
       description: e.title,
-      category: e.categories?.name || 'Brak kategorii',
+      category: e.categories?.name || 'No category',
       amount: Number(e.amount),
       date: e.date,
     })) || []
@@ -61,13 +47,11 @@ export default async function ProtectedPage() {
     categoryTotals[e.category] = (categoryTotals[e.category] || 0) + e.amount
   })
 
-  const categorySpendingData = Object.entries(categoryTotals).map(
-    ([name, total]) => ({
-      name,
-      total,
-      fill: 'var(--color-primary)',
-    })
-  )
+  const categorySpendingData = Object.entries(categoryTotals).map(([name, total]) => ({
+    name,
+    total,
+    fill: 'var(--color-primary)',
+  }))
 
   const topCategory =
     Object.entries(categoryTotals).sort((a, b) => b[1] - a[1])[0]?.[0] || '—'
@@ -82,7 +66,7 @@ export default async function ProtectedPage() {
         .filter((r) => r.date?.startsWith(dateStr))
         .reduce((sum, r) => sum + r.amount, 0)
       return {
-        date: d.toLocaleDateString('pl-PL', { month: 'short', day: 'numeric' }),
+        date: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
         total,
       }
     })
@@ -99,9 +83,7 @@ export default async function ProtectedPage() {
     <div className="flex flex-col gap-8">
       <div className="flex flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-4">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight">
-            Financial Dashboard
-          </h2>
+          <h2 className="text-3xl font-bold tracking-tight">Financial Dashboard</h2>
           <p className="text-muted-foreground hidden sm:block pt-1">
             Summary of your recent expenses.
           </p>
@@ -122,12 +104,8 @@ export default async function ProtectedPage() {
             <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
-              {totalSpent.toFixed(2)} PLN
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Total in the last 30 days
-            </p>
+            <div className="text-2xl font-bold">{totalSpent.toFixed(2)} PLN</div>
+            <p className="text-xs text-muted-foreground">Total in the last 30 days</p>
           </CardContent>
         </Card>
 
@@ -162,13 +140,12 @@ export default async function ProtectedPage() {
             <CardTitle className="text-sm font-medium min-h-10 flex items-center">
               Most Frequent Category
             </CardTitle>
-            <span className="h-4 w-4 text-muted-foreground">🏷️</span>
+            <Tag className="h-4 w-4 text-muted-foreground" />
+            
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{topCategory}</div>
-            <p className="text-xs text-muted-foreground">
-              Category with the highest expenses
-            </p>
+            <p className="text-xs text-muted-foreground">Category with the highest expenses</p>
           </CardContent>
         </Card>
       </div>
@@ -181,9 +158,7 @@ export default async function ProtectedPage() {
           </CardHeader>
           <CardContent>
             {recentExpenses.length === 0 ? (
-              <p className="text-muted-foreground text-sm">
-                No expenses found for your account.
-              </p>
+              <p className="text-muted-foreground text-sm">No expenses found.</p>
             ) : (
               <RecentExpensesTable data={recentExpenses} currency="PLN" />
             )}
@@ -196,10 +171,7 @@ export default async function ProtectedPage() {
             <CardDescription>Breakdown of your expenses.</CardDescription>
           </CardHeader>
           <CardContent>
-            <SpendingByCategoryChart
-              data={categorySpendingData}
-              currency="PLN"
-            />
+            <SpendingByCategoryChart data={categorySpendingData} currency="PLN" />
           </CardContent>
         </Card>
       </div>
@@ -217,9 +189,7 @@ export default async function ProtectedPage() {
         <Card>
           <CardHeader>
             <CardTitle>Weekly Spending</CardTitle>
-            <CardDescription>
-              Your expenses from the last 7 days.
-            </CardDescription>
+            <CardDescription>Your expenses from the last 7 days.</CardDescription>
           </CardHeader>
           <CardContent className="pl-2">
             <SpendingChart data={dailySpendingData} currency="PLN" />

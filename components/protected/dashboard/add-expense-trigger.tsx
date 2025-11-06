@@ -1,30 +1,31 @@
-'use client' // To jest kluczowe! Ten komponent zarządza stanem.
+'use client'
 
 import * as React from 'react'
 import { Button } from '@/components/ui/button'
 import { PlusCircle } from 'lucide-react'
 import { AddExpenseSheet } from './add-expense-sheet'
+import { useRouter } from 'next/navigation'
 
-/**
- * To jest "Trigger" - komponent kliencki, który zastępuje
- * stary przycisk "Add Expense". Zawiera w sobie logikę
- * otwierania i zamykania panelu bocznego (Sheet).
- */
-export function AddExpenseTrigger() {
-  // 1. Dodajemy stan do kontrolowania panelu
+export function AddExpenseTrigger({ onAction }: { onAction?: () => void }) {
   const [isSheetOpen, setIsSheetOpen] = React.useState(false)
+  const router = useRouter()
+
+  const handleAction = React.useCallback(() => {
+    onAction?.()
+    router.refresh()         // ⬅️ kluczowe odświeżenie danych SSR
+    setIsSheetOpen(false)    // domknięcie po sukcesie
+  }, [onAction, router])
 
   return (
     <>
-      {/* 2. To jest nasz "trigger" - przycisk, który otwiera panel */}
       <Button onClick={() => setIsSheetOpen(true)}>
         <PlusCircle className="mr-2 h-4 w-4" /> Add Expense
       </Button>
 
-      {/* 3. To jest sam panel, który jest renderowany i kontrolowany przez stan */}
       <AddExpenseSheet
         isOpen={isSheetOpen}
         onClose={() => setIsSheetOpen(false)}
+        onAction={handleAction}  // ⬅️ podajemy do sheeta
       />
     </>
   )

@@ -8,7 +8,6 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 
-// Definiujemy typ dla pojedynczego wydatku
 type Expense = {
   id: string;
   description: string;
@@ -17,8 +16,6 @@ type Expense = {
   date: string;
 };
 
-// 👇 POPRAWKA: Mapowanie kategorii na zmienne CSS z Twojej palety
-// Używamy tych samych kolorów co na wykresie kołowym dla spójności
 const categoryChartColors: { [key: string]: string } = {
   "Groceries": "--chart-1",
   "Transport": "--chart-2",
@@ -28,10 +25,8 @@ const categoryChartColors: { [key: string]: string } = {
   "Other": "--chart-6",
 };
 
-export function RecentExpensesTable({ data }: { data: Expense[] }) {
+export function RecentExpensesTable({ data, currency }: { data: Expense[]; currency: string }) {
   return (
-    // 👇 POPRAWKA: Usunięto zbędny div z klasą 'border'.
-    // Tabela będzie teraz renderowana bezpośrednio w CardContent (który ma padding).
     <Table>
       <TableHeader>
         <TableRow>
@@ -50,18 +45,15 @@ export function RecentExpensesTable({ data }: { data: Expense[] }) {
               <TableCell>
                 <div className="font-medium">{expense.description}</div>
                 <div className="text-sm text-muted-foreground hidden md:inline">
-                  {new Date(expense.date).toLocaleDateString("pl-PL", { // Zmiana na pl-PL
+                  {new Date(expense.date).toLocaleDateString("en-US", {
                     day: "numeric",
                     month: "long",
                   })}
                 </div>
               </TableCell>
               <TableCell>
-                {/* 👇 POPRAWKA: Używamy 'style' do dynamicznego kolorowania
-                    zamiast 'variant'. Tworzymy delikatny badge pasujący do wykresów.
-                */}
                 <Badge
-                  variant="outline" // Używamy outline jako bazy
+                  variant="outline"
                   style={{
                     backgroundColor: `hsl(var(${colorVar}) / 0.15)`,
                     color: `hsl(var(${colorVar}))`,
@@ -73,7 +65,7 @@ export function RecentExpensesTable({ data }: { data: Expense[] }) {
               </TableCell>
               {/* 👇 POPRAWKA: Zmiana koloru kwoty z czerwonego na neutralny */}
               <TableCell className="text-right font-medium text-muted-foreground">
-                -${expense.amount.toFixed(2)}
+                -{expense.amount.toFixed(2)} {currency}
               </TableCell>
             </TableRow>
           );
