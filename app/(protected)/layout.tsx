@@ -19,7 +19,7 @@ export default async function ProtectedLayout({
 
   return (
     <SidebarProvider>
-      <div className="flex flex-col min-h-screen">
+      <div className="flex flex-col min-h-screen w-full">
         <Header />
         <div className="flex flex-1 overflow-hidden">
           <AppSidebar />
