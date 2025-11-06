@@ -11,7 +11,6 @@ import {
   AlertCircle,
   Calendar as CalendarIcon,
   FileText,
-  ShoppingBag,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
@@ -255,40 +254,67 @@ export function AddExpenseSheet({
                     </FormItem>
                   )}
                 />
-
                 <FormField
                   control={form.control}
                   name="date"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Date</FormLabel>
-                      <Popover>
-                        <PopoverTrigger asChild>
-                          <Button
-                            variant="outline"
-                            className={cn(
-                              'justify-start text-left font-normal w-full',
-                              !field.value && 'text-muted-foreground'
-                            )}
+                  render={({ field }) => {
+                    const [open, setOpen] = React.useState(false)
+                    const triggerRef = React.useRef<HTMLButtonElement>(null)
+                    const [triggerWidth, setTriggerWidth] = React.useState<number>(0)
+
+                    React.useEffect(() => {
+                      const measure = () => {
+                        if (triggerRef.current) setTriggerWidth(triggerRef.current.offsetWidth)
+                      }
+                      measure()
+                      const ro = new ResizeObserver(measure)
+                      if (triggerRef.current) ro.observe(triggerRef.current)
+                      window.addEventListener('resize', measure)
+                      return () => {
+                        ro.disconnect()
+                        window.removeEventListener('resize', measure)
+                      }
+                    }, [])
+
+                    return (
+                      <FormItem>
+                        <FormLabel>Date</FormLabel>
+                        <Popover open={open} onOpenChange={setOpen}>
+                          <PopoverTrigger asChild>
+                            <Button
+                              ref={triggerRef}
+                              variant="outline"
+                              className={cn(
+                                "justify-start text-left font-normal w-full",
+                                !field.value && "text-muted-foreground"
+                              )}
+                            >
+                              <CalendarIcon className="mr-2 h-4 w-4" />
+                              {field.value ? format(field.value, "LLL dd, yyyy") : "Pick a date"}
+                            </Button>
+                          </PopoverTrigger>
+
+                          {/* <-- szerokość = szerokość przycisku */}
+                          <PopoverContent
+                            align="start"
+                            sideOffset={4}
+                            className="p-0"
+                            style={{ width: triggerWidth }}
                           >
-                            <CalendarIcon className="mr-2 h-4 w-4" />
-                            {field.value
-                              ? format(field.value, 'LLL dd, yyyy')
-                              : 'Pick a date'}
-                          </Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-auto p-0" align="start">
-                          <Calendar
-                            mode="single"
-                            selected={field.value}
-                            onSelect={(d) => d && field.onChange(d)}
-                            initialFocus
-                          />
-                        </PopoverContent>
-                      </Popover>
-                      <FormMessage />
-                    </FormItem>
-                  )}
+                            <div className="w-full">
+                              <Calendar
+                                mode="single"
+                                selected={field.value}
+                                onSelect={(d) => d && field.onChange(d)}
+                                className="w-full"
+                              />
+                            </div>
+                          </PopoverContent>
+                        </Popover>
+                        <FormMessage />
+                      </FormItem>
+                    )
+                  }}
                 />
               </div>
 
@@ -422,8 +448,8 @@ export function AddExpenseSheet({
             {isUploading
               ? 'Uploading...'
               : isSubmitting
-              ? 'Saving...'
-              : 'Save expense'}
+                ? 'Saving...'
+                : 'Save expense'}
           </Button>
         </SheetFooter>
       </SheetContent>
