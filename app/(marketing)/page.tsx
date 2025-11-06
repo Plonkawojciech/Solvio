@@ -135,7 +135,6 @@ export default async function Page() {
             Save time. Gain clarity.
           </h2>
           <Link href="/sign-up">
-            {/* Interaktywny przycisk z transformacją po najechaniu */}
             <Button
               size="lg"
               className="px-8 h-12 text-base font-semibold shadow-lg shadow-primary/20 hover:shadow-xl hover:shadow-primary/30 transition-all duration-300 hover:scale-105"
@@ -145,7 +144,6 @@ export default async function Page() {
           </Link>
         </section>
       </main>
-      <Footer />
     </>
   )
 }
