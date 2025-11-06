@@ -1,3 +1,5 @@
+'use client'
+
 import {
   AlertDialog,
   AlertDialogTrigger,
@@ -9,14 +11,14 @@ import {
   AlertDialogCancel,
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
-import { SignUpForm } from '@/components/sign-up-form'
+import { LoginForm } from '@/components/login-form'
 
-export function HeaderSignupDialog() {
+export function LoginDialogBtn() {
   return (
     <AlertDialog>
       <AlertDialogTrigger asChild>
-        <Button size="sm" variant="default">
-          Sign up
+        <Button size="sm" variant="outline">
+          Sign in
         </Button>
       </AlertDialogTrigger>
 
@@ -29,15 +31,15 @@ export function HeaderSignupDialog() {
       >
         <AlertDialogHeader>
           <AlertDialogTitle className="text-xl font-semibold tracking-tight">
-            Create your Solvio account
+            Sign in to your account
           </AlertDialogTitle>
           <AlertDialogDescription className="text-sm text-muted-foreground">
-            Enter your email and password to create an account.
+            Enter your email and password to access your dashboard.
           </AlertDialogDescription>
         </AlertDialogHeader>
 
         <div className="pt-4">
-          <SignUpForm />
+          <LoginForm />
         </div>
 
         <AlertDialogFooter className="pt-4">
