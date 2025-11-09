@@ -20,3 +20,4 @@ export async function AuthButton(user: { user: any }) {
     </div>
   )
 }
+
