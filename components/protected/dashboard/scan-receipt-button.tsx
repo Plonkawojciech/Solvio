@@ -2,11 +2,11 @@
 
 import * as React from 'react'
 import { Button } from '@/components/ui/button'
-import { PlusCircle } from 'lucide-react'
-import { AddExpenseSheet } from './add-expense-sheet'
+import { Camera } from 'lucide-react'
 import { useRouter } from 'next/navigation'
+import { ScanReceiptSheet } from './scan-receipt-sheet'
 
-export function AddExpenseTrigger({ onAction }: { onAction?: () => void }) {
+export function ScanReceiptButton({ onAction }: { onAction?: () => void }) {
   const [isSheetOpen, setIsSheetOpen] = React.useState(false)
   const router = useRouter()
 
@@ -18,11 +18,11 @@ export function AddExpenseTrigger({ onAction }: { onAction?: () => void }) {
 
   return (
     <>
-      <Button variant={"outline"} onClick={() => setIsSheetOpen(true)}>
-        <PlusCircle className="mr-2 h-4 w-4" /> Add Expense
+      <Button onClick={() => setIsSheetOpen(true)}>
+        <Camera className="mr-2 h-4 w-4" /> Scan Receipt
       </Button>
 
-      <AddExpenseSheet
+      <ScanReceiptSheet
         isOpen={isSheetOpen}
         onClose={() => setIsSheetOpen(false)}
         onAction={handleAction}  // ⬅️ podajemy do sheeta

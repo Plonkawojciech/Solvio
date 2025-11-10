@@ -1,13 +1,13 @@
 import { createClient } from '@/lib/supabase/server'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Activity, CreditCard, DollarSign, Tag } from 'lucide-react'
+import { Activity, CreditCard, DollarSign, Scan, Tag } from 'lucide-react'
 import { RecentExpensesTable } from '@/components/protected/dashboard/recent-expenses-table'
 import { SpendingChart } from '@/components/protected/dashboard/spending-chart'
 import { SpendingByCategoryChart } from '@/components/protected/dashboard/spending-by-category-chart'
 import { BudgetOverview } from '@/components/protected/dashboard/budget-overview'
 import { AddExpenseTrigger } from '@/components/protected/dashboard/add-expense-trigger'
-
+import { ScanReceiptButton } from '@/components/protected/dashboard/scan-receipt-button'
 export default async function ProtectedPage() {
   const supabase = await createClient()
 
@@ -123,7 +123,7 @@ export default async function ProtectedPage() {
           <p className="text-muted-foreground hidden sm:block pt-1">Summary of your recent expenses.</p>
         </div>
         <div className="flex items-center space-x-2">
-          <Button variant="outline">Last 30 days</Button>
+          <ScanReceiptButton />
           <AddExpenseTrigger />
         </div>
       </div>
