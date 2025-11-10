@@ -14,7 +14,7 @@ export default async function Header() {
   return (
     <header className="flex items-center justify-between px-6 sm:px-10 py-4 border-b border-border/40 sticky top-0 bg-background/80 backdrop-blur-md z-50">
       <Link
-        href={user ? '/protected' : '/'}
+        href={user ? '/' : '/'}
         className="text-xl font-semibold tracking-tight"
       >
         Solvio
