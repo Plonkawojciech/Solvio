@@ -29,6 +29,7 @@
     "docx": "^9.5.1",
     "embla-carousel-react": "^8.6.0",
     "framer-motion": "^12.23.24",
+    "heic2any": "^0.0.4",
     "jszip": "^3.10.1",
     "lucide-react": "^0.511.0",
     "next": "latest",
@@ -41,6 +42,7 @@
     "react-dom": "^19.0.0",
     "react-hook-form": "^7.66.0",
     "recharts": "^2.15.4",
+    "sharp": "^0.34.5",
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.3.0",
     "zod": "^4.1.12"

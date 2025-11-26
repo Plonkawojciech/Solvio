@@ -1,12 +1,19 @@
-import { createClient } from '@/lib/supabase/server'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Activity, CreditCard, DollarSign, Scan, Tag } from 'lucide-react'
-import { RecentExpensesTable } from '@/components/protected/dashboard/recent-expenses-table'
-import { SpendingChart } from '@/components/protected/dashboard/spending-chart'
-import { SpendingByCategoryChart } from '@/components/protected/dashboard/spending-by-category-chart'
-import { BudgetOverview } from '@/components/protected/dashboard/budget-overview'
-import { AddExpenseTrigger } from '@/components/protected/dashboard/add-expense-trigger'
-import { ScanReceiptButton } from '@/components/protected/dashboard/scan-receipt-button'
+import { createClient } from '@/lib/supabase/server';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
+import { Activity, CreditCard, DollarSign, Scan, Tag } from 'lucide-react';
+import { RecentExpensesTable } from '@/components/protected/dashboard/recent-expenses-table';
+import { SpendingChart } from '@/components/protected/dashboard/spending-chart';
+import { SpendingByCategoryChart } from '@/components/protected/dashboard/spending-by-category-chart';
+import { BudgetOverview } from '@/components/protected/dashboard/budget-overview';
+import { AddExpenseTrigger } from '@/components/protected/dashboard/add-expense-trigger';
+import { ScanReceiptButton } from '@/components/protected/dashboard/scan-receipt-button';
+import { Button } from '@/components/ui/button';
 export default async function ProtectedPage() {
   const supabase = await createClient();
 
@@ -156,6 +163,9 @@ export default async function ProtectedPage() {
         <div className="flex items-center space-x-2">
           <ScanReceiptButton />
           <AddExpenseTrigger />
+          <Button variant="outline" size="default">
+            take photo
+          </Button>
         </div>
       </div>
 
