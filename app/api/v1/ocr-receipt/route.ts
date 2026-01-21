@@ -33,9 +33,15 @@ type OcrResponse = {
   warnings?: string[];
 };
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const openai = process.env.OPENAI_API_KEY 
+  ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+  : null;
 
 export async function POST(req: NextRequest) {
+  if (!openai) {
+    return json({ error: 'OpenAI API key is not configured' }, 500);
+  }
+
   let form: FormData;
   try {
     form = await req.formData();
@@ -72,8 +78,9 @@ export async function POST(req: NextRequest) {
       if (res?.parsed) receipts.push(res.parsed);
       if (res?.provider) provider = res.provider;
       if (res?.warnings?.length) warnings.push(...res.warnings);
-    } catch (e: any) {
-      warnings.push(`processImage failed for ${f.name}: ${e?.message || e}`);
+    } catch (e: unknown) {
+      const errorMessage = e instanceof Error ? e.message : String(e);
+      warnings.push(`processImage failed for ${f.name}: ${errorMessage}`);
     }
   }
 
@@ -98,92 +105,94 @@ export async function POST(req: NextRequest) {
   };
 
   return json(payload, 200);
-}
 
-function json(body: any, status = 200) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { 'Content-Type': 'application/json' },
-  });
-}
-
-/** OCR+parsowanie jednym wywołaniem (Chat Completions + Structured Outputs) */
-async function processImage(opts: {
-  buffer: Buffer;
-  filename: string;
-  mime: string;
-}): Promise<OcrResponse> {
-  const { buffer, mime } = opts;
-
-  if (!/^image\//i.test(mime)) {
-    return {
-      receipt_id: 'unknown',
-      ocrText: '',
-      parsed: {
-        vendor: null,
-        date: null,
-        total: null,
-        currency: null,
-        items: [],
-        ocrText: '',
-      },
-      provider: 'openai:gpt-4o-2024-08-06',
-      warnings: ['Unsupported MIME, only images are processed'],
-    };
+  function json(body: unknown, status = 200) {
+    return new Response(JSON.stringify(body), {
+      status,
+      headers: { 'Content-Type': 'application/json' },
+    });
   }
 
-  const b64 = buffer.toString('base64');
-  const dataUrl = `data:${mime};base64,${b64}`;
+  /** OCR+parsowanie jednym wywołaniem (Chat Completions + Structured Outputs) */
+  async function processImage(opts: {
+    buffer: Buffer;
+    filename: string;
+    mime: string;
+  }): Promise<OcrResponse> {
+    const { buffer, mime } = opts;
 
-  const completion = await openai.chat.completions.parse({
-    model: 'gpt-4o-2024-08-06', // model z obsługą obrazów
-    temperature: 0,
-    response_format: zodResponseFormat(ReceiptZ, 'receipt'),
-    messages: [
-      {
-        role: 'system',
-        content:
-          'You are an OCR and receipt parser. Return a single JSON object named "receipt" that matches the schema exactly. ' +
-          'Extract full OCR text into ocrText. Normalize date to YYYY-MM-DD. Use dot decimal and ISO 4217 currency codes.',
-      },
-      {
-        role: 'user',
-        content: [
-          {
-            type: 'text',
-            text: 'Extract structured receipt fields and the full OCR text from this image.',
-          },
-          // KLUCZOWA ZMIANA: używamy "image_url", NIE "input_image"
-          { type: 'image_url', image_url: { url: dataUrl } },
-        ],
-      },
-    ],
-  });
+    if (!/^image\//i.test(mime)) {
+      return {
+        receipt_id: 'unknown',
+        ocrText: '',
+        parsed: {
+          vendor: null,
+          date: null,
+          total: null,
+          currency: null,
+          items: [],
+          ocrText: '',
+        },
+        provider: 'openai:gpt-4o-2024-08-06',
+        warnings: ['Unsupported MIME, only images are processed'],
+      };
+    }
 
-  const parsed = completion.choices[0]?.message?.parsed as Receipt | undefined;
+    const b64 = buffer.toString('base64');
+    const dataUrl = `data:${mime};base64,${b64}`;
 
-  if (!parsed) {
+    const completion = await openai.chat.completions.parse({
+      model: 'gpt-4o-2024-08-06', // model z obsługą obrazów
+      temperature: 0,
+      response_format: zodResponseFormat(ReceiptZ, 'receipt'),
+      messages: [
+        {
+          role: 'system',
+          content:
+            'You are an OCR and receipt parser. Return a single JSON object named "receipt" that matches the schema exactly. ' +
+            'Extract full OCR text into ocrText. Normalize date to YYYY-MM-DD. Use dot decimal and ISO 4217 currency codes.',
+        },
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'text',
+              text: 'Extract structured receipt fields and the full OCR text from this image.',
+            },
+            // KLUCZOWA ZMIANA: używamy "image_url", NIE "input_image"
+            { type: 'image_url', image_url: { url: dataUrl } },
+          ],
+        },
+      ],
+    });
+
+    const parsed = completion.choices[0]?.message?.parsed as
+      | Receipt
+      | undefined;
+
+    if (!parsed) {
+      return {
+        receipt_id: 'unknown',
+        ocrText: '',
+        parsed: {
+          vendor: null,
+          date: null,
+          total: null,
+          currency: null,
+          items: [],
+          ocrText: '',
+        },
+        provider: 'openai:gpt-4o-2024-08-06',
+        warnings: ['No parsed payload returned'],
+      };
+    }
+
     return {
       receipt_id: 'unknown',
-      ocrText: '',
-      parsed: {
-        vendor: null,
-        date: null,
-        total: null,
-        currency: null,
-        items: [],
-        ocrText: '',
-      },
+      ocrText: parsed.ocrText ?? '',
+      parsed,
       provider: 'openai:gpt-4o-2024-08-06',
-      warnings: ['No parsed payload returned'],
+      warnings: [],
     };
   }
-
-  return {
-    receipt_id: 'unknown',
-    ocrText: parsed.ocrText ?? '',
-    parsed,
-    provider: 'openai:gpt-4o-2024-08-06',
-    warnings: [],
-  };
 }

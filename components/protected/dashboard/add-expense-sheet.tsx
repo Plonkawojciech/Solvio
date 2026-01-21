@@ -94,17 +94,36 @@ export function AddExpenseSheet({
     const fetchCategories = async () => {
       const { data, error } = await supabase
         .from('categories')
-        .select('*')
+        .select('id, name, icon')
         .order('name')
-      if (error) console.error(error)
-      else setCategories(data || [])
+      if (error) {
+        if (process.env.NODE_ENV === 'development') {
+          console.error('[AddExpense] categories error:', error)
+        }
+        setFormError('Failed to load categories')
+      } else {
+        setCategories(data || [])
+      }
     }
     fetchCategories()
-  }, [supabase])
+    // supabase is memoized, safe to include in deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files)
-      setFiles((prev) => [...prev, ...Array.from(e.target.files)])
+    if (e.target.files) {
+      const maxFileSize = 10 * 1024 * 1024; // 10MB
+      const newFiles = Array.from(e.target.files).filter(file => {
+        if (file.size > maxFileSize) {
+          toast.error('File too large', {
+            description: `${file.name} exceeds the 10MB limit.`
+          })
+          return false
+        }
+        return true
+      })
+      setFiles((prev) => [...prev, ...newFiles])
+    }
   }
 
   const removeFile = (i: number) =>
@@ -180,9 +199,12 @@ export function AddExpenseSheet({
       form.reset()
       setFiles([])
       onAction?.()
-    } catch (error: any) {
-      console.error(error)
-      const msg = error?.message || 'Failed to save expense.'
+      onClose()
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Failed to save expense.'
+      if (process.env.NODE_ENV === 'development') {
+        console.error('[AddExpense] error:', error)
+      }
       setFormError(msg)
       toast.error('Error', { description: msg })
     } finally {

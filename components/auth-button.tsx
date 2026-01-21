@@ -2,8 +2,11 @@ import Link from 'next/link'
 import { Button } from './ui/button'
 import { LogoutButton } from './logout-button'
 
-export async function AuthButton(user: { user: any }) {
-  console.log(user)
+interface AuthButtonProps {
+  user: { email?: string } | null
+}
+
+export async function AuthButton({ user }: AuthButtonProps) {
   return user ? (
     <div className="flex items-center gap-4">
       Hey, {user.email}!

@@ -52,13 +52,15 @@ export default async function ProtectedPage() {
       .limit(300),
   ]);
 
-  if (categoriesError)
-    console.error('[Dashboard] categories error:', categoriesError);
-  if (settingsError)
-    console.error('[Dashboard] settings error:', settingsError);
-  if (budgetsError) console.error('[Dashboard] budgets error:', budgetsError);
-  if (expensesError)
-    console.error('[Dashboard] expenses error:', expensesError);
+  if (categoriesError || settingsError || budgetsError || expensesError) {
+    // Log errors in development only
+    if (process.env.NODE_ENV === 'development') {
+      if (categoriesError) console.error('[Dashboard] categories error:', categoriesError);
+      if (settingsError) console.error('[Dashboard] settings error:', settingsError);
+      if (budgetsError) console.error('[Dashboard] budgets error:', budgetsError);
+      if (expensesError) console.error('[Dashboard] expenses error:', expensesError);
+    }
+  }
 
   const currency = (settingsRow?.currency_id || 'PLN').toUpperCase();
   const lang = (settingsRow?.language_id || 'EN').toUpperCase();
@@ -71,7 +73,7 @@ export default async function ProtectedPage() {
   >(
     (categories ?? []).map((c) => [
       c.id as string,
-      { id: c.id as string, name: c.name as string, icon: (c as any).icon },
+      { id: c.id as string, name: c.name as string, icon: c.icon as string | null | undefined },
     ])
   );
   const budgetByCatId = new Map<string, number>(
@@ -163,9 +165,6 @@ export default async function ProtectedPage() {
         <div className="flex items-center space-x-2">
           <ScanReceiptButton />
           <AddExpenseTrigger />
-          <Button variant="outline" size="default">
-            take photo
-          </Button>
         </div>
       </div>
 

@@ -77,25 +77,28 @@ export function ScanReceiptSheet({
       return;
     }
 
-    console.log(
-      '[ScanReceipt] start submit, files:',
-      files.map((f) => ({ name: f.name, type: f.type, size: f.size }))
-    );
-
     const { data: userData, error: userErr } = await supabase.auth.getUser();
     if (userErr || !userData?.user) {
-      console.error('[ScanReceipt] auth error:', userErr);
+      if (process.env.NODE_ENV === 'development') {
+        console.error('[ScanReceipt] auth error:', userErr);
+      }
       setErrorMsg('Musisz być zalogowany.');
       return;
     }
     const user = userData.user;
-    console.log('[ScanReceipt] user:', user.id);
 
     try {
       setIsUploading(true);
 
+      // Validate file sizes (max 10MB per file)
+      const maxFileSize = 10 * 1024 * 1024; // 10MB
+      for (const file of files) {
+        if (file.size > maxFileSize) {
+          throw new Error(`File ${file.name} is too large. Maximum size is 10MB.`);
+        }
+      }
+
       // 1) rekord w receipts
-      console.log('[ScanReceipt] inserting receipt...');
       const { data: receipt, error: receiptError } = await supabase
         .from('receipts')
         .insert([{ user_id: user.id }])
@@ -103,19 +106,16 @@ export function ScanReceiptSheet({
         .single();
 
       if (receiptError) {
-        console.error('[ScanReceipt] receipts insert error:', receiptError);
+        if (process.env.NODE_ENV === 'development') {
+          console.error('[ScanReceipt] receipts insert error:', receiptError);
+        }
         throw receiptError;
       }
       const receiptId = receipt.id as string;
-      console.log('[ScanReceipt] receipt created:', receiptId);
 
       // 2) upload do Storage + zapis linków
       for (const file of files) {
         const path = `${user.id}/${receiptId}/${file.name}`;
-        console.log('[ScanReceipt] uploading file to storage:', {
-          bucket: 'receipts',
-          path,
-        });
 
         const { error: uploadError } = await supabase.storage
           .from('receipts')
@@ -125,7 +125,9 @@ export function ScanReceiptSheet({
           });
 
         if (uploadError) {
-          console.error('[ScanReceipt] storage upload error:', uploadError);
+          if (process.env.NODE_ENV === 'development') {
+            console.error('[ScanReceipt] storage upload error:', uploadError);
+          }
           throw uploadError;
         }
 
@@ -133,16 +135,15 @@ export function ScanReceiptSheet({
           .from('receipts')
           .getPublicUrl(path);
         const publicUrl = pub.publicUrl;
-        console.log('[ScanReceipt] public url:', publicUrl);
 
-        console.log('[ScanReceipt] inserting receipt_images row...');
         const { error: imgErr } = await supabase
           .from('receipt_images')
-          // USUWAM path, bo kolumna nie istnieje u Ciebie
           .insert([{ receipt_id: receiptId, image_url: publicUrl }]);
 
         if (imgErr) {
-          console.error('[ScanReceipt] receipt_images insert error:', imgErr);
+          if (process.env.NODE_ENV === 'development') {
+            console.error('[ScanReceipt] receipt_images insert error:', imgErr);
+          }
           throw imgErr;
         }
       }
@@ -151,7 +152,6 @@ export function ScanReceiptSheet({
       setIsProcessing(true);
 
       // 3) OCR — wyślij realne pliki + metadane
-      console.log('[ScanReceipt] calling OCR API with multipart payload...');
       const fd = new FormData();
       fd.append('receiptId', receiptId);
       fd.append('userId', user.id);
@@ -163,12 +163,13 @@ export function ScanReceiptSheet({
       });
       if (!res.ok) {
         const msg = await res.text();
-        console.error('[ScanReceipt] OCR HTTP error:', res.status, msg);
+        if (process.env.NODE_ENV === 'development') {
+          console.error('[ScanReceipt] OCR HTTP error:', res.status, msg);
+        }
         throw new Error(msg || 'OCR zwrócił błąd.');
       }
 
       const parsed: OcrResult = await res.json();
-      console.log('[ScanReceipt] OCR response:', parsed);
 
       toast.success('Zakończono skanowanie', {
         description: 'Dane z paragonu zostały odczytane.',
@@ -177,15 +178,16 @@ export function ScanReceiptSheet({
       onParsed?.(parsed ?? { receipt_id: receiptId });
       resetState();
       onClose();
-    } catch (err: any) {
-      console.error('[ScanReceipt] catch:', err);
-      const msg = err?.message || 'Błąd podczas skanowania.';
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Błąd podczas skanowania.';
+      if (process.env.NODE_ENV === 'development') {
+        console.error('[ScanReceipt] catch:', err);
+      }
       setErrorMsg(msg);
       toast.error('Błąd', { description: msg });
     } finally {
       setIsUploading(false);
       setIsProcessing(false);
-      console.log('[ScanReceipt] finished');
     }
   };
 

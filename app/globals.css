@@ -175,23 +175,11 @@
   ::file-selector-button {
     border-color: var(--color-gray-200, currentcolor);
   }
-}
 
-/* reset bazowy */
-@layer base {
   * {
     @apply border-border outline-ring/50;
   }
-  body {
-    @apply bg-background text-foreground;
-  }
-}
-
-
-@layer base {
-  * {
-    @apply border-border outline-ring/50;
-  }
+  
   body {
     @apply bg-background text-foreground;
   }

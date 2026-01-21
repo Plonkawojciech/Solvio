@@ -37,7 +37,9 @@ export default async function ReportsPage() {
     supabase.from("expenses").select("date").eq("user_id", user.id).order("date", { ascending: true }),
   ])
 
-  if (datesError) console.error("[Reports] expenses dates error:", datesError)
+  if (datesError && process.env.NODE_ENV === 'development') {
+    console.error("[Reports] expenses dates error:", datesError)
+  }
 
   const currency = (settings?.currency_id || "PLN").toUpperCase()
   const lang = (settings?.language_id || "EN").toUpperCase()

@@ -107,9 +107,12 @@ export function SettingsForm({
       if (budgetsError) throw budgetsError
 
       toast.success("Settings saved", { description: "Your preferences and budgets have been updated." })
-    } catch (err: any) {
-      console.error(err)
-      toast.error("Failed to save settings", { description: err?.message ?? "Unexpected error." })
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : "Unexpected error."
+      if (process.env.NODE_ENV === 'development') {
+        console.error('[SettingsForm] error:', err)
+      }
+      toast.error("Failed to save settings", { description: errorMessage })
     } finally {
       setIsSaving(false)
     }

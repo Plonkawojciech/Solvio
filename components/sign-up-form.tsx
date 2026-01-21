@@ -45,11 +45,12 @@ export function SignUpForm({
     }
 
     try {
+      const origin = typeof window !== 'undefined' ? window.location.origin : ''
       const { error } = await supabase.auth.signUp({
         email,
         password,
         options: {
-          emailRedirectTo: `${window.location.origin}/confirm`,
+          emailRedirectTo: `${origin}/confirm`,
         },
       })
       if (error) throw error

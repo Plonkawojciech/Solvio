@@ -22,19 +22,13 @@ export default async function SettingsPage() {
     supabase.from("languages").select("id, language, language_symbol").order("language"),
   ])
 
-  if (categoriesError) console.error("[Settings] categories error:", categoriesError)
-  if (settingsError) console.error("[Settings] user_settings error:", settingsError)
-  if (budgetsError) console.error("[Settings] category_budgets error:", budgetsError)
-  if (currenciesError) console.error("[Settings] currencies error:", currenciesError)
-  if (languagesError) console.error("[Settings] languages error:", languagesError)
-
-    console.log("settingsRow:", {
-      categories,
-      settingsRow,
-      budgetsRows,
-      currencies,
-      languages,
-    })
+  if (process.env.NODE_ENV === 'development') {
+    if (categoriesError) console.error("[Settings] categories error:", categoriesError)
+    if (settingsError) console.error("[Settings] user_settings error:", settingsError)
+    if (budgetsError) console.error("[Settings] category_budgets error:", budgetsError)
+    if (currenciesError) console.error("[Settings] currencies error:", currenciesError)
+    if (languagesError) console.error("[Settings] languages error:", languagesError)
+  }
 
   // używamy kodów: PLN / USD, EN / PL
   const fallbackCurrency = "PLN"
@@ -49,7 +43,7 @@ export default async function SettingsPage() {
       return {
         categoryId: cat.id as string,
         categoryName: cat.name as string,
-        icon: (cat as any).icon as string | null,
+        icon: cat.icon as string | null | undefined,
         amount: budget?.budget ?? 0,
         currency: initialCurrency,
       }
