@@ -21,22 +21,34 @@ async function loadHeicConvert(): Promise<((options: { buffer: Buffer; format: '
 
 export const runtime = 'nodejs';
 
-/** Ulepszony schemat (Zod) */
-const ReceiptZ = z.object({
-  vendor: z.string().describe("Name of the store or merchant").nullable().optional(),
-  date: z.string().describe("Date in YYYY-MM-DD format").nullable().optional(),
-  currency: z.string().describe("ISO 4217 currency code (e.g. PLN, EUR, USD)").nullable().optional(),
-  total: z.number().describe("Total amount paid. Use dots for decimals").nullable().optional(),
-  items: z.array(
-    z.object({
-      name: z.string(),
-      quantity: z.number().nullable().optional(),
-      price: z.number().nullable().optional(),
-    })
-  ).default([]),
-  ocrText: z.string().default(''),
-});
-type Receipt = z.infer<typeof ReceiptZ>;
+/** Funkcja tworząca schemat Zod z kategoriami */
+function createReceiptSchema(categories: Array<{ id: string; name: string }>) {
+  const categoryIds = categories.map(c => c.id);
+  const categoryNames = categories.map(c => c.name).join(', ');
+  
+  return z.object({
+    vendor: z.string().describe("Name of the store or merchant").nullable().optional(),
+    date: z.string().describe("Date in YYYY-MM-DD format").nullable().optional(),
+    currency: z.string().describe("ISO 4217 currency code (e.g. PLN, EUR, USD)").nullable().optional(),
+    total: z.number().describe("Total amount paid. Use dots for decimals").nullable().optional(),
+    items: z.array(
+      z.object({
+        name: z.string().describe("Product name from receipt"),
+        quantity: z.number().nullable().optional().describe("Quantity purchased"),
+        price: z.number().nullable().optional().describe("Price per unit"),
+        category_id: z.string()
+          .nullable()
+          .optional()
+          .describe(`Category ID for this item. Available categories: ${categoryNames}. Choose the most appropriate category based on the product name. Return null if uncertain.`)
+          .refine((val) => !val || categoryIds.includes(val), {
+            message: `category_id must be one of: ${categoryIds.join(', ')} or null`,
+          }),
+      })
+    ).default([]),
+    ocrText: z.string().default(''),
+  });
+}
+type Receipt = z.infer<ReturnType<typeof createReceiptSchema>>;
 
 const openai = process.env.OPENAI_API_KEY 
   ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
@@ -131,7 +143,8 @@ async function normalizeImage(
 
 async function processImage(
   opts: { buffer: Buffer; filename: string; mime: string },
-  openai: OpenAI
+  openai: OpenAI,
+  categories: Array<{ id: string; name: string }>
 ) {
   let { buffer, mime } = opts;
 
@@ -157,6 +170,10 @@ async function processImage(
   const b64 = buffer.toString('base64');
   const dataUrl = `data:${mime};base64,${b64}`;
 
+  // Utwórz schemat z kategoriami
+  const ReceiptZ = createReceiptSchema(categories);
+  const categoryList = categories.map(c => `- ${c.name} (ID: ${c.id})`).join('\n');
+
   try {
     const completion = await openai.chat.completions.parse({
       model: 'gpt-4o-2024-08-06',
@@ -166,7 +183,7 @@ async function processImage(
       messages: [
         {
           role: 'system',
-          // ULEPSZONY PROMPT:
+          // ULEPSZONY PROMPT z kategoryzacją:
           content: `You are an expert OCR engine for receipts (mostly Polish).
           Task: Extract data strictly adhering to the schema.
           
@@ -176,13 +193,24 @@ async function processImage(
           3. **Vendor**: The store name usually at the very top (e.g. Biedronka, Lidl, Orlen).
           4. **Currency**: Detect currency (PLN/zł/EUR). Return ISO code.
           5. **OCR**: Copy the raw text content into 'ocrText'.
+          6. **Categories**: For each item, assign the most appropriate category based on the product name.
+             Available categories:
+${categoryList}
+             
+             Examples:
+             - "Chleb" (bread) → Food category
+             - "Benzyna" (gasoline) → Transport category
+             - "Mleko" (milk) → Groceries category
+             - "Kino" (cinema) → Entertainment category
+             
+             If you're uncertain about a category, set category_id to null.
           
           If values are ambiguous, do your best guess based on standard receipt layouts.`,
         },
         {
           role: 'user',
           content: [
-            { type: 'text', text: 'Analyze this receipt image and extract data.' },
+            { type: 'text', text: 'Analyze this receipt image and extract data. Assign categories to each item based on the product name.' },
             { type: 'image_url', image_url: { url: dataUrl, detail: 'high' } },
           ],
         },
@@ -213,7 +241,23 @@ export async function POST(req: NextRequest) {
 
   const supabase = await createClient();
 
-  // 2. Przetwarzanie (bierzemy tylko pierwszy plik dla uproszczenia w wersji MVP)
+  // 2. Pobierz kategorie z bazy danych
+  const { data: categories, error: categoriesError } = await supabase
+    .from('categories')
+    .select('id, name')
+    .order('name');
+
+  if (categoriesError) {
+    console.error('[OCR] Failed to fetch categories:', categoriesError);
+    return json({ error: 'Failed to fetch categories' }, 500);
+  }
+
+  if (!categories || categories.length === 0) {
+    console.warn('[OCR] No categories found in database');
+    return json({ error: 'No categories available. Please create categories first.' }, 400);
+  }
+
+  // 3. Przetwarzanie (bierzemy tylko pierwszy plik dla uproszczenia w wersji MVP)
   // W prawdziwej wersji loopujemy, tutaj chcemy żeby zadziałało
   const file = files[0];
   const arrayBuffer = await file.arrayBuffer();
@@ -222,7 +266,7 @@ export async function POST(req: NextRequest) {
   // Sprawdzamy rozmiar i ewentualnie kompresujemy (tu uproszczone)
   // ... (kod kompresji z Twojego oryginału można tu wstawić, ale dla testu pomijam)
 
-  console.log(`[OCR] Processing receipt: ${receiptId}`);
+  console.log(`[OCR] Processing receipt: ${receiptId} with ${categories.length} categories`);
   console.log(`[OCR] File info - name: ${file.name}, type: ${file.type}, size: ${file.size} bytes`);
 
   let parsedData: Receipt | null = null;
@@ -232,7 +276,7 @@ export async function POST(req: NextRequest) {
       buffer,
       filename: file.name,
       mime: file.type
-    }, openai);
+    }, openai, categories);
   } catch (err) {
     // Jeśli AI zawiedzie, oznaczamy jako failed
     await supabase.from('receipts').update({ 
@@ -279,6 +323,12 @@ export async function POST(req: NextRequest) {
 
   // Dopisanie nowych produktów do istniejących (append)
   const allItems = [...existingItems, ...(parsedData.items || [])];
+  
+  // Logowanie kategorii dla nowych produktów
+  const itemsWithCategories = (parsedData.items || []).filter(item => item.category_id);
+  if (itemsWithCategories.length > 0) {
+    console.log(`[OCR] ${itemsWithCategories.length} out of ${parsedData.items?.length || 0} items have categories assigned`);
+  }
   
   // Aktualizacja OCR text - jeśli nowy jest lepszy (dłuższy), użyj go
   const newOcrPreview = parsedData.ocrText?.substring(0, 500) || '';
