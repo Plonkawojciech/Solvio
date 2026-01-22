@@ -94,7 +94,7 @@ export default async function ProtectedPage() {
       id: e.id as string,
       description: e.title as string,
       categoryId: e.category_id as string | null,
-      category: e.categories?.name || 'No category',
+      category: (e.categories as { name?: string } | null)?.name || 'No category',
       amount: Number(e.amount),
       date: e.date as string,
     })) || [];
@@ -124,7 +124,7 @@ export default async function ProtectedPage() {
 
   // top category po wydatkach
   const topCategory =
-    categorySpendingData.sort((a, b) => b.total - a.total)[0]?.name || '—';
+    [...categorySpendingData].sort((a, b) => b.total - a.total)[0]?.name || '—';
 
   // weekly chart 7 dni
   const dailySpendingData = Array.from({ length: 7 })
