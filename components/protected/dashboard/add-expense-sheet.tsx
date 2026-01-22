@@ -163,11 +163,60 @@ export function AddExpenseSheet({
         if (!receipt) throw new Error('Failed to create receipt')
         receiptId = receipt.id
 
-        for (const file of files) {
+        // Funkcja konwersji HEIC przez API
+        const convertHeicIfNeeded = async (file: File): Promise<File> => {
+          const heicMimeTypes = ['image/heic', 'image/heif'];
+          const heicExtensions = ['.heic', '.heif', '.hif'];
+          const isHeic = heicMimeTypes.includes(file.type.toLowerCase()) || 
+                         heicExtensions.some(ext => file.name.toLowerCase().endsWith(ext));
+          
+          if (!isHeic) {
+            return file; // Nie HEIC, zwróć oryginalny plik
+          }
+
+          try {
+            console.log('[AddExpense] Converting HEIC to JPEG via API...');
+            const formData = new FormData();
+            formData.append('file', file);
+
+            const response = await fetch('/api/v1/convert-heic', {
+              method: 'POST',
+              body: formData,
+            });
+
+            if (!response.ok) {
+              const error = await response.json().catch(() => ({ error: 'Conversion failed' }));
+              throw new Error(error.error || 'HEIC conversion failed');
+            }
+
+            const blob = await response.blob();
+            const newFileName = file.name.replace(/\.(heic|heif|hif)$/i, '.jpg');
+            const convertedFile = new File([blob], newFileName, {
+              type: 'image/jpeg',
+              lastModified: file.lastModified,
+            });
+            
+            console.log('[AddExpense] HEIC conversion successful');
+            return convertedFile;
+          } catch (error) {
+            console.error('[AddExpense] HEIC conversion error:', error);
+            throw new Error(`Failed to convert HEIC image: ${error instanceof Error ? error.message : 'Unknown error'}`);
+          }
+        };
+
+        // Przekonwertuj wszystkie pliki HEIC przed uploadem
+        const convertedFiles = await Promise.all(
+          files.map(file => convertHeicIfNeeded(file))
+        );
+
+        for (const file of convertedFiles) {
           const path = `${user.id}/${receiptId}/${file.name}`
           const { error: uploadError } = await supabase.storage
             .from('receipts')
-            .upload(path, file, { upsert: true })
+            .upload(path, file, { 
+              upsert: true,
+              contentType: file.type || 'image/jpeg',
+            })
           if (uploadError) throw uploadError
 
           const { data: pub } = supabase.storage
@@ -414,7 +463,7 @@ export function AddExpenseSheet({
                     id="file-upload"
                     type="file"
                     multiple
-                    accept="image/png, image/jpeg"
+                    accept="image/png, image/jpeg, image/webp, image/heic, image/heif"
                     className="hidden"
                     onChange={handleFileChange}
                     disabled={isLoading}

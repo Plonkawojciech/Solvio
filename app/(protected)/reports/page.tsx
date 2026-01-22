@@ -99,9 +99,9 @@ export default async function ReportsPage() {
   )
 
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex flex-col gap-4 sm:gap-6 md:gap-8">
       <div>
-        <h2 className="text-3xl font-bold tracking-tight">Reports</h2>
+        <h2 className="text-2xl sm:text-3xl font-bold tracking-tight">Reports</h2>
         <p className="text-muted-foreground">
           Download yearly summaries or expand a year to access monthly files. Only periods with expenses are shown.
         </p>

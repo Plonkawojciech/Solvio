@@ -18,8 +18,10 @@ export function ScanReceiptButton({ onAction }: { onAction?: () => void }) {
 
   return (
     <>
-      <Button onClick={() => setIsSheetOpen(true)}>
-        <Camera className="mr-2 h-4 w-4" /> Scan Receipt
+      <Button onClick={() => setIsSheetOpen(true)} size="sm" className="text-xs sm:text-sm">
+        <Camera className="mr-1 sm:mr-2 h-4 w-4" /> 
+        <span className="hidden sm:inline">Scan Receipt</span>
+        <span className="sm:hidden">Scan</span>
       </Button>
 
       <ScanReceiptSheet

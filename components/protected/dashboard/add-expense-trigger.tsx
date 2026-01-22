@@ -18,8 +18,10 @@ export function AddExpenseTrigger({ onAction }: { onAction?: () => void }) {
 
   return (
     <>
-      <Button variant={"outline"} onClick={() => setIsSheetOpen(true)}>
-        <PlusCircle className="mr-2 h-4 w-4" /> Add Expense
+      <Button variant={"outline"} onClick={() => setIsSheetOpen(true)} size="sm" className="text-xs sm:text-sm">
+        <PlusCircle className="mr-1 sm:mr-2 h-4 w-4" /> 
+        <span className="hidden sm:inline">Add Expense</span>
+        <span className="sm:hidden">Add</span>
       </Button>
 
       <AddExpenseSheet

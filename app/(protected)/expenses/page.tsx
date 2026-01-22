@@ -19,7 +19,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { Loader2, Trash2 } from 'lucide-react'
+import { Loader2, Trash2, ChevronDown, ChevronUp } from 'lucide-react'
 import { AddExpenseTrigger } from '@/components/protected/dashboard/add-expense-trigger'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 
@@ -31,6 +31,19 @@ interface Expense {
   vendor: string | null
   notes: string | null
   category_id: string | null
+  receipt_id: string | null
+}
+
+interface ReceiptItem {
+  name: string
+  quantity?: number | null
+  price?: number | null
+  category_id?: string | null
+}
+
+interface ReceiptData {
+  items?: ReceiptItem[]
+  ocr_preview?: string
 }
 
 export default function ExpensesPage() {
@@ -41,11 +54,29 @@ export default function ExpensesPage() {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const [selectedExpense, setSelectedExpense] = useState<Expense | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
+  const [receiptItems, setReceiptItems] = useState<ReceiptItem[]>([])
+  const [loadingReceiptItems, setLoadingReceiptItems] = useState(false)
+  const [categories, setCategories] = useState<Map<string, string>>(new Map())
 
   useEffect(() => {
     fetchExpenses()
+    fetchCategories()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  const fetchCategories = async () => {
+    const { data, error } = await supabase
+      .from('categories')
+      .select('id, name')
+    
+    if (!error && data) {
+      const catMap = new Map<string, string>()
+      data.forEach(cat => {
+        catMap.set(cat.id, cat.name)
+      })
+      setCategories(catMap)
+    }
+  }
 
   const fetchExpenses = async () => {
     setLoading(true)
@@ -60,7 +91,7 @@ export default function ExpensesPage() {
 
     const { data, error: fetchError } = await supabase
       .from('expenses')
-      .select('id, title, amount, date, vendor, notes, category_id')
+      .select('id, title, amount, date, vendor, notes, category_id, receipt_id')
       .eq('user_id', user.id)
       .order('date', { ascending: false })
 
@@ -85,24 +116,55 @@ export default function ExpensesPage() {
     } else {
       setIsDeleteDialogOpen(false)
       setSelectedExpense(null)
+      setReceiptItems([])
       await fetchExpenses()
       setIsDeleting(false)
     }
   }
 
+  const handleExpenseClick = async (expense: Expense) => {
+    setSelectedExpense(expense)
+    
+    // Jeśli expense ma receipt_id, pobierz produkty z paragonu
+    if (expense.receipt_id) {
+      setLoadingReceiptItems(true)
+      setReceiptItems([])
+      
+      const { data: receiptData, error: receiptError } = await supabase
+        .from('receipts')
+        .select('notes')
+        .eq('id', expense.receipt_id)
+        .single()
+      
+      if (!receiptError && receiptData?.notes) {
+        try {
+          const parsed: ReceiptData = JSON.parse(receiptData.notes)
+          setReceiptItems(parsed.items || [])
+        } catch (e) {
+          console.error('Failed to parse receipt notes:', e)
+          setReceiptItems([])
+        }
+      }
+      
+      setLoadingReceiptItems(false)
+    } else {
+      setReceiptItems([])
+    }
+  }
+
   return (
-    <main className="min-h-screen w-full p-10 sm:p-16">
+    <main className="min-h-screen w-full p-4 sm:p-6 md:p-10">
       <div className="flex flex-col h-full space-y-12">
         {/* Nagłówek */}
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
-          <h1 className="text-4xl font-bold tracking-tight">Expenses</h1>
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 sm:gap-6">
+          <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold tracking-tight">Expenses</h1>
           <div className="flex items-center space-x-2">
             <AddExpenseTrigger onAction={fetchExpenses} />
           </div>
         </div>
 
         {/* TABELA */}
-        <section className="rounded-xl border p-6 overflow-hidden flex-1">
+        <section className="rounded-xl border p-4 sm:p-6 overflow-hidden flex-1">
           {loading ? (
             <div className="flex justify-center py-32">
               <Loader2 className="animate-spin h-8 w-8 text-muted-foreground" />
@@ -118,13 +180,13 @@ export default function ExpensesPage() {
             </p>
           ) : (
             <div className="overflow-y-auto max-h-[60vh]">
-              <Table className="w-full text-base">
+              <Table className="w-full text-sm sm:text-base">
                 <TableHeader>
                   <TableRow>
                     <TableHead>Title</TableHead>
-                    <TableHead>Vendor</TableHead>
+                    <TableHead className="hidden sm:table-cell">Vendor</TableHead>
                     <TableHead>Amount</TableHead>
-                    <TableHead>Date</TableHead>
+                    <TableHead className="hidden md:table-cell">Date</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -132,7 +194,7 @@ export default function ExpensesPage() {
                   {expenses.map((expense) => (
                     <TableRow
                       key={expense.id}
-                      onClick={() => setSelectedExpense(expense)}
+                      onClick={() => handleExpenseClick(expense)}
                       className={`cursor-pointer transition-colors ${
                         selectedExpense?.id === expense.id
                           ? 'bg-muted/40'
@@ -142,9 +204,9 @@ export default function ExpensesPage() {
                       <TableCell className="font-medium">
                         {expense.title}
                       </TableCell>
-                      <TableCell>{expense.vendor || '—'}</TableCell>
-                      <TableCell>{expense.amount.toFixed(2)} PLN</TableCell>
-                      <TableCell>
+                      <TableCell className="hidden sm:table-cell">{expense.vendor || '—'}</TableCell>
+                      <TableCell className="font-medium">{expense.amount.toFixed(2)} PLN</TableCell>
+                      <TableCell className="hidden md:table-cell">
                         {new Date(expense.date).toLocaleDateString()}
                       </TableCell>
                       <TableCell className="text-right">
@@ -171,37 +233,101 @@ export default function ExpensesPage() {
         {/* PANEL SZCZEGÓŁÓW */}
         <section className="w-full">
           {selectedExpense ? (
-            <Card className="border p-6">
+            <Card className="border p-4 sm:p-6">
               <CardHeader>
                 <CardTitle className="text-2xl font-semibold">
                   {selectedExpense.title}
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-3 text-sm">
-                <p>
-                  <span className="font-medium text-muted-foreground">
-                    Vendor:
-                  </span>{' '}
-                  {selectedExpense.vendor || '—'}
-                </p>
-                <p>
-                  <span className="font-medium text-muted-foreground">
-                    Amount:
-                  </span>{' '}
-                  {selectedExpense.amount.toFixed(2)} PLN
-                </p>
-                <p>
-                  <span className="font-medium text-muted-foreground">
-                    Date:
-                  </span>{' '}
-                  {new Date(selectedExpense.date).toLocaleDateString()}
-                </p>
-                <p>
-                  <span className="font-medium text-muted-foreground">
-                    Notes:
-                  </span>{' '}
-                  {selectedExpense.notes || '—'}
-                </p>
+              <CardContent className="space-y-4 text-sm">
+                <div className="grid grid-cols-2 gap-4">
+                  <p>
+                    <span className="font-medium text-muted-foreground">
+                      Vendor:
+                    </span>{' '}
+                    {selectedExpense.vendor || '—'}
+                  </p>
+                  <p>
+                    <span className="font-medium text-muted-foreground">
+                      Amount:
+                    </span>{' '}
+                    {selectedExpense.amount.toFixed(2)} PLN
+                  </p>
+                  <p>
+                    <span className="font-medium text-muted-foreground">
+                      Date:
+                    </span>{' '}
+                    {new Date(selectedExpense.date).toLocaleDateString()}
+                  </p>
+                </div>
+
+                {/* Produkty z paragonu */}
+                {selectedExpense.receipt_id && (
+                  <div className="mt-6 pt-6 border-t">
+                    <h3 className="font-semibold text-base mb-4">Receipt Items</h3>
+                    {loadingReceiptItems ? (
+                      <div className="flex justify-center py-4">
+                        <Loader2 className="animate-spin h-5 w-5 text-muted-foreground" />
+                      </div>
+                    ) : receiptItems.length > 0 ? (
+                      <div className="space-y-2">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Item</TableHead>
+                              <TableHead>Category</TableHead>
+                              <TableHead className="text-right">Quantity</TableHead>
+                              <TableHead className="text-right">Price</TableHead>
+                              <TableHead className="text-right">Total</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {receiptItems.map((item, index) => {
+                              const quantity = item.quantity ?? 1
+                              const price = item.price ?? 0
+                              const total = quantity * price
+                              const categoryName = item.category_id ? categories.get(item.category_id) || 'No category' : 'No category'
+                              return (
+                                <TableRow key={index}>
+                                  <TableCell className="font-medium">
+                                    {item.name}
+                                  </TableCell>
+                                  <TableCell>
+                                    <span className="text-sm text-muted-foreground">
+                                      {categoryName}
+                                    </span>
+                                  </TableCell>
+                                  <TableCell className="text-right">
+                                    {quantity}
+                                  </TableCell>
+                                  <TableCell className="text-right">
+                                    {price.toFixed(2)} PLN
+                                  </TableCell>
+                                  <TableCell className="text-right font-medium">
+                                    {total.toFixed(2)} PLN
+                                  </TableCell>
+                                </TableRow>
+                              )
+                            })}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    ) : (
+                      <p className="text-muted-foreground">No items found in receipt</p>
+                    )}
+                  </div>
+                )}
+
+                {!selectedExpense.receipt_id && selectedExpense.notes && (
+                  <div className="mt-4 pt-4 border-t">
+                    <p>
+                      <span className="font-medium text-muted-foreground">
+                        Notes:
+                      </span>{' '}
+                      {selectedExpense.notes}
+                    </p>
+                  </div>
+                )}
               </CardContent>
               <div className="mt-6 flex justify-end">
                 <Button

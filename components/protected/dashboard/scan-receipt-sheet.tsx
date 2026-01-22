@@ -47,6 +47,7 @@ export function ScanReceiptSheet({
   const [isUploading, setIsUploading] = React.useState(false);
   const [isProcessing, setIsProcessing] = React.useState(false);
   const [errorMsg, setErrorMsg] = React.useState<string | null>(null);
+  const [progress, setProgress] = React.useState<{ uploaded: number; total: number } | null>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
@@ -63,6 +64,7 @@ export function ScanReceiptSheet({
     setErrorMsg(null);
     setIsUploading(false);
     setIsProcessing(false);
+    setProgress(null);
   };
 
   const handleClose = () => {
@@ -118,63 +120,148 @@ export function ScanReceiptSheet({
       }
       const receiptId = receipt.id as string;
 
-      // 2) upload do Storage + zapis linków
-      for (const file of files) {
-        const path = `${user.id}/${receiptId}/${file.name}`;
+      // 2) Konwersja HEIC do JPEG i upload do Storage
+      setProgress({ uploaded: 0, total: files.length });
+      
+      // Funkcja konwersji HEIC przez API
+      const convertHeicIfNeeded = async (file: File): Promise<File> => {
+        const heicMimeTypes = ['image/heic', 'image/heif'];
+        const heicExtensions = ['.heic', '.heif', '.hif'];
+        const isHeic = heicMimeTypes.includes(file.type.toLowerCase()) || 
+                       heicExtensions.some(ext => file.name.toLowerCase().endsWith(ext));
+        
+        if (!isHeic) {
+          return file; // Nie HEIC, zwróć oryginalny plik
+        }
 
-        const { error: uploadError } = await supabase.storage
-          .from('receipts')
-          .upload(path, file, {
-            upsert: true,
-            contentType: file.type || undefined,
+        try {
+          console.log('[ScanReceipt] Converting HEIC to JPEG via API...');
+          const formData = new FormData();
+          formData.append('file', file);
+
+          const response = await fetch('/api/v1/convert-heic', {
+            method: 'POST',
+            body: formData,
           });
 
-        if (uploadError) {
-          if (process.env.NODE_ENV === 'development') {
-            console.error('[ScanReceipt] storage upload error:', uploadError);
+          if (!response.ok) {
+            const error = await response.json().catch(() => ({ error: 'Conversion failed' }));
+            throw new Error(error.error || 'HEIC conversion failed');
           }
-          throw uploadError;
+
+          const blob = await response.blob();
+          const newFileName = file.name.replace(/\.(heic|heif|hif)$/i, '.jpg');
+          const convertedFile = new File([blob], newFileName, {
+            type: 'image/jpeg',
+            lastModified: file.lastModified,
+          });
+          
+          console.log('[ScanReceipt] HEIC conversion successful');
+          return convertedFile;
+        } catch (error) {
+          console.error('[ScanReceipt] HEIC conversion error:', error);
+          throw new Error(`Failed to convert HEIC image: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }
+      };
 
-        const { data: pub } = supabase.storage
-          .from('receipts')
-          .getPublicUrl(path);
-        const publicUrl = pub.publicUrl;
+      // Najpierw przekonwertuj wszystkie pliki HEIC
+      const convertedFiles = await Promise.all(
+        files.map(file => convertHeicIfNeeded(file))
+      );
 
-        const { error: imgErr } = await supabase
-          .from('receipt_images')
-          .insert([{ receipt_id: receiptId, image_url: publicUrl }]);
+      const uploadResults = await Promise.allSettled(
+        convertedFiles.map(async (fileToUpload, index) => {
+          const path = `${user.id}/${receiptId}/${fileToUpload.name}`;
 
-        if (imgErr) {
-          if (process.env.NODE_ENV === 'development') {
-            console.error('[ScanReceipt] receipt_images insert error:', imgErr);
+          const { error: uploadError } = await supabase.storage
+            .from('receipts')
+            .upload(path, fileToUpload, {
+              upsert: true,
+              contentType: fileToUpload.type || 'image/jpeg',
+            });
+
+          if (uploadError) {
+            if (process.env.NODE_ENV === 'development') {
+              console.error('[ScanReceipt] storage upload error:', uploadError);
+            }
+            throw uploadError;
           }
-          throw imgErr;
+
+          const { data: pub } = supabase.storage
+            .from('receipts')
+            .getPublicUrl(path);
+          const publicUrl = pub.publicUrl;
+
+          const { error: imgErr } = await supabase
+            .from('receipt_images')
+            .insert([{ receipt_id: receiptId, image_url: publicUrl }]);
+
+          if (imgErr) {
+            if (process.env.NODE_ENV === 'development') {
+              console.error('[ScanReceipt] receipt_images insert error:', imgErr);
+            }
+            throw imgErr;
+          }
+
+          setProgress((prev) => prev ? { ...prev, uploaded: prev.uploaded + 1 } : null);
+          return { path, publicUrl };
+        })
+      );
+
+      // Sprawdź czy wszystkie uploady się powiodły
+      const failedUploads = uploadResults.filter(r => r.status === 'rejected');
+      if (failedUploads.length > 0) {
+        const firstError = failedUploads[0];
+        if (firstError.status === 'rejected') {
+          throw firstError.reason;
         }
       }
+      setProgress(null);
 
       setIsUploading(false);
       setIsProcessing(true);
 
-      // 3) OCR — wyślij realne pliki + metadane
+      // 3) OCR — wyślij przekonwertowane pliki + metadane
       const fd = new FormData();
       fd.append('receiptId', receiptId);
       fd.append('userId', user.id);
-      for (const f of files) fd.append('files', f, f.name);
+      for (const f of convertedFiles) fd.append('files', f, f.name);
 
       const res = await fetch('/api/v1/ocr-receipt', {
         method: 'POST',
         body: fd,
       });
+      
       if (!res.ok) {
-        const msg = await res.text();
-        if (process.env.NODE_ENV === 'development') {
-          console.error('[ScanReceipt] OCR HTTP error:', res.status, msg);
+        let errorMsg = 'OCR zwrócił błąd.';
+        try {
+          const errorData = await res.json();
+          errorMsg = errorData.error || errorMsg;
+          if (process.env.NODE_ENV === 'development') {
+            console.error('[ScanReceipt] OCR HTTP error:', res.status, errorData);
+          }
+        } catch {
+          const msg = await res.text();
+          errorMsg = msg || errorMsg;
+          if (process.env.NODE_ENV === 'development') {
+            console.error('[ScanReceipt] OCR HTTP error:', res.status, msg);
+          }
         }
-        throw new Error(msg || 'OCR zwrócił błąd.');
+        throw new Error(errorMsg);
       }
 
       const parsed: OcrResult = await res.json();
+      
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[ScanReceipt] OCR result:', parsed);
+      }
+      
+      // Sprawdź czy są ostrzeżenia
+      if (parsed.warnings && parsed.warnings.length > 0) {
+        if (process.env.NODE_ENV === 'development') {
+          console.warn('[ScanReceipt] OCR warnings:', parsed.warnings);
+        }
+      }
 
       toast.success('Zakończono skanowanie', {
         description: 'Dane z paragonu zostały odczytane.',
@@ -272,6 +359,21 @@ export function ScanReceiptSheet({
               <div className="flex items-center gap-2 text-sm text-destructive">
                 <AlertCircle className="h-4 w-4" />
                 <span>{errorMsg}</span>
+              </div>
+            )}
+
+            {progress && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-sm text-muted-foreground">
+                  <span>Wgrywanie plików...</span>
+                  <span>{progress.uploaded} / {progress.total}</span>
+                </div>
+                <div className="h-2 w-full bg-muted rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-primary transition-all duration-300"
+                    style={{ width: `${(progress.uploaded / progress.total) * 100}%` }}
+                  />
+                </div>
               </div>
             )}
           </form>

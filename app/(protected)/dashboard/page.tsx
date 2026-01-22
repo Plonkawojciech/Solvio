@@ -37,6 +37,7 @@ export default async function ProtectedPage() {
     { data: settingsRow, error: settingsError },
     { data: budgetsRows, error: budgetsError },
     { data: expenses, error: expensesError },
+    { data: receipts, error: receiptsError },
   ] = await Promise.all([
     supabase.from('categories').select('id, name, icon').order('name'),
     supabase
@@ -55,6 +56,12 @@ export default async function ProtectedPage() {
       .gte('date', start30.toISOString().slice(0, 10))
       .order('date', { ascending: false })
       .limit(300),
+    supabase
+      .from('receipts')
+      .select('id, notes, date')
+      .eq('user_id', user.id)
+      .gte('date', start30.toISOString().slice(0, 10))
+      .not('notes', 'is', null),
   ]);
 
   if (categoriesError || settingsError || budgetsError || expensesError) {
@@ -99,12 +106,33 @@ export default async function ProtectedPage() {
       date: e.date as string,
     })) || [];
 
-  // sumy
-  const totalSpent = recentExpenses.reduce((sum, e) => sum + e.amount, 0);
+  // sumy - z expenses
+  let totalSpent = recentExpenses.reduce((sum, e) => sum + e.amount, 0);
+  
+  // Dodaj sumy z receipt items
+  if (receipts) {
+    for (const receipt of receipts) {
+      if (!receipt.notes) continue;
+      try {
+        const receiptData = JSON.parse(receipt.notes as string);
+        const items = receiptData.items || [];
+        
+        for (const item of items) {
+          if (item.price) {
+            const itemAmount = (item.price || 0) * (item.quantity || 1);
+            totalSpent += itemAmount;
+          }
+        }
+      } catch (e) {
+        // Ignoruj błędy parsowania
+      }
+    }
+  }
+  
   const totalTransactions = recentExpenses.length;
   const avgDaily = totalTransactions ? totalSpent / 30 : 0;
 
-  // wydatki per kategoria (po id)
+  // wydatki per kategoria (po id) - z expenses
   const spentByCatId = new Map<string, number>();
   for (const e of recentExpenses) {
     if (!e.categoryId) continue;
@@ -112,6 +140,33 @@ export default async function ProtectedPage() {
       e.categoryId,
       (spentByCatId.get(e.categoryId) || 0) + e.amount
     );
+  }
+
+  // Dodaj wydatki z receipt items (produkty z paragonów)
+  if (receipts) {
+    for (const receipt of receipts) {
+      if (!receipt.notes) continue;
+      try {
+        const receiptData = JSON.parse(receipt.notes as string);
+        const items = receiptData.items || [];
+        
+        for (const item of items) {
+          // Jeśli item ma category_id i price, dodaj do statystyk
+          if (item.category_id && item.price) {
+            const itemAmount = (item.price || 0) * (item.quantity || 1);
+            spentByCatId.set(
+              item.category_id,
+              (spentByCatId.get(item.category_id) || 0) + itemAmount
+            );
+          }
+        }
+      } catch (e) {
+        // Ignoruj błędy parsowania
+        if (process.env.NODE_ENV === 'development') {
+          console.warn('[Dashboard] Failed to parse receipt notes:', e);
+        }
+      }
+    }
   }
 
   // dane do wykresu kołowego: tylko kategorie z wydatkami
@@ -157,17 +212,17 @@ export default async function ProtectedPage() {
   });
 
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex flex-col gap-4 sm:gap-6 md:gap-8">
       <div className="flex flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-4">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight">
+          <h2 className="text-2xl sm:text-3xl font-bold tracking-tight">
             Financial Dashboard
           </h2>
-          <p className="text-muted-foreground hidden sm:block pt-1">
+          <p className="text-muted-foreground hidden sm:block pt-1 text-sm">
             Summary of your recent expenses.
           </p>
         </div>
-        <div className="flex items-center space-x-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <ScanReceiptButton />
           <AddExpenseTrigger />
         </div>
@@ -182,7 +237,7 @@ export default async function ProtectedPage() {
             <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
+            <div className="text-xl sm:text-2xl font-bold">
               {totalSpent.toFixed(2)} {currency}
             </div>
             <p className="text-xs text-muted-foreground">
@@ -199,7 +254,7 @@ export default async function ProtectedPage() {
             <CreditCard className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{totalTransactions}</div>
+            <div className="text-xl sm:text-2xl font-bold">{totalTransactions}</div>
             <p className="text-xs text-muted-foreground">This month</p>
           </CardContent>
         </Card>
@@ -212,7 +267,7 @@ export default async function ProtectedPage() {
             <Activity className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
+            <div className="text-xl sm:text-2xl font-bold">
               {avgDaily.toFixed(2)} {currency}
             </div>
             <p className="text-xs text-muted-foreground">Daily average</p>
@@ -227,7 +282,7 @@ export default async function ProtectedPage() {
             <Tag className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{topCategory}</div>
+            <div className="text-lg sm:text-xl md:text-2xl font-bold truncate">{topCategory}</div>
             <p className="text-xs text-muted-foreground">
               Category with the highest expenses
             </p>

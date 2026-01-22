@@ -8,8 +8,8 @@ interface AuthButtonProps {
 
 export async function AuthButton({ user }: AuthButtonProps) {
   return user ? (
-    <div className="flex items-center gap-4">
-      Hey, {user.email}!
+    <div className="flex items-center gap-2 sm:gap-4">
+      <span className="hidden md:inline text-sm sm:text-base">Hey, {user.email}!</span>
       <LogoutButton />
     </div>
   ) : (
