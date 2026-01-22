@@ -49,8 +49,10 @@ export function ScanReceiptSheet({
   const [errorMsg, setErrorMsg] = React.useState<string | null>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files)
-      setFiles((prev) => [...prev, ...Array.from(e.target.files)]);
+    if (e.target.files) {
+      const fileList = e.target.files;
+      setFiles((prev) => [...prev, ...Array.from(fileList)]);
+    }
   };
 
   const removeFile = (i: number) =>

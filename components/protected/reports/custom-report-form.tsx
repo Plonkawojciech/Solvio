@@ -15,10 +15,10 @@ const schema = z.object({
   dateTo: z.string().optional(),
   minAmount: z.string().optional(),
   maxAmount: z.string().optional(),
-  categories: z.array(z.string()).optional(),
-  formatPdf: z.boolean().default(true),
-  formatCsv: z.boolean().default(false),
-  formatDocx: z.boolean().default(false),
+  categories: z.array(z.string()),
+  formatPdf: z.boolean(),
+  formatCsv: z.boolean(),
+  formatDocx: z.boolean(),
 })
 
 type Values = z.infer<typeof schema>
@@ -26,7 +26,16 @@ type Values = z.infer<typeof schema>
 export function CustomReportForm({ currency }: { currency: string }) {
   const form = useForm<Values>({
     resolver: zodResolver(schema),
-    defaultValues: { formatPdf: true, formatCsv: false, formatDocx: false, categories: [] },
+    defaultValues: { 
+      formatPdf: true, 
+      formatCsv: false, 
+      formatDocx: false, 
+      categories: [],
+      dateFrom: undefined,
+      dateTo: undefined,
+      minAmount: undefined,
+      maxAmount: undefined,
+    },
   })
 
   async function onSubmit(values: Values) {

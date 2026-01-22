@@ -41,8 +41,8 @@ const settingsSchema = z.object({
   budgets: z.array(z.object({
     categoryId: z.string(),
     categoryName: z.string(),
-    amount: z.string().regex(/^\d+(\.\d{1,2})?$/, { message: "Enter a valid amount or 0" }).or(z.literal("")).default("0"),
-  })).default([]),
+    amount: z.string(),
+  })),
 })
 
 type SettingsFormValues = z.infer<typeof settingsSchema>
@@ -72,7 +72,7 @@ export function SettingsForm({
       budgets: categoryBudgets.map((b) => ({
         categoryId: b.categoryId,
         categoryName: b.categoryName,
-        amount: b.amount ? b.amount.toString() : "",
+        amount: b.amount ? b.amount.toString() : "0",
       })),
     },
   })

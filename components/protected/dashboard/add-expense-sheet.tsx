@@ -50,7 +50,7 @@ const expenseFormSchema = z.object({
       message: 'Enter a valid amount, e.g., 12.50.',
     }),
   description: z.string().min(1, { message: 'Description is required.' }),
-  date: z.date({ required_error: 'Date is required.' }),
+  date: z.date({ message: 'Date is required.' }),
   category: z.string().min(1, { message: 'Category is required.' }),
   vendor: z.string().optional(),
   notes: z.string().optional(),

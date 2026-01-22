@@ -25,7 +25,7 @@ export function ScanReceiptButton({ onAction }: { onAction?: () => void }) {
       <ScanReceiptSheet
         isOpen={isSheetOpen}
         onClose={() => setIsSheetOpen(false)}
-        onAction={handleAction}  // ⬅️ podajemy do sheeta
+        onParsed={() => handleAction()}
       />
     </>
   )

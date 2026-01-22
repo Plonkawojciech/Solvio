@@ -3,7 +3,7 @@ import * as React from 'react'
 import { cn } from '@/lib/utils'
 import { motion } from 'framer-motion'
 
-function Card({ className, ...props }: React.ComponentProps<'div'>) {
+function Card({ className, onDrag, onDragStart, onDragEnd, ...props }: React.ComponentPropsWithoutRef<'div'>) {
   return (
     <motion.div
       data-slot="card"
@@ -18,7 +18,7 @@ function Card({ className, ...props }: React.ComponentProps<'div'>) {
         'hover:border-primary/40 hover:shadow-md hover:bg-card/90',
         className
       )}
-      {...props}
+      {...(props as any)}
     />
   )
 }
