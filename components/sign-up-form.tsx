@@ -38,25 +38,49 @@ export function SignUpForm({
     setIsLoading(true)
     setError(null)
 
+    // Validate password match
     if (password !== repeatPassword) {
       setError('Passwords do not match')
       setIsLoading(false)
       return
     }
 
+    // Validate password strength
+    if (password.length < 6) {
+      setError('Password must be at least 6 characters long')
+      setIsLoading(false)
+      return
+    }
+
     try {
       const origin = typeof window !== 'undefined' ? window.location.origin : ''
-      const { error } = await supabase.auth.signUp({
-        email,
+      const { data, error } = await supabase.auth.signUp({
+        email: email.trim(),
         password,
         options: {
-          emailRedirectTo: `${origin}/confirm`,
+          emailRedirectTo: `${origin}/confirm?type=signup&next=/login`,
         },
       })
-      if (error) throw error
-      router.push('/sign-up-success')
+      
+      if (error) {
+        throw error
+      }
+
+      // Check if email confirmation is required
+      if (data.user && !data.session) {
+        // Email confirmation required
+        router.push('/sign-up-success')
+      } else if (data.session) {
+        // Auto-confirmed, redirect to dashboard
+        router.refresh()
+        router.push('/dashboard')
+      } else {
+        // Fallback
+        router.push('/sign-up-success')
+      }
     } catch (error: unknown) {
-      setError(error instanceof Error ? error.message : 'An error occurred')
+      const errorMessage = error instanceof Error ? error.message : 'An error occurred'
+      setError(errorMessage)
     } finally {
       setIsLoading(false)
     }

@@ -17,14 +17,22 @@ export async function GET(request: NextRequest) {
       token_hash,
     });
     if (!error) {
-      // redirect user to specified redirect URL or root of app
+      // For signup confirmation, redirect to login or welcome
+      if (type === 'signup') {
+        redirect('/login?message=Email confirmed. Please sign in.');
+      }
+      // For recovery, redirect to update-password
+      if (type === 'recovery') {
+        redirect('/update-password');
+      }
+      // For other types, redirect to specified URL or root
       redirect(next);
     } else {
       // redirect the user to an error page with some instructions
-      redirect(`/auth/error?error=${error?.message}`);
+      redirect(`/error?error=${encodeURIComponent(error?.message || 'Verification failed')}`);
     }
   }
 
   // redirect the user to an error page with some instructions
-  redirect(`/auth/error?error=No token hash or type`);
+  redirect(`/error?error=${encodeURIComponent('No token hash or type')}`);
 }
