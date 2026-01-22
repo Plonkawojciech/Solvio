@@ -111,6 +111,9 @@ export function ScanReceiptSheet({
         }
         throw receiptError;
       }
+      if (!receipt) {
+        throw new Error('Failed to create receipt');
+      }
       const receiptId = receipt.id as string;
 
       // 2) upload do Storage + zapis linków

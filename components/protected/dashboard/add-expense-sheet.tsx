@@ -160,6 +160,7 @@ export function AddExpenseSheet({
           .select()
           .single()
         if (receiptError) throw receiptError
+        if (!receipt) throw new Error('Failed to create receipt')
         receiptId = receipt.id
 
         for (const file of files) {

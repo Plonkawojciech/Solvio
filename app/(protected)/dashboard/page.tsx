@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server';
+import { redirect } from 'next/navigation';
 import {
   Card,
   CardContent,
@@ -20,6 +21,10 @@ export default async function ProtectedPage() {
   const {
     data: { user },
   } = await supabase.auth.getUser();
+
+  if (!user) {
+    redirect('/login');
+  }
 
   // daty
   const today = new Date();

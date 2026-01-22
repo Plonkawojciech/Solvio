@@ -8,6 +8,10 @@ export default async function SettingsPage() {
 
   const { data: { user } } = await supabase.auth.getUser()
 
+  if (!user) {
+    redirect('/login')
+  }
+
   const [
     { data: categories, error: categoriesError },
     { data: settingsRow, error: settingsError },

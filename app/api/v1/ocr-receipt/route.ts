@@ -37,6 +37,13 @@ const openai = process.env.OPENAI_API_KEY
   ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
   : null;
 
+function json(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
+
 export async function POST(req: NextRequest) {
   if (!openai) {
     return json({ error: 'OpenAI API key is not configured' }, 500);
@@ -105,13 +112,6 @@ export async function POST(req: NextRequest) {
   };
 
   return json(payload, 200);
-
-  function json(body: unknown, status = 200) {
-    return new Response(JSON.stringify(body), {
-      status,
-      headers: { 'Content-Type': 'application/json' },
-    });
-  }
 
   /** OCR+parsowanie jednym wywołaniem (Chat Completions + Structured Outputs) */
   async function processImage(opts: {
