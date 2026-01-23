@@ -185,33 +185,60 @@ async function extractStoreNameWithGPT(rawText: string): Promise<string | null> 
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o',
       temperature: 0,
-      max_tokens: 50,
+      max_tokens: 100, // Zwiększone, aby GPT miało więcej miejsca na odpowiedź
       messages: [
         {
           role: 'system',
-          content: `Jesteś ekspertem w rozpoznawaniu nazw sklepów z paragonów. Twoim zadaniem jest znaleźć dokładną nazwę sklepu w tekście paragonu.
+          content: `Jesteś ekspertem w rozpoznawaniu i weryfikowaniu nazw sklepów z paragonów polskich. Twoim zadaniem jest ZAWSZE znaleźć dokładną, czystą nazwę sklepu w tekście paragonu.
 
-INSTRUKCJE:
-1. Znajdź nazwę sklepu w tekście (zwykle na początku paragonu)
-2. Zwróć TYLKO czystą nazwę sklepu, bez form prawnych (sp. z o.o., S.A., etc.), bez adresów, bez "Zakupy", "Paragon", etc.
-3. Rozpoznaj popularne sieci: Lidl, Biedronka, Żabka, Dino, Kaufland, Carrefour, Tesco, Auchan, Real, Leclerc, Selgros, Makro, Castorama, Leroy Merlin, OBI, IKEA, MediaMarkt, RTV Euro AGD, Empik, Rossmann, Hebe, Super-Pharm, Stokrotka, Polo Market, ABC, SPAR, Netto, Aldi, Penny, REWE, E.Leclerc, Intermarché
-4. Jeśli widzisz "LIDL" (nawet jako "LIDL", "Lidl", "lidl", "LIDL SP. Z O.O.", "STOWT LIDL", "OWT LIDL"), zwróć "Lidl"
-5. Jeśli widzisz "BIEDRONKA", zwróć "Biedronka"
-6. Jeśli widzisz "ŻABKA" lub "ZABKA", zwróć "Żabka"
-7. Jeśli nie rozpoznajesz znanej sieci, zwróć najczystszą możliwą nazwę sklepu (bez form prawnych, bez prefiksów jak OWT, STOWT)
-8. Jeśli nie możesz znaleźć nazwy sklepu, zwróć "null"
+KRYTYCZNE ZASADY:
+1. Nazwa sklepu jest ZAWSZE na początku paragonu (pierwsze 3-5 linii)
+2. Zwróć TYLKO czystą nazwę sklepu - bez form prawnych, bez adresów, bez "Zakupy", "Paragon", etc.
+3. Rozpoznaj i zwróć dokładną nazwę popularnych sieci (używaj dokładnie tych nazw):
+   - Lidl (NIE "LIDL", "lidl", "Lidl Market" - TYLKO "Lidl")
+   - Biedronka (NIE "BIEDRONKA" - TYLKO "Biedronka")
+   - Żabka (NIE "ZABKA", "ŻABKA" - TYLKO "Żabka")
+   - Dino, Kaufland, Carrefour, Tesco, Auchan, Real, Leclerc, Selgros, Makro
+   - Castorama, Leroy Merlin, OBI, IKEA, MediaMarkt, RTV Euro AGD
+   - Empik, Rossmann, Hebe, Super-Pharm, Stokrotka, Polo Market, ABC, SPAR, Netto, Aldi, Penny, REWE
 
-PRZYKŁADY:
-- "STOWT LIDL SP. Z O.O." → "Lidl"
+4. WAŻNE - rozpoznawanie błędów OCR:
+   - "STOWT LIDL" → "Lidl" (STOWT to błąd OCR)
+   - "OWT LIDL" → "Lidl" (OWT to błąd OCR)
+   - "LIDL SP. Z O.O." → "Lidl"
+   - "BIEDRONKA - Zakupy" → "Biedronka"
+   - "ŻABKA 123" → "Żabka"
+
+5. Jeśli widzisz znaną sieć (nawet z błędami OCR), ZAWSZE zwróć jej poprawną nazwę
+
+6. Jeśli nie rozpoznajesz znanej sieci, zwróć najczystszą możliwą nazwę sklepu:
+   - Usuń formy prawne: "sp. z o.o.", "S.A.", "sp.k."
+   - Usuń prefiksy błędów OCR: "OWT", "STOWT"
+   - Usuń sufiksy: "- Zakupy", "- Paragon", "Zakupy", "Paragon"
+   - Usuń adresy, kody pocztowe, NIP, REGON
+   - Zwróć tylko główną nazwę sklepu
+
+7. Jeśli NAPRAWDĘ nie możesz znaleźć nazwy sklepu, zwróć "null"
+
+PRZYKŁADY POPRAWNEJ EKSTRAKCJI:
+- "STOWT LIDL SP. Z O.O. ul. Warszawska 123" → "Lidl"
 - "OWT LIDL" → "Lidl"
 - "BIEDRONKA - Zakupy" → "Biedronka"
 - "ŻABKA 123" → "Żabka"
 - "Kaufland Polska Sp. z o.o." → "Kaufland"
-- "Carrefour Market" → "Carrefour"`,
+- "Carrefour Market" → "Carrefour"
+- "ABC Delikatesy" → "ABC"
+- "Sklep XYZ sp. z o.o." → "Sklep XYZ" (jeśli to nie znana sieć)
+
+ZWRÓĆ TYLKO NAZWĘ SKLEPU - bez dodatkowych słów, bez wyjaśnień.`,
         },
         {
           role: 'user',
-          content: `Znajdź nazwę sklepu w tym tekście paragonu:\n\n${textSample}`,
+          content: `Znajdź i zweryfikuj nazwę sklepu w tym tekście paragonu. Zwróć TYLKO czystą nazwę sklepu (bez form prawnych, bez błędów OCR, bez dodatkowych słów):
+
+${textSample}
+
+Nazwa sklepu:`,
         },
       ],
     });
@@ -332,99 +359,49 @@ async function extractReceiptData(azureResult: any) {
   const time = fields.TransactionTime?.valueTime ?? null;
   const currency = fields.Total?.valueCurrency?.currencyCode ?? 'PLN';
 
-  // NAJPIERW: Normalizuj nazwę sklepu - rozpoznaj popularne sieci PRZED czyszczeniem
-  // To pozwala rozpoznać "LIDL" nawet w zniekształconych nazwach jak "STOWT LIDL" czy "OWT LIDL SP. Z O.O."
-  if (merchant) {
-    console.log(`[Store Extraction] Oryginalna nazwa z Azure: "${merchant}"`);
-    const normalizedStore = normalizeStoreName(merchant);
-    
-    // Jeśli normalizacja znalazła znaną sieć (nie zwróciła oryginalnej nazwy), użyj jej bezpośrednio
-    if (normalizedStore !== merchant && normalizedStore !== 'Unknown Store') {
-      console.log(`[Store Normalization] ✅ Rozpoznano sieć: "${normalizedStore}" z oryginalnej nazwy "${merchant}"`);
-      merchant = normalizedStore;
-    } else {
-      console.log(`[Store Normalization] Nie rozpoznano znanej sieci w "${merchant}", przechodzę do czyszczenia...`);
-      // Jeśli nie rozpoznano znanej sieci, czyść nazwę normalnie
-      const originalMerchant = merchant;
-      
-      // Usuń wszystkie formy prawne i prefiksy
-      merchant = merchant
-        .replace(/^OWT\s*/i, '') // Usuń "OWT" na początku
-        .replace(/^STOWT\s*/i, '') // Usuń "STOWT" na początku (częsty błąd OCR)
-        .replace(/^SP\.?\s*Z\s*O\.?O\.?\s*/i, '') // Usuń "SP. Z O.O." na początku
-        .replace(/^SP\.?\s*K\.?\s*/i, '') // Usuń "SP.K." na początku
-        .replace(/^S\.?A\.?\s*/i, '') // Usuń "S.A." na początku
-        .replace(/^S\.?C\.?\s*/i, '') // Usuń "S.C." na początku
-        .replace(/\s*sp\.?\s*z\s*o\.?o\.?\s*sp\.?k\.?/gi, '') // Usuń "sp. z o.o. sp.k."
-        .replace(/\s*sp\.?\s*z\s*o\.?o\.?/gi, '') // Usuń "sp. z o.o."
-        .replace(/\s*sp\.?\s*k\.?/gi, '') // Usuń "sp.k."
-        .replace(/\s*S\.?A\.?/gi, '') // Usuń "S.A."
-        .replace(/\s*S\.?C\.?/gi, '') // Usuń "S.C."
-        .replace(/\s*-\s*Zakupy$/i, '') // Usuń "- Zakupy" na końcu
-        .replace(/\s*-\s*Paragon$/i, '') // Usuń "- Paragon" na końcu
-        .replace(/\s*-\s*Receipt$/i, '') // Usuń "- Receipt" na końcu
-        .replace(/\s*-\s*Shop$/i, '') // Usuń "- Shop" na końcu
-        .replace(/\s*Zakupy\s*$/i, '') // Usuń "Zakupy" na końcu
-        .replace(/\s*Paragon\s*$/i, '') // Usuń "Paragon" na końcu
-        .replace(/\s*Receipt\s*$/i, '') // Usuń "Receipt" na końcu
-        .replace(/\s*Shop\s*$/i, '') // Usuń "Shop" na końcu
-        .replace(/\s*\(.*?\)/g, '') // Usuń wszystko w nawiasach (np. (Warszawa))
-        .replace(/\s*\[.*?\]/g, '') // Usuń wszystko w kwadratowych nawiasach
-        .replace(/^\d+\s*/, '') // Usuń liczby na początku
-        .replace(/\s*NIP.*$/i, '') // Usuń "NIP ..." i wszystko po
-        .replace(/\s*REGON.*$/i, '') // Usuń "REGON ..." i wszystko po
-        .replace(/\s*KRS.*$/i, '') // Usuń "KRS ..." i wszystko po
-        .replace(/\s+/g, ' ') // Usuń wielokrotne spacje
-        .trim();
-      
-      // Jeśli nazwa zawiera tylko liczby, NIP, REGON, kody - odrzuć
-      if (merchant.match(/^[\d\s\-\.]+$/) || 
-          merchant.match(/^(NIP|REGON|KRS)/i) ||
-          merchant.match(/^\d{2}-\d{3}$/) || // Kod pocztowy
-          merchant.length < 2) {
-        merchant = null;
-      }
-      
-      // Jeśli po czyszczeniu zostało mniej niż 2 znaki, użyj oryginalnej (może była bardzo krótka)
-      if (merchant && merchant.length < 2 && originalMerchant.length >= 2) {
-        merchant = originalMerchant.trim();
-      }
-      
-      // Na końcu spróbuj jeszcze raz znormalizować (na wypadek gdyby czyszczenie pomogło)
-      if (merchant && merchant.length >= 2) {
-        merchant = normalizeStoreName(merchant);
-      }
-    }
+  // EKSTRAKCJA I WERYFIKACJA NAZWY SKLEPU - ZAWSZE używamy AI do sprawdzenia
+  let extractedMerchant = merchant;
+  console.log(`[Store Extraction] Oryginalna nazwa z Azure: "${extractedMerchant}"`);
+  
+  // 1. Podstawowe czyszczenie przed wysłaniem do AI
+  if (extractedMerchant) {
+    extractedMerchant = extractedMerchant
+      .replace(/^OWT\s*/i, '')
+      .replace(/^STOWT\s*/i, '')
+      .trim();
   }
   
-  // Fallback: jeśli nadal brak lub nazwa jest nieprawidłowa, spróbuj GPT
-  const isInvalidStoreName = !merchant || 
-                             merchant.length < 2 || 
-                             merchant === 'Unknown Store' ||
-                             merchant.toLowerCase().includes('zakupy') ||
-                             merchant.toLowerCase().includes('paragon') ||
-                             merchant.toLowerCase().includes('receipt') ||
-                             merchant.toLowerCase().includes('shop') ||
-                             merchant.match(/^[\d\s\-\.]+$/); // Tylko cyfry i znaki specjalne
-  
-  if (isInvalidStoreName && azureResult.analyzeResult?.content) {
-    console.log(`[Store Extraction] Nazwa sklepu nieprawidłowa ("${merchant}"), próbuję GPT...`);
+  // 2. ZAWSZE użyj GPT do weryfikacji i poprawienia nazwy sklepu
+  if (azureResult.analyzeResult?.content) {
+    console.log(`[Store Extraction] 🔍 Wysyłam do GPT do weryfikacji nazwy sklepu...`);
     const gptStoreName = await extractStoreNameWithGPT(azureResult.analyzeResult.content);
-    if (gptStoreName && gptStoreName !== 'Unknown Store') {
+    
+    if (gptStoreName && gptStoreName !== 'Unknown Store' && gptStoreName.toLowerCase() !== 'null') {
       merchant = gptStoreName;
-      console.log(`[Store Extraction] ✅ GPT znalazł nazwę sklepu: "${merchant}"`);
+      console.log(`[Store Extraction] ✅ GPT zweryfikował i poprawił nazwę sklepu: "${merchant}"`);
+    } else if (extractedMerchant && extractedMerchant.length >= 2) {
+      // Jeśli GPT nie znalazło, ale mamy coś z Azure, użyj tego (po normalizacji)
+      merchant = normalizeStoreName(extractedMerchant);
+      console.log(`[Store Extraction] GPT nie znalazło, używam znormalizowanej nazwy z Azure: "${merchant}"`);
+    } else {
+      merchant = 'Unknown Store';
+      console.log(`[Store Extraction] ❌ Nie znaleziono nazwy sklepu`);
     }
+  } else if (extractedMerchant && extractedMerchant.length >= 2) {
+    // Jeśli nie ma rawText, użyj normalizacji
+    merchant = normalizeStoreName(extractedMerchant);
+    console.log(`[Store Extraction] Brak rawText, używam znormalizowanej nazwy: "${merchant}"`);
+  } else {
+    merchant = 'Unknown Store';
+    console.log(`[Store Extraction] ❌ Brak danych do ekstrakcji nazwy sklepu`);
   }
   
-  // Ostateczny fallback: jeśli nadal brak, użyj "Unknown Store"
-  if (!merchant || merchant.length < 2) {
-    merchant = 'Unknown Store';
-  } else {
-    // Znormalizuj nawet fallback (na wypadek gdyby był jakiś tekst)
+  // 3. Ostateczna normalizacja (na wypadek gdyby GPT zwróciło coś co można jeszcze znormalizować)
+  if (merchant && merchant !== 'Unknown Store') {
     const finalNormalized = normalizeStoreName(merchant);
     if (finalNormalized !== merchant && finalNormalized !== 'Unknown Store') {
-      console.log(`[Store Normalization] ✅ Finalna normalizacja: "${finalNormalized}" z "${merchant}"`);
       merchant = finalNormalized;
+      console.log(`[Store Normalization] ✅ Finalna normalizacja: "${merchant}"`);
     }
   }
   
