@@ -308,16 +308,20 @@ export function t(key: string): string {
 
 // Hook for React components
 export function useTranslation() {
-  // Start with 'en' to match SSR, then update after mount
+  // Always start with 'en' to match SSR - this prevents hydration mismatch
   const [lang, setLang] = React.useState<Language>('en')
   const [mounted, setMounted] = React.useState(false)
   
   React.useEffect(() => {
+    // Only update after mount to avoid hydration mismatch
     setMounted(true)
     const stored = localStorage.getItem('language') as Language
     if (stored && (stored === 'pl' || stored === 'en')) {
       setLang(stored)
       currentLanguage = stored
+    } else {
+      // If no stored language, check user settings from DB (async, so do it here)
+      // This will be handled by components that need it
     }
   }, [])
   
@@ -327,11 +331,14 @@ export function useTranslation() {
     window.location.reload() // Reload to apply translations
   }
   
-  // Use 'en' during SSR, actual language after mount
+  // CRITICAL: Always use 'en' during SSR and first render to prevent hydration mismatch
+  // Only use actual language after component has mounted
   const currentLang = mounted ? lang : 'en'
   
   const translate = (key: string): string => {
-    return translations[currentLang][key as keyof typeof translations[typeof currentLang]] || key
+    // During SSR and first render, always return English
+    const langToUse = mounted ? currentLang : 'en'
+    return translations[langToUse][key as keyof typeof translations[typeof langToUse]] || key
   }
   
   return { t: translate, lang: currentLang, changeLanguage, mounted }

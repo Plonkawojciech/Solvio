@@ -83,13 +83,50 @@ async function convertHeicToJpegFile(file: File): Promise<File> {
   }
 }
 
+async function normalizeImageOrientation(file: File): Promise<File> {
+  // Normalize image orientation - createImageBitmap automatically handles EXIF orientation
+  // but we need to re-encode to remove EXIF and ensure correct orientation
+  try {
+    const img = await createImageBitmap(file);
+    
+    // Check if image needs rotation (if width < height, might be portrait/rotated)
+    // But we'll let Azure handle orientation detection, we just ensure clean JPEG
+    const canvas = document.createElement('canvas');
+    canvas.width = img.width;
+    canvas.height = img.height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return file;
+    
+    // Draw image (createImageBitmap already applied EXIF orientation)
+    ctx.drawImage(img, 0, 0);
+    
+    // Convert to blob and return as new File
+    return new Promise((resolve) => {
+      canvas.toBlob((blob) => {
+        if (!blob) {
+          resolve(file);
+          return;
+        }
+        const normalizedFile = new File([blob], file.name.replace(/\.(png|webp|heic|heif)$/i, '.jpg'), { type: 'image/jpeg' });
+        resolve(normalizedFile);
+      }, 'image/jpeg', 0.92);
+    });
+  } catch (error) {
+    console.warn('[normalizeImageOrientation] Failed, using original:', error);
+    return file;
+  }
+}
+
 async function compressImageToTarget(
   file: File,
   targetBytes: number,
   options?: { maxDim?: number }
 ): Promise<File> {
-  // If already small enough, keep as-is (but still normalize HEIC earlier).
-  if (file.size <= targetBytes) return file;
+  // If already small enough, still normalize orientation but don't compress
+  if (file.size <= targetBytes) {
+    // Still normalize orientation for better OCR
+    return normalizeImageOrientation(file);
+  }
 
   try {
     // Decode - use URL.createObjectURL as fallback if createImageBitmap fails
@@ -111,17 +148,17 @@ async function compressImageToTarget(
     
     const maxDim = options?.maxDim ?? 2000;
 
-  const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
-  let w = Math.max(1, Math.round(img.width * scale));
-  let h = Math.max(1, Math.round(img.height * scale));
+    const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+    let w = Math.max(1, Math.round(img.width * scale));
+    let h = Math.max(1, Math.round(img.height * scale));
 
-  // Draw
-  let canvas = document.createElement('canvas');
-  canvas.width = w;
-  canvas.height = h;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return file;
-  ctx.drawImage(img, 0, 0, w, h);
+    // Draw - createImageBitmap already applied EXIF orientation
+    let canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return file;
+    ctx.drawImage(img, 0, 0, w, h);
 
   // Try JPEG with decreasing quality
   const tryEncode = (quality: number) =>
@@ -282,9 +319,15 @@ export function ScanReceiptSheet({
           }
         }
 
+        // Normalize orientation for better OCR (especially for rotated receipts)
+        // This ensures EXIF orientation is applied and image is in correct orientation
+        f = await normalizeImageOrientation(f);
+
         // If still too big, compress (resize+jpeg).
         if (f.size > perFileTarget) {
           f = await compressImageToTarget(f, perFileTarget, { maxDim: 2000 });
+        } else {
+          // Even if small, ensure orientation is normalized (already done above)
         }
 
         // Ensure MIME type is set correctly (some browsers don't set it on File constructor)

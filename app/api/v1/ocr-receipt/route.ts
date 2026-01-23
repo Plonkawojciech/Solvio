@@ -113,6 +113,63 @@ async function processAzureOCR(buffer: Buffer, mimeType: string) {
   throw new Error('Azure OCR timeout - exceeded max polling attempts');
 }
 
+// --- NORMALIZACJA NAZW SKLEPÓW ---
+function normalizeStoreName(merchant: string | null): string {
+  if (!merchant) return 'Unknown Store';
+  
+  const normalized = merchant.toLowerCase().trim();
+  
+  // Popularne sieci sklepów - rozpoznaj i znormalizuj
+  // Używamy regex, który znajdzie nazwę nawet w środku tekstu (np. "STOWT LIDL" → "Lidl")
+  const storePatterns: Array<[RegExp, string]> = [
+    [/lidl/i, 'Lidl'], // Rozpozna "LIDL", "lidl", "Lidl" nawet w "STOWT LIDL" czy "OWT LIDL SP. Z O.O."
+    [/biedronka/i, 'Biedronka'],
+    [/żabka|zabka/i, 'Żabka'],
+    [/dino/i, 'Dino'],
+    [/kaufland/i, 'Kaufland'],
+    [/carrefour/i, 'Carrefour'],
+    [/tesco/i, 'Tesco'],
+    [/auchan/i, 'Auchan'],
+    [/real/i, 'Real'],
+    [/leclerc/i, 'Leclerc'],
+    [/selgros/i, 'Selgros'],
+    [/makro/i, 'Makro'],
+    [/castorama/i, 'Castorama'],
+    [/leroy.?merlin/i, 'Leroy Merlin'],
+    [/obi/i, 'OBI'],
+    [/ikea/i, 'IKEA'],
+    [/mediamarkt|media.?markt/i, 'MediaMarkt'],
+    [/rtv.?euro.?agd/i, 'RTV Euro AGD'],
+    [/empik/i, 'Empik'],
+    [/rossmann/i, 'Rossmann'],
+    [/hebe/i, 'Hebe'],
+    [/super.?pharm/i, 'Super-Pharm'],
+    [/apteka/i, 'Apteka'],
+    [/ziko/i, 'Ziko Apteka'],
+    [/stokrotka/i, 'Stokrotka'],
+    [/polo.?market/i, 'Polo Market'],
+    [/abc/i, 'ABC'],
+    [/delikatesy/i, 'Delikatesy'],
+    [/spar/i, 'SPAR'],
+    [/netto/i, 'Netto'],
+    [/aldi/i, 'Aldi'],
+    [/penny/i, 'Penny'],
+    [/rewe/i, 'REWE'],
+    [/e.?leclerc/i, 'E.Leclerc'],
+    [/intermarche/i, 'Intermarché'],
+  ];
+  
+  // Sprawdź czy nazwa zawiera wzorzec popularnej sieci
+  for (const [pattern, storeName] of storePatterns) {
+    if (pattern.test(normalized)) {
+      return storeName;
+    }
+  }
+  
+  // Jeśli nie znaleziono popularnej sieci, zwróć oryginalną (po czyszczeniu)
+  return merchant;
+}
+
 // --- EKSTRAKCJA DANYCH ---
 function extractReceiptData(azureResult: any) {
   const document = azureResult.analyzeResult?.documents?.[0];
@@ -122,31 +179,146 @@ function extractReceiptData(azureResult: any) {
 
   const fields = document.fields || {};
 
-  const total = fields.Total?.valueNumber ?? null;
+  // Total - ZAWSZE używaj wartości z paragonu, NIE obliczaj
+  let total: number | null = fields.Total?.valueNumber ?? null;
   
-  // POPRAWKA: Spróbuj różnych źródeł dla nazwy sklepu
-  let merchant = 
-    fields.MerchantName?.valueString ?? 
-    fields.MerchantName?.content ?? 
-    fields.MerchantPhoneNumber?.content?.split(' ')[0] ??
-    fields.MerchantAddress?.valueString?.split(',')[0] ??
-    fields.MerchantAddress?.content?.split(',')[0] ??
-    null;
+  // Jeśli total jest stringiem, sparsuj go (ale NIE obliczaj)
+  if (total === null && fields.Total?.valueString && typeof fields.Total.valueString === 'string') {
+    try {
+      const totalStr = fields.Total.valueString.replace(/[^\d.,-]/g, '').replace(',', '.');
+      total = parseFloat(totalStr) || null;
+    } catch {
+      total = null;
+    }
+  }
+  
+  // ULEPSZONA EKSTRAKCJA NAZWY SKLEPU - sprawdź wszystkie możliwe źródła
+  let merchant = null;
+  
+  // Priorytet 1: MerchantName (główna nazwa) - sprawdź wszystkie możliwe pola
+  merchant = fields.MerchantName?.valueString || 
+             fields.MerchantName?.content ||
+             fields.MerchantName?.valueContent?.content;
+  
+  // Priorytet 2: MerchantAddress (często zawiera nazwę na początku)
+  if (!merchant && fields.MerchantAddress) {
+    const addr = fields.MerchantAddress.valueString || 
+                 fields.MerchantAddress.content || 
+                 fields.MerchantAddress.valueContent?.content ||
+                 '';
+    // Weź pierwszą linię adresu (często to nazwa sklepu)
+    const firstLine = addr.split(/[,\n]/)[0]?.trim();
+    if (firstLine && firstLine.length > 2 && firstLine.length < 60) {
+      merchant = firstLine;
+    }
+  }
+  
+  // Priorytet 3: Sprawdź cały tekst dokumentu (rawText) - szukaj na początku
+  if (!merchant && azureResult.analyzeResult?.content) {
+    const content = azureResult.analyzeResult.content;
+    const lines = content.split('\n').filter(l => l.trim().length > 0);
+    // Pierwsze 5 linii często zawierają nazwę sklepu
+    for (let i = 0; i < Math.min(5, lines.length); i++) {
+      const line = lines[i].trim();
+      // Pomiń linie z datą, godziną, NIP, REGON, kodami pocztowymi
+      if (!line.match(/^\d{2}[.\-/]\d{2}[.\-/]\d{2,4}/) && // Data
+          !line.match(/^\d{2}:\d{2}/) && // Godzina
+          !line.match(/NIP|REGON|KRS/i) && // Numery prawne
+          !line.match(/^\d{2}-\d{3}$/) && // Kod pocztowy
+          !line.match(/^[A-Z]{2,3}\s*\d+/) && // Kody (np. "PL 123")
+          line.length > 2 && 
+          line.length < 60 &&
+          !line.match(/^[A-Z\s]{20,}$/)) { // Tylko wielkie litery (prawdopodobnie nie nazwa sklepu)
+        merchant = line;
+        break;
+      }
+    }
+  }
   
   const date = fields.TransactionDate?.valueDate ?? null;
   const time = fields.TransactionTime?.valueTime ?? null;
   const currency = fields.Total?.valueCurrency?.currencyCode ?? 'PLN';
 
-  // Oczyść nazwę sklepu (usuń dziwne prefiksy i sp. z o.o.)
+  // NAJPIERW: Normalizuj nazwę sklepu - rozpoznaj popularne sieci PRZED czyszczeniem
+  // To pozwala rozpoznać "LIDL" nawet w zniekształconych nazwach jak "STOWT LIDL" czy "OWT LIDL SP. Z O.O."
   if (merchant) {
-    merchant = merchant
-      .replace(/^OWT\s*/i, '') // Usuń "OWT" na początku
-      .replace(/\s*sp\.?\s*z\s*o\.?o\.?\s*sp\.?k\.?/gi, '') // Usuń "sp. z o.o. sp.k."
-      .replace(/\s+/g, ' ') // Usuń wielokrotne spacje
-      .trim();
+    console.log(`[Store Extraction] Oryginalna nazwa z Azure: "${merchant}"`);
+    const normalizedStore = normalizeStoreName(merchant);
+    
+    // Jeśli normalizacja znalazła znaną sieć (nie zwróciła oryginalnej nazwy), użyj jej bezpośrednio
+    if (normalizedStore !== merchant && normalizedStore !== 'Unknown Store') {
+      console.log(`[Store Normalization] ✅ Rozpoznano sieć: "${normalizedStore}" z oryginalnej nazwy "${merchant}"`);
+      merchant = normalizedStore;
+    } else {
+      console.log(`[Store Normalization] Nie rozpoznano znanej sieci w "${merchant}", przechodzę do czyszczenia...`);
+      // Jeśli nie rozpoznano znanej sieci, czyść nazwę normalnie
+      const originalMerchant = merchant;
+      
+      // Usuń wszystkie formy prawne i prefiksy
+      merchant = merchant
+        .replace(/^OWT\s*/i, '') // Usuń "OWT" na początku
+        .replace(/^STOWT\s*/i, '') // Usuń "STOWT" na początku (częsty błąd OCR)
+        .replace(/^SP\.?\s*Z\s*O\.?O\.?\s*/i, '') // Usuń "SP. Z O.O." na początku
+        .replace(/^SP\.?\s*K\.?\s*/i, '') // Usuń "SP.K." na początku
+        .replace(/^S\.?A\.?\s*/i, '') // Usuń "S.A." na początku
+        .replace(/^S\.?C\.?\s*/i, '') // Usuń "S.C." na początku
+        .replace(/\s*sp\.?\s*z\s*o\.?o\.?\s*sp\.?k\.?/gi, '') // Usuń "sp. z o.o. sp.k."
+        .replace(/\s*sp\.?\s*z\s*o\.?o\.?/gi, '') // Usuń "sp. z o.o."
+        .replace(/\s*sp\.?\s*k\.?/gi, '') // Usuń "sp.k."
+        .replace(/\s*S\.?A\.?/gi, '') // Usuń "S.A."
+        .replace(/\s*S\.?C\.?/gi, '') // Usuń "S.C."
+        .replace(/\s*-\s*Zakupy$/i, '') // Usuń "- Zakupy" na końcu
+        .replace(/\s*-\s*Paragon$/i, '') // Usuń "- Paragon" na końcu
+        .replace(/\s*-\s*Receipt$/i, '') // Usuń "- Receipt" na końcu
+        .replace(/\s*-\s*Shop$/i, '') // Usuń "- Shop" na końcu
+        .replace(/\s*Zakupy\s*$/i, '') // Usuń "Zakupy" na końcu
+        .replace(/\s*Paragon\s*$/i, '') // Usuń "Paragon" na końcu
+        .replace(/\s*Receipt\s*$/i, '') // Usuń "Receipt" na końcu
+        .replace(/\s*Shop\s*$/i, '') // Usuń "Shop" na końcu
+        .replace(/\s*\(.*?\)/g, '') // Usuń wszystko w nawiasach (np. (Warszawa))
+        .replace(/\s*\[.*?\]/g, '') // Usuń wszystko w kwadratowych nawiasach
+        .replace(/^\d+\s*/, '') // Usuń liczby na początku
+        .replace(/\s*NIP.*$/i, '') // Usuń "NIP ..." i wszystko po
+        .replace(/\s*REGON.*$/i, '') // Usuń "REGON ..." i wszystko po
+        .replace(/\s*KRS.*$/i, '') // Usuń "KRS ..." i wszystko po
+        .replace(/\s+/g, ' ') // Usuń wielokrotne spacje
+        .trim();
+      
+      // Jeśli nazwa zawiera tylko liczby, NIP, REGON, kody - odrzuć
+      if (merchant.match(/^[\d\s\-\.]+$/) || 
+          merchant.match(/^(NIP|REGON|KRS)/i) ||
+          merchant.match(/^\d{2}-\d{3}$/) || // Kod pocztowy
+          merchant.length < 2) {
+        merchant = null;
+      }
+      
+      // Jeśli po czyszczeniu zostało mniej niż 2 znaki, użyj oryginalnej (może była bardzo krótka)
+      if (merchant && merchant.length < 2 && originalMerchant.length >= 2) {
+        merchant = originalMerchant.trim();
+      }
+      
+      // Na końcu spróbuj jeszcze raz znormalizować (na wypadek gdyby czyszczenie pomogło)
+      if (merchant && merchant.length >= 2) {
+        merchant = normalizeStoreName(merchant);
+      }
+    }
   }
+  
+  // Fallback: jeśli nadal brak, użyj "Unknown Store"
+  if (!merchant || merchant.length < 2) {
+    merchant = 'Unknown Store';
+  } else {
+    // Znormalizuj nawet fallback (na wypadek gdyby był jakiś tekst)
+    const finalNormalized = normalizeStoreName(merchant);
+    if (finalNormalized !== merchant && finalNormalized !== 'Unknown Store') {
+      console.log(`[Store Normalization] ✅ Finalna normalizacja: "${finalNormalized}" z "${merchant}"`);
+      merchant = finalNormalized;
+    }
+  }
+  
+  console.log(`[Store Extraction] ✅ Finalna nazwa sklepu: "${merchant}"`);
 
-  // POPRAWKA: Wyciągnij produkty z pełnymi nazwami
+  // ULEPSZONA EKSTRAKCJA PRODUKTÓW - sprawdź wszystkie możliwe pola
   const items: Array<{
     name: string;
     quantity: number | null;
@@ -158,19 +330,96 @@ function extractReceiptData(azureResult: any) {
     for (const item of itemsField) {
       const itemObj = item.valueObject || {};
       
-      // Użyj content (pełny tekst) zamiast valueString (może być ucięty)
-      const name = 
+      // ULEPSZONA EKSTRAKCJA NAZWY - sprawdź wszystkie możliwe pola w kolejności priorytetu
+      let name = 
         itemObj.Description?.content ?? 
         itemObj.Description?.valueString ?? 
         itemObj.Name?.content ??
-        itemObj.Name?.valueString ?? 
-        'Nieznany produkt';
+        itemObj.Name?.valueString ??
+        itemObj.ProductName?.content ??
+        itemObj.ProductName?.valueString ??
+        itemObj.ItemDescription?.content ??
+        itemObj.ItemDescription?.valueString ??
+        null;
       
-      const quantity = itemObj.Quantity?.valueNumber ?? null;
-      const price = itemObj.TotalPrice?.valueNumber ?? itemObj.Price?.valueNumber ?? null;
+      // Jeśli nadal brak nazwy, spróbuj z rawText (cały tekst linii)
+      if (!name || name.length < 2) {
+        // Sprawdź czy jest jakiś tekst w innych polach
+        const allText = [
+          itemObj.Description?.content,
+          itemObj.Description?.valueString,
+          itemObj.Name?.content,
+          itemObj.Name?.valueString,
+        ].filter(Boolean).join(' ');
+        
+        if (allText.trim().length > 0) {
+          name = allText.trim();
+        }
+      }
+      
+      // Fallback
+      if (!name || name.length < 2) {
+        name = 'Nieznany produkt';
+      }
+      
+      // Oczyść nazwę produktu
+      name = name
+        .replace(/\s+/g, ' ') // Usuń wielokrotne spacje
+        .trim();
+      
+      // ULEPSZONA EKSTRAKCJA ILOŚCI I CENY
+      let quantity = itemObj.Quantity?.valueNumber ?? null;
+      
+      // Jeśli quantity nie jest number, spróbuj sparsować ze stringa
+      if (quantity === null && itemObj.Quantity?.valueString && typeof itemObj.Quantity.valueString === 'string') {
+        try {
+          quantity = parseFloat(itemObj.Quantity.valueString.replace(',', '.')) || null;
+        } catch {
+          quantity = null;
+        }
+      }
+      
+      // Cena finalna - ZAWSZE używaj TotalPrice (cena za linię/cena finalna z paragonu)
+      // NIE obliczaj ceny - używaj dokładnie tego, co jest na paragonie
+      let price: number | null = null;
+      
+      // Priorytet 1: TotalPrice (cena finalna za linię)
+      if (itemObj.TotalPrice?.valueNumber !== undefined && itemObj.TotalPrice?.valueNumber !== null) {
+        price = itemObj.TotalPrice.valueNumber;
+      } else if (itemObj.TotalPrice?.valueString && typeof itemObj.TotalPrice.valueString === 'string') {
+        // Jeśli TotalPrice jest stringiem, sparsuj go
+        try {
+          const priceStr = itemObj.TotalPrice.valueString.replace(/[^\d.,-]/g, '').replace(',', '.');
+          price = parseFloat(priceStr) || null;
+        } catch {
+          price = null;
+        }
+      }
+      
+      // Priorytet 2: Price (tylko jeśli TotalPrice nie istnieje)
+      if (price === null) {
+        if (itemObj.Price?.valueNumber !== undefined && itemObj.Price?.valueNumber !== null) {
+          price = itemObj.Price.valueNumber;
+        } else if (itemObj.Price?.valueString && typeof itemObj.Price.valueString === 'string') {
+          try {
+            const priceStr = itemObj.Price.valueString.replace(/[^\d.,-]/g, '').replace(',', '.');
+            price = parseFloat(priceStr) || null;
+          } catch {
+            price = null;
+          }
+        }
+      }
+      
+      // NIE wykonuj żadnych obliczeń - używaj dokładnie tego, co jest na paragonie
       
       items.push({ name, quantity, price });
     }
+  }
+  
+  // Jeśli Azure nie zwróciło itemów, ale mamy rawText, spróbuj wyciągnąć z tekstu
+  if (items.length === 0 && azureResult.analyzeResult?.content) {
+    console.log('[Azure] No items found in structured data, trying to extract from raw text...');
+    // To można rozszerzyć o prosty parser regex, ale na razie zostawiamy puste
   }
 
   console.log('[Azure] Extracted data:');
@@ -188,66 +437,210 @@ async function categorizeAllItems(
   items: Array<{ name: string; quantity: number | null; price: number | null }>,
   categories: Array<{ id: string; name: string }>
 ): Promise<Array<{ name: string; quantity: number | null; price: number | null; category_id: string | null }>> {
-  if (!openai || !categories.length || items.length === 0) {
+  if (!openai) {
+    console.warn('[GPT] OpenAI client not available - OPENAI_API_KEY missing?');
+    return items.map(item => ({ ...item, category_id: null }));
+  }
+  
+  if (!categories.length) {
+    console.warn('[GPT] No categories available');
+    return items.map(item => ({ ...item, category_id: null }));
+  }
+  
+  if (items.length === 0) {
+    console.log('[GPT] No items to categorize');
     return items.map(item => ({ ...item, category_id: null }));
   }
 
   try {
     console.log(`[GPT] Kategoryzacja ${items.length} produktów (batch)...`);
+    console.log(`[GPT] Available categories: ${categories.length}`);
+    console.log(`[GPT] OpenAI client initialized: ${!!openai}`);
     
     const categoryMap = categories.map(c => `${c.name}: ${c.id}`).join('\n');
     const itemsList = items.map((item, idx) => `${idx + 1}. ${item.name}`).join('\n');
     
     const completion = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
+      model: 'gpt-4o', // Lepszy model dla dokładniejszej kategoryzacji
       temperature: 0,
-      max_tokens: 500,
+      max_tokens: 1000,
       messages: [
         { 
           role: 'system', 
-          content: `Assign category to each product. Return ONLY JSON array.
+          content: `Jesteś ekspertem w kategoryzacji produktów z paragonów. Twoim zadaniem jest przypisanie każdego produktu do NAJLEPIEJ PASUJĄCEJ kategorii.
 
-Categories:
+DOSTĘPNE KATEGORIE (każda ma UUID):
 ${categoryMap}
 
-Rules (DOKŁADNIE - przypisz do najlepiej pasującej kategorii):
-- Food: restauracje, fast food, jedzenie na wynos, pizza, sushi, kebab, obiady, śniadania, kawa na mieście
-- Groceries: zakupy w supermarkecie (wszystkie produkty spożywcze), mięso, nabiał, jajka, warzywa, owoce, chleb, ser, jogurt, mleko, masło, krewetki, ryby, drożdże, skrobia, mąka, cukier, sól, przyprawy, woda, napoje, soki, olej, oliwa, papier toaletowy, ręczniki papierowe, środki czystości, folie, worki, mydło, proszki
-- Health: apteka, leki, witaminy, plastry, bandaże, suplementy, produkty medyczne, kosmetyki do pielęgnacji
-- Transport: benzyna, olej silnikowy, płyn do spryskiwaczy, bilety komunikacji, parking, taksówki, Uber, naprawa samochodu
-- Shopping: ubrania, buty, torebki, akcesoria modowe, perfumy, kosmetyki dekoracyjne, biżuteria
-- Electronics: telefony, ładowarki, baterie, słuchawki, kable, komputery, tablety, smartwatche, elektronika
-- Home & Garden: meble, dekoracje, narzędzia, farby, rośliny, ogród, wyposażenie domu, AGD, RTV
-- Entertainment: kino, teatr, koncerty, gry, streaming (Netflix, Spotify), książki, hobby, sport
-- Bills & Utilities: prąd, woda, gaz, internet, telefon, TV, czynsz, ubezpieczenia, abonamenty
-- Other: wszystko co nie pasuje do powyższych kategorii
+INSTRUKCJE KATEGORYZACJI - PRZYPISZ DO NAJLEPIEJ PASUJĄCEJ:
 
-WAŻNE: 
-- Produkty spożywcze z supermarketu → Groceries (nie Food!)
-- Restauracje, fast food → Food
-- Kosmetyki pielęgnacyjne → Health, kosmetyki dekoracyjne → Shopping
+🍔 FOOD - TYLKO jedzenie z restauracji/kawiarni/fast foodów:
+   - Restauracje, fast food, jedzenie na wynos, food delivery
+   - Pizza, sushi, kebab, burgery, frytki, hot dogi
+   - Obiady, śniadania, kolacje w restauracjach
+   - Kawa, herbata, napoje w kawiarniach/restauracjach (NIE woda z supermarketu!)
+   - Przykłady: "Pizza Margherita", "Kebab", "Obiad w restauracji", "Kawa latte", "McDonald's", "KFC"
+   - NIE: produkty spożywcze z supermarketu (to GROCERIES!)
 
-Return ONLY JSON array: ["uuid1", "uuid2", ...] or ["uuid1", null, "uuid3", ...]`
+🛒 GROCERIES - Wszystkie produkty spożywcze i artykuły z supermarketu/sklepu:
+   - Mięso, wędliny, ryby, owoce morza (krewetki, kraby, małże, kalmary)
+   - Nabiał: mleko, ser, jogurt, masło, śmietana, jajka, twaróg
+   - Warzywa, owoce, pieczywo (chleb, bułki, bagietki)
+   - Produkty sypkie: mąka, cukier, sól, skrobia, drożdże, ryż, makaron, kasza, płatki
+   - Napoje: woda, soki, napoje gazowane, mleko roślinne
+   - Olej, oliwa, ocet, przyprawy, sosy, ketchup, majonez
+   - Artykuły gospodarstwa domowego: papier toaletowy, ręczniki papierowe, worki, folie, zapałki
+   - Środki czystości: mydło, proszki do prania, płyny, gąbki, ścierki
+   - Przykłady: "Chleb", "Mleko 3.2%", "Jajka 10szt", "Pomidory", "Woda mineralna", "Skrobia ziemniaczana", "Krewetki", "Banany", "Mąka pszenna"
+
+💊 HEALTH - Apteka, leki, kosmetyki pielęgnacyjne:
+   - Apteka, leki, witaminy, suplementy, probiotyki
+   - Produkty medyczne: plastry, bandaże, termometry, strzykawki
+   - Kosmetyki do pielęgnacji: kremy, żele, szampony, pasty do zębów, mydła, balsamy
+   - Przykłady: "Aspiryna", "Witamina D", "Krem do twarzy", "Szampon", "Pasta do zębów", "Bandaż"
+
+🚗 TRANSPORT - Paliwo, transport, samochód:
+   - Paliwo: benzyna, diesel, LPG, CNG
+   - Płyny eksploatacyjne: olej silnikowy, płyn do spryskiwaczy, płyn chłodniczy
+   - Bilety komunikacji miejskiej, parking, myjnia
+   - Taksówki, Uber, Bolt, przejazdy
+   - Naprawa samochodu, części samochodowe, opony
+   - Przykłady: "Benzyna 95", "Bilet miesięczny", "Parking", "Olej silnikowy", "Uber"
+
+🛍️ SHOPPING - Ubrania, moda, kosmetyki dekoracyjne:
+   - Ubrania, buty, torebki, akcesoria modowe, paski
+   - Perfumy, wody toaletowe
+   - Kosmetyki dekoracyjne: szminka, tusz do rzęs, podkład, cienie, lakier do paznokci
+   - Biżuteria, zegarki, okulary
+   - Przykłady: "Koszula", "Buty sportowe", "Perfumy", "Tusz do rzęs", "Zegarek"
+
+📱 ELECTRONICS - Elektronika i akcesoria:
+   - Telefony, smartfony, tablety, smartwatche
+   - Komputery, laptopy, monitory, drukarki
+   - Akcesoria: ładowarki, kable, słuchawki, baterie, powerbanki
+   - Przykłady: "iPhone", "Ładowarka USB-C", "Słuchawki bezprzewodowe", "Laptop"
+
+🏠 HOME & GARDEN - Dom, ogród, wyposażenie:
+   - Meble, dekoracje, dywany, zasłony
+   - Narzędzia, farby, pędzle, wkrętarki
+   - Rośliny, nasiona, nawozy, ziemia
+   - AGD: pralki, lodówki, zmywarki, odkurzacze
+   - RTV: telewizory, głośniki, radia
+   - Przykłady: "Krzesło", "Farba biała", "Roślina doniczkowa", "Pralka"
+
+🎬 ENTERTAINMENT - Rozrywka, hobby, sport:
+   - Kino, teatr, koncerty, wydarzenia
+   - Gry komputerowe, konsolowe, planszowe
+   - Streaming: Netflix, Spotify, HBO, Disney+
+   - Książki, czasopisma, komiksy
+   - Hobby, sport, sprzęt sportowy, siłownia
+   - Przykłady: "Bilet do kina", "Netflix", "Książka", "Piłka nożna", "Gry wideo"
+
+💡 BILLS & UTILITIES - Rachunki, abonamenty:
+   - Prąd, woda, gaz, ogrzewanie
+   - Internet, telefon, TV, streaming (abonamenty)
+   - Czynsz, ubezpieczenia, podatki
+   - Przykłady: "Rachunek za prąd", "Internet", "Ubezpieczenie samochodu", "Czynsz"
+
+📦 OTHER - Wszystko inne:
+   - Usługi, naprawy, konsultacje
+   - Różne, niepasujące do powyższych
+   - Przykłady: "Usługa", "Naprawa", "Konsultacja"
+
+KRYTYCZNE ZASADY (PRZESTRZEGAJ ICH!):
+1. Produkty spożywcze z supermarketu → GROCERIES (NIE Food!)
+2. Restauracje, fast food, jedzenie na wynos → FOOD
+3. Kosmetyki pielęgnacyjne (kremy, szampony, mydła) → HEALTH
+4. Kosmetyki dekoracyjne (szminka, tusz, podkład) → SHOPPING
+5. Woda, soki, napoje z supermarketu → GROCERIES
+6. Kawa/herbata w kawiarni → FOOD, kawa/herbata w sklepie → GROCERIES
+7. Jeśli produkt pasuje do kilku kategorii, wybierz NAJLEPIEJ PASUJĄCĄ
+8. Jeśli nie jesteś pewien, wybierz kategorię która najlepiej pasuje (nie zostawiaj null jeśli możesz wybrać)
+
+ZWRÓĆ TYLKO tablicę JSON z UUID kategorii w tej samej kolejności co produkty:
+["uuid1", "uuid2", null, "uuid3", ...]
+
+Każdy element tablicy odpowiada produktowi w tej samej pozycji. Jeśli nie możesz przypisać kategorii, użyj null.`
         },
         { 
           role: 'user', 
-          content: itemsList
+          content: `Przypisz kategorię do każdego produktu z paragonu. Zwróć tablicę JSON z UUID kategorii w tej samej kolejności co produkty.
+
+Produkty do kategoryzacji:
+${itemsList}
+
+Pamiętaj:
+- Produkty spożywcze z supermarketu → GROCERIES
+- Restauracje/fast food → FOOD
+- Kosmetyki pielęgnacyjne → HEALTH
+- Kosmetyki dekoracyjne → SHOPPING
+
+Zwróć TYLKO tablicę JSON: ["uuid1", "uuid2", null, "uuid3", ...]`
         },
       ],
     });
 
     const result = completion.choices[0]?.message?.content?.trim() ?? null;
-    if (!result) return items.map(item => ({ ...item, category_id: null }));
+    if (!result) {
+      console.warn('[GPT] No response from OpenAI');
+      return items.map(item => ({ ...item, category_id: null }));
+    }
     
-    const categoryIds = JSON.parse(result) as (string | null)[];
+    console.log(`[GPT] Raw response: ${result.substring(0, 200)}...`);
     
-    return items.map((item, idx) => ({
+    // Try to extract JSON from response (GPT sometimes adds markdown or extra text)
+    let jsonStr = result;
+    
+    // Remove markdown code blocks if present
+    if (jsonStr.includes('```')) {
+      const match = jsonStr.match(/```(?:json)?\s*(\[.*?\])\s*```/s);
+      if (match) {
+        jsonStr = match[1];
+      } else {
+        // Try to find JSON array in the text
+        const arrayMatch = jsonStr.match(/\[.*?\]/s);
+        if (arrayMatch) {
+          jsonStr = arrayMatch[0];
+        }
+      }
+    }
+    
+    let categoryIds: (string | null)[] = [];
+    try {
+      categoryIds = JSON.parse(jsonStr) as (string | null)[];
+      console.log(`[GPT] Parsed ${categoryIds.length} category IDs`);
+    } catch (parseError) {
+      console.error('[GPT] JSON parse error:', parseError);
+      console.error('[GPT] Failed to parse:', jsonStr);
+      return items.map(item => ({ ...item, category_id: null }));
+    }
+    
+    // Validate length
+    if (categoryIds.length !== items.length) {
+      console.warn(`[GPT] Category count mismatch: expected ${items.length}, got ${categoryIds.length}`);
+      // Pad with nulls if too short, truncate if too long
+      while (categoryIds.length < items.length) {
+        categoryIds.push(null);
+      }
+      categoryIds = categoryIds.slice(0, items.length);
+    }
+    
+    const categorized = items.map((item, idx) => ({
       ...item,
       category_id: categoryIds[idx] || null,
     }));
     
+    const assignedCount = categorized.filter(c => c.category_id !== null).length;
+    console.log(`[GPT] ✅ Assigned categories to ${assignedCount}/${items.length} items`);
+    
+    return categorized;
+    
   } catch (error) {
     console.error('[GPT] Batch categorization error:', error);
+    if (error instanceof Error) {
+      console.error('[GPT] Error message:', error.message);
+      console.error('[GPT] Error stack:', error.stack);
+    }
     return items.map(item => ({ ...item, category_id: null }));
   }
 }

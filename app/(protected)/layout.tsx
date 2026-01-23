@@ -19,11 +19,11 @@ export default async function ProtectedLayout({
 
   return (
     <SidebarProvider>
-      <div className="flex flex-col min-h-screen w-full">
+      <div className="flex flex-col min-h-screen w-full overflow-x-hidden">
         <Header />
         <div className="flex flex-1 overflow-hidden">
           <AppSidebar />
-          <main className="flex-1 overflow-auto p-3 sm:p-4 md:p-6 lg:p-10">
+          <main className="flex-1 overflow-y-auto overflow-x-hidden p-2 sm:p-4 md:p-6 lg:p-10 w-full max-w-full">
             <div className="md:hidden mb-2 sm:mb-4">
               <SidebarTrigger />
             </div>

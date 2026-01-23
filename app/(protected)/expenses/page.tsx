@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { getLanguage, t } from '@/lib/i18n'
+import { useTranslation } from '@/lib/i18n'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -58,10 +58,11 @@ interface ReceiptData {
 
 export default function ExpensesPage() {
   const supabase = createClient()
+  const { t, lang, mounted } = useTranslation()
+  const isPolish = lang === 'pl'
   const [expenses, setExpenses] = useState<Expense[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const isPolish = getLanguage() === 'pl'
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const [selectedExpense, setSelectedExpense] = useState<Expense | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
@@ -69,6 +70,7 @@ export default function ExpensesPage() {
   const [loadingReceiptItems, setLoadingReceiptItems] = useState(false)
   const [categories, setCategories] = useState<Map<string, string>>(new Map())
   const [categoriesList, setCategoriesList] = useState<Array<{ id: string; name: string }>>([])
+  const [currency, setCurrency] = useState<string>('PLN')
   
   // Bulk selection dla expenses
   const [selectedExpenseIds, setSelectedExpenseIds] = useState<Set<string>>(new Set())
@@ -90,9 +92,25 @@ export default function ExpensesPage() {
   const [editItemCategory, setEditItemCategory] = useState('')
   const [isSavingItem, setIsSavingItem] = useState(false)
 
+  const fetchSettings = async () => {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+    
+    const { data: settings } = await supabase
+      .from('user_settings')
+      .select('currency_id')
+      .eq('user_id', user.id)
+      .maybeSingle()
+    
+    if (settings?.currency_id) {
+      setCurrency(settings.currency_id.toUpperCase())
+    }
+  }
+
   useEffect(() => {
     fetchExpenses()
     fetchCategories()
+    fetchSettings()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -409,7 +427,9 @@ export default function ExpensesPage() {
       <div className="flex flex-col h-full space-y-4 sm:space-y-6 md:space-y-12">
         {/* Nagłówek */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 sm:gap-6">
-          <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold tracking-tight">{t('expenses.title')}</h1>
+          <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold tracking-tight" suppressHydrationWarning>
+            {t('expenses.title')}
+          </h1>
           <div className="flex items-center gap-1 sm:gap-2 flex-wrap">
             {selectedExpenseIds.size > 0 && (
               <Button
@@ -422,12 +442,12 @@ export default function ExpensesPage() {
                 {isBulkDeleting ? (
                   <>
                     <Loader2 className="mr-1 sm:mr-2 h-3 w-3 sm:h-4 sm:w-4 animate-spin" />
-                    <span className="hidden sm:inline">{t('expenses.deleting')}</span>
+                    <span className="hidden sm:inline" suppressHydrationWarning>{t('expenses.deleting')}</span>
                   </>
                 ) : (
                   <>
                     <Trash2 className="mr-1 sm:mr-2 h-3 w-3 sm:h-4 sm:w-4" />
-                    <span className="hidden sm:inline">{t('expenses.delete')} </span>
+                    <span className="hidden sm:inline" suppressHydrationWarning>{t('expenses.delete')} </span>
                     {selectedExpenseIds.size}
                   </>
                 )}
@@ -447,32 +467,131 @@ export default function ExpensesPage() {
           ) : error ? (
             <div className="flex flex-col items-center justify-center py-32">
               <p className="text-center text-destructive text-lg mb-4">{error}</p>
-              <Button onClick={fetchExpenses} variant="outline">{t('expenses.retry')}</Button>
+              <Button onClick={fetchExpenses} variant="outline" suppressHydrationWarning>{t('expenses.retry')}</Button>
             </div>
           ) : expenses.length === 0 ? (
-            <p className="text-center text-muted-foreground text-lg py-32">
+            <p className="text-center text-muted-foreground text-lg py-32" suppressHydrationWarning>
               {t('expenses.noExpenses')}
             </p>
           ) : (
-            <div className="overflow-x-auto overflow-y-auto max-h-[60vh]">
-              <Table className="w-full text-sm sm:text-base min-w-[600px]">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-12">
-                      <Checkbox
-                        checked={selectedExpenseIds.size === expenses.length && expenses.length > 0}
-                        onCheckedChange={toggleExpenseSelectAll}
-                      />
-                    </TableHead>
-                    <TableHead>{t('expenses.titleCol')}</TableHead>
-                    <TableHead className="hidden sm:table-cell">{t('expenses.vendor')}</TableHead>
-                    <TableHead>{t('expenses.amount')}</TableHead>
-                    <TableHead className="hidden md:table-cell">{t('expenses.date')}</TableHead>
-                    <TableHead className="text-right">{t('expenses.actions')}</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {expenses.map((expense) => (
+            <>
+              {/* Mobile: Card view */}
+              <div className="block sm:hidden space-y-3 overflow-y-auto max-h-[60vh]">
+                {expenses.map((expense) => (
+                  <div
+                    key={expense.id}
+                    className={`border rounded-lg p-3 ${
+                      selectedExpense?.id === expense.id
+                        ? 'bg-muted/40 border-primary'
+                        : 'bg-card'
+                    }`}
+                    onClick={() => handleExpenseClick(expense)}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <Checkbox
+                            checked={selectedExpenseIds.has(expense.id)}
+                            onCheckedChange={() => toggleExpenseSelection(expense.id)}
+                            onClick={(e) => e.stopPropagation()}
+                            className="h-4 w-4"
+                          />
+                          <h3 className="font-semibold text-sm truncate">
+                            {editingExpenseId === expense.id ? (
+                              <Input
+                                value={editExpenseTitle}
+                                onChange={(e) => setEditExpenseTitle(e.target.value)}
+                                onKeyDown={(e) => handleExpenseKeyDown(e, expense.id)}
+                                className="h-7 text-sm"
+                                onClick={(e) => e.stopPropagation()}
+                              />
+                            ) : (
+                              expense.title
+                            )}
+                          </h3>
+                        </div>
+                        <div className="flex items-center justify-between text-xs text-muted-foreground">
+                          <span>{expense.vendor || '—'}</span>
+                          <span className="font-medium text-foreground">
+                            {editingExpenseId === expense.id ? (
+                              <Input
+                                value={editExpenseAmount}
+                                onChange={(e) => setEditExpenseAmount(e.target.value)}
+                                onKeyDown={(e) => handleExpenseKeyDown(e, expense.id)}
+                                type="number"
+                                step="0.01"
+                                className="h-6 w-20 text-xs"
+                                onClick={(e) => e.stopPropagation()}
+                              />
+                            ) : (
+                              `${expense.amount.toFixed(2)} ${currency}`
+                            )}
+                          </span>
+                        </div>
+                        <div className="text-xs text-muted-foreground mt-1">
+                          {new Date(expense.date).toLocaleDateString()}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                        {editingExpenseId === expense.id ? (
+                          <>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => saveExpense(expense.id)}
+                              disabled={isSavingExpense}
+                              className="h-7 w-7"
+                            >
+                              <Check className="h-3 w-3 text-green-600" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={cancelEditingExpense}
+                              className="h-7 w-7"
+                            >
+                              <X className="h-3 w-3" />
+                            </Button>
+                          </>
+                        ) : (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => {
+                              setSelectedExpense(expense);
+                              setIsDeleteDialogOpen(true);
+                            }}
+                            className="h-7 w-7"
+                          >
+                            <Trash2 className="h-3 w-3 text-red-500" />
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Desktop: Table view */}
+              <div className="hidden sm:block overflow-y-auto max-h-[60vh]">
+                <Table className="w-full text-sm">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-12">
+                        <Checkbox
+                          checked={selectedExpenseIds.size === expenses.length && expenses.length > 0}
+                          onCheckedChange={toggleExpenseSelectAll}
+                        />
+                      </TableHead>
+                      <TableHead suppressHydrationWarning>{t('expenses.titleCol')}</TableHead>
+                      <TableHead className="hidden sm:table-cell" suppressHydrationWarning>{t('expenses.vendor')}</TableHead>
+                      <TableHead suppressHydrationWarning>{t('expenses.amount')}</TableHead>
+                      <TableHead className="hidden md:table-cell" suppressHydrationWarning>{t('expenses.date')}</TableHead>
+                      <TableHead className="text-right" suppressHydrationWarning>{t('expenses.actions')}</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {expenses.map((expense) => (
                     <TableRow
                       key={expense.id}
                       className={`${
@@ -575,10 +694,11 @@ export default function ExpensesPage() {
                         )}
                       </TableCell>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </>
           )}
         </section>
 
@@ -587,7 +707,7 @@ export default function ExpensesPage() {
           {selectedExpense && selectedExpense.receipt_id ? (
             <Card className="border p-4 sm:p-6">
               <CardHeader className="flex flex-row items-center justify-between">
-                <CardTitle className="text-lg sm:text-2xl font-semibold">
+                <CardTitle className="text-lg sm:text-2xl font-semibold" suppressHydrationWarning>
                   {t('expenses.receiptItems')} - {selectedExpense.title}
                 </CardTitle>
                 {selectedItemIndices.size > 0 && (
@@ -596,6 +716,7 @@ export default function ExpensesPage() {
                     size="sm"
                     onClick={bulkDeleteItems}
                     className="text-xs sm:text-sm"
+                    suppressHydrationWarning
                   >
                     <Trash2 className="mr-2 h-4 w-4" />
                     {t('expenses.delete')} {selectedItemIndices.size}
@@ -608,25 +729,114 @@ export default function ExpensesPage() {
                     <Loader2 className="animate-spin h-6 w-6 text-muted-foreground" />
                   </div>
                 ) : receiptItems.length > 0 ? (
-                  <div className="overflow-x-auto">
-                    <Table className="min-w-[500px]">
-                      <TableHeader>
-                      <TableRow>
-                        <TableHead className="w-12">
-                          <Checkbox
-                            checked={selectedItemIndices.size === receiptItems.length && receiptItems.length > 0}
-                            onCheckedChange={toggleItemSelectAll}
-                          />
-                        </TableHead>
-                        <TableHead>{isPolish ? 'Produkt' : 'Item'}</TableHead>
-                        <TableHead>{t('expenses.category')}</TableHead>
-                        <TableHead className="text-right">{t('expenses.qty')}</TableHead>
-                        <TableHead className="text-right">{t('expenses.price')}</TableHead>
-                        <TableHead className="text-right">{t('expenses.actions')}</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
+                  <>
+                    {/* Mobile: Card view */}
+                    <div className="block sm:hidden space-y-2">
+                      <div className="flex items-center gap-2 pb-2 border-b">
+                        <Checkbox
+                          checked={selectedItemIndices.size === receiptItems.length && receiptItems.length > 0}
+                          onCheckedChange={toggleItemSelectAll}
+                        />
+                        <span className="text-sm font-medium" suppressHydrationWarning>{t('expenses.selectAll')}</span>
+                      </div>
                       {receiptItems.map((item, index) => {
+                        const quantity = item.quantity ?? 1
+                        const totalPrice = item.price ?? 0
+                        const categoryName = item.category_id ? categories.get(item.category_id) || t('expenses.noCategory') : t('expenses.noCategory')
+                        
+                        return (
+                          <div
+                            key={index}
+                            className="border rounded-lg p-3 bg-card"
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <Checkbox
+                                    checked={selectedItemIndices.has(index)}
+                                    onCheckedChange={() => toggleItemSelection(index)}
+                                    className="h-4 w-4"
+                                  />
+                                  <h4 className="font-medium text-sm">
+                                    {editingItemIndex === index ? (
+                                      <Input
+                                        value={editItemName}
+                                        onChange={(e) => setEditItemName(e.target.value)}
+                                        onKeyDown={(e) => handleItemKeyDown(e, index)}
+                                        className="h-7 text-sm"
+                                      />
+                                    ) : (
+                                      item.name
+                                    )}
+                                  </h4>
+                                </div>
+                                <div className="text-xs text-muted-foreground ml-6">
+                                  {categoryName}
+                                </div>
+                                <div className="flex items-center justify-between text-xs mt-2 ml-6">
+                                  <span suppressHydrationWarning>{t('expenses.qty')}: {quantity}</span>
+                                  <span className="font-medium">{totalPrice.toFixed(2)} {currency}</span>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                {editingItemIndex === index ? (
+                                  <>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      onClick={() => saveItem(index)}
+                                      disabled={loading}
+                                      className="h-7 w-7"
+                                    >
+                                      <Check className="h-3 w-3 text-green-600" />
+                                    </Button>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      onClick={cancelEditingItem}
+                                      className="h-7 w-7"
+                                    >
+                                      <X className="h-3 w-3" />
+                                    </Button>
+                                  </>
+                                ) : (
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => startEditingItem(index, item)}
+                                    disabled={loading}
+                                    className="h-7 w-7"
+                                  >
+                                    <Edit2 className="h-3 w-3" />
+                                  </Button>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+
+                    {/* Desktop: Table view */}
+                    <div className="hidden sm:block overflow-x-auto">
+                      <Table className="w-full">
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="w-12">
+                              <Checkbox
+                                checked={selectedItemIndices.size === receiptItems.length && receiptItems.length > 0}
+                                onCheckedChange={toggleItemSelectAll}
+                              />
+                            </TableHead>
+                            <TableHead suppressHydrationWarning>{isPolish ? 'Produkt' : 'Item'}</TableHead>
+                            <TableHead suppressHydrationWarning>{t('expenses.category')}</TableHead>
+                            <TableHead className="text-right" suppressHydrationWarning>{t('expenses.qty')}</TableHead>
+                            <TableHead className="text-right" suppressHydrationWarning>{t('expenses.price')}</TableHead>
+                            <TableHead className="text-right" suppressHydrationWarning>{t('expenses.actions')}</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {receiptItems.map((item, index) => {
                         const quantity = item.quantity ?? 1
                         const totalPrice = item.price ?? 0
                         const categoryName = item.category_id ? categories.get(item.category_id) || t('expenses.noCategory') : t('expenses.noCategory')
@@ -717,12 +927,13 @@ export default function ExpensesPage() {
                             </TableCell>
                           </TableRow>
                         )
-                      })}
-                    </TableBody>
-                  </Table>
-                  </div>
+                          })}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </>
                 ) : (
-                  <p className="text-muted-foreground py-8 text-center">{t('expenses.noItems')}</p>
+                  <p className="text-muted-foreground py-8 text-center" suppressHydrationWarning>{t('expenses.noItems')}</p>
                 )}
               </CardContent>
             </Card>
@@ -770,19 +981,20 @@ export default function ExpensesPage() {
       <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>{t('expenses.delete')} {t('expenses.title')}</DialogTitle>
-            <DialogDescription>
+            <DialogTitle suppressHydrationWarning>{t('expenses.delete')} {t('expenses.title')}</DialogTitle>
+            <DialogDescription suppressHydrationWarning>
               {t('expenses.deleteConfirm')}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => setIsDeleteDialogOpen(false)}>
+            <Button variant="outline" onClick={() => setIsDeleteDialogOpen(false)} suppressHydrationWarning>
               {t('common.cancel')}
             </Button>
             <Button
               variant="destructive"
               onClick={() => selectedExpense && deleteExpense(selectedExpense.id)}
               disabled={isDeleting}
+              suppressHydrationWarning
             >
               {isDeleting ? (
                 <>

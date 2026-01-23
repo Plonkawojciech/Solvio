@@ -5,9 +5,10 @@ import { Button } from '@/components/ui/button'
 import { PlusCircle } from 'lucide-react'
 import { AddExpenseSheet } from './add-expense-sheet'
 import { useRouter } from 'next/navigation'
-import { t } from '@/lib/i18n'
+import { useTranslation } from '@/lib/i18n'
 
 export function AddExpenseTrigger({ onAction }: { onAction?: () => void }) {
+  const { t } = useTranslation()
   const [isSheetOpen, setIsSheetOpen] = React.useState(false)
   const router = useRouter()
 
@@ -21,8 +22,8 @@ export function AddExpenseTrigger({ onAction }: { onAction?: () => void }) {
     <>
       <Button variant={"outline"} onClick={() => setIsSheetOpen(true)} size="sm" className="text-xs sm:text-sm">
         <PlusCircle className="mr-1 sm:mr-2 h-4 w-4" /> 
-        <span className="hidden sm:inline">{t('receipts.add')}</span>
-        <span className="sm:hidden">{t('common.add')}</span>
+        <span className="hidden sm:inline" suppressHydrationWarning>{t('receipts.add')}</span>
+        <span className="sm:hidden" suppressHydrationWarning>{t('common.add')}</span>
       </Button>
 
       <AddExpenseSheet
