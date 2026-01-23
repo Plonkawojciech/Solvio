@@ -203,9 +203,16 @@ export function ScanReceiptSheet({
 
       // Vercel request size is limited (413). We compress images before sending to OCR.
       // PDFs cannot be safely compressed here, so we hard-block only large PDFs.
-      const maxRequestBytes = 4 * 1024 * 1024; // ~4MB (keep some overhead headroom)
-      const budgetForFiles = Math.floor(maxRequestBytes * 0.9); // reserve ~10% for multipart overhead
-      const perFileTarget = Math.max(450 * 1024, Math.floor(budgetForFiles / Math.max(1, files.length))); // >= 450KB
+      // We target MUCH smaller images than the theoretical limit to avoid multipart overhead
+      // and different production limits (and to keep OCR fast).
+      const perFileTarget =
+        files.length <= 1
+          ? 1200 * 1024 // ~1.2MB for single photo
+          : files.length === 2
+            ? 800 * 1024  // ~0.8MB each
+            : files.length === 3
+              ? 650 * 1024 // ~0.65MB each
+              : 500 * 1024; // >=4 files -> ~0.5MB each
 
       const optimizedForOcr: File[] = [];
       for (const original of files) {
@@ -232,6 +239,10 @@ export function ScanReceiptSheet({
         // If still too big, compress (resize+jpeg).
         if (f.size > perFileTarget) {
           f = await compressImageToTarget(f, perFileTarget, { maxDim: 2000 });
+        }
+
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`[ScanReceipt] OCR file: ${original.name} -> ${f.name} ${(original.size / 1024).toFixed(0)}KB -> ${(f.size / 1024).toFixed(0)}KB`);
         }
 
         optimizedForOcr.push(f);
@@ -349,13 +360,10 @@ export function ScanReceiptSheet({
         
         // Obsługa specjalnych kodów błędów
         if (res.status === 413) {
-          errorMsg = isPl 
-            ? 'Plik jest za duży. Maksymalny rozmiar to 4MB na plik.'
-            : 'File is too large. Maximum size is 4MB per file.';
-          toast.error(isPl ? 'Plik za duży' : 'File too large', {
-            description: errorMsg,
-            duration: 5000,
-          });
+          errorMsg = isPl
+            ? 'Request jest za duży (limit serwera). Spróbuj 1 plik naraz albo zrób zdjęcie bliżej paragonu. Jeśli to PDF — wyślij zdjęcie zamiast PDF.'
+            : 'Request is too large (server limit). Try 1 file at a time or take a closer photo of the receipt. If it’s a PDF, upload a photo instead.';
+          toast.error(isPl ? 'Za duży plik' : 'Request too large', { description: errorMsg, duration: 7000 });
           throw new Error(errorMsg);
         }
         
