@@ -120,58 +120,42 @@ export function ScanReceiptSheet({
       }
       const receiptId = receipt.id as string;
 
-      // 2) Konwersja HEIC do JPEG i upload do Storage
+      // 2) Upload do Storage (konwertuj HEIC bo Supabase Storage nie wspiera HEIC)
       setProgress({ uploaded: 0, total: files.length });
-      
-      // Funkcja konwersji HEIC przez API
-      const convertHeicIfNeeded = async (file: File): Promise<File> => {
-        const heicMimeTypes = ['image/heic', 'image/heif'];
-        const heicExtensions = ['.heic', '.heif', '.hif'];
-        const isHeic = heicMimeTypes.includes(file.type.toLowerCase()) || 
-                       heicExtensions.some(ext => file.name.toLowerCase().endsWith(ext));
-        
-        if (!isHeic) {
-          return file; // Nie HEIC, zwróć oryginalny plik
-        }
-
-        try {
-          console.log('[ScanReceipt] Converting HEIC to JPEG via API...');
-          const formData = new FormData();
-          formData.append('file', file);
-
-          const response = await fetch('/api/v1/convert-heic', {
-            method: 'POST',
-            body: formData,
-          });
-
-          if (!response.ok) {
-            const error = await response.json().catch(() => ({ error: 'Conversion failed' }));
-            throw new Error(error.error || 'HEIC conversion failed');
-          }
-
-          const blob = await response.blob();
-          const newFileName = file.name.replace(/\.(heic|heif|hif)$/i, '.jpg');
-          const convertedFile = new File([blob], newFileName, {
-            type: 'image/jpeg',
-            lastModified: file.lastModified,
-          });
-          
-          console.log('[ScanReceipt] HEIC conversion successful');
-          return convertedFile;
-        } catch (error) {
-          console.error('[ScanReceipt] HEIC conversion error:', error);
-          throw new Error(`Failed to convert HEIC image: ${error instanceof Error ? error.message : 'Unknown error'}`);
-        }
-      };
-
-      // Najpierw przekonwertuj wszystkie pliki HEIC
-      const convertedFiles = await Promise.all(
-        files.map(file => convertHeicIfNeeded(file))
-      );
 
       const uploadResults = await Promise.allSettled(
-        convertedFiles.map(async (fileToUpload, index) => {
-          const path = `${user.id}/${receiptId}/${fileToUpload.name}`;
+        files.map(async (file, index) => {
+          // Sprawdź czy to HEIC
+          const isHeic = file.type.includes('heic') || file.type.includes('heif') || 
+                         file.name.toLowerCase().match(/\.(heic|heif)$/);
+          
+          let fileToUpload = file;
+          let uploadFileName = file.name;
+          
+          // Jeśli HEIC, konwertuj do JPEG dla Supabase Storage
+          if (isHeic) {
+            try {
+              const arrayBuffer = await file.arrayBuffer();
+              const response = await fetch('/api/v1/convert-heic', {
+                method: 'POST',
+                body: (() => {
+                  const fd = new FormData();
+                  fd.append('file', new Blob([arrayBuffer], { type: file.type }), file.name);
+                  return fd;
+                })(),
+              });
+              
+              if (response.ok) {
+                const blob = await response.blob();
+                uploadFileName = file.name.replace(/\.(heic|heif)$/i, '.jpg');
+                fileToUpload = new File([blob], uploadFileName, { type: 'image/jpeg' });
+              }
+            } catch (err) {
+              console.warn('[ScanReceipt] HEIC conversion for storage failed, using original');
+            }
+          }
+
+          const path = `${user.id}/${receiptId}/${uploadFileName}`;
 
           const { error: uploadError } = await supabase.storage
             .from('receipts')
@@ -221,36 +205,59 @@ export function ScanReceiptSheet({
       setIsUploading(false);
       setIsProcessing(true);
 
-      // 3) OCR — wyślij przekonwertowane pliki + metadane
+      // 3) OCR — wyślij pliki + metadane (Mindee akceptuje HEIC)
       const fd = new FormData();
       fd.append('receiptId', receiptId);
       fd.append('userId', user.id);
-      for (const f of convertedFiles) fd.append('files', f, f.name);
+      for (const f of files) fd.append('files', f, f.name);
 
       const res = await fetch('/api/v1/ocr-receipt', {
         method: 'POST',
         body: fd,
       });
       
+      // Najpierw pobierz response jako text
+      const responseText = await res.text();
+      
       if (!res.ok) {
         let errorMsg = 'OCR zwrócił błąd.';
         try {
-          const errorData = await res.json();
-          errorMsg = errorData.error || errorMsg;
+          const errorData = JSON.parse(responseText);
+          
+          // Sprawdź czy to duplikat
+          if (errorData.error === 'duplicate') {
+            errorMsg = `⚠️ Ten paragon został już wgrany!\n\n${errorData.message || 'Duplikat wykryty.'}`;
+            toast.warning('Duplikat paragonu', {
+              description: errorData.message || 'Ten paragon został już wcześniej dodany.',
+              duration: 5000,
+            });
+          } else {
+            errorMsg = errorData.message || errorData.error || errorMsg;
+          }
+          
           if (process.env.NODE_ENV === 'development') {
             console.error('[ScanReceipt] OCR HTTP error:', res.status, errorData);
           }
         } catch {
-          const msg = await res.text();
-          errorMsg = msg || errorMsg;
+          errorMsg = responseText || errorMsg;
           if (process.env.NODE_ENV === 'development') {
-            console.error('[ScanReceipt] OCR HTTP error:', res.status, msg);
+            console.error('[ScanReceipt] OCR HTTP error:', res.status, responseText);
           }
         }
         throw new Error(errorMsg);
       }
 
-      const parsed: OcrResult = await res.json();
+      // Parsuj JSON tylko jeśli response był OK
+      let parsed: OcrResult;
+      try {
+        parsed = JSON.parse(responseText);
+      } catch (parseError) {
+        if (process.env.NODE_ENV === 'development') {
+          console.error('[ScanReceipt] JSON parse error:', parseError);
+          console.error('[ScanReceipt] Response text:', responseText.substring(0, 500));
+        }
+        throw new Error('Otrzymano nieprawidłową odpowiedź z serwera. Sprawdź logi.');
+      }
       
       if (process.env.NODE_ENV === 'development') {
         console.log('[ScanReceipt] OCR result:', parsed);

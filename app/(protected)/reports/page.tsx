@@ -102,30 +102,30 @@ export default async function ReportsPage() {
     <div className="flex flex-col gap-4 sm:gap-6 md:gap-8">
       <div>
         <h2 className="text-2xl sm:text-3xl font-bold tracking-tight">Reports</h2>
-        <p className="text-muted-foreground">
-          Download yearly summaries or expand a year to access monthly files. Only periods with expenses are shown.
+        <p className="text-sm sm:text-base text-muted-foreground">
+          Download yearly summaries or expand a year to access monthly files.
         </p>
       </div>
 
-      {/* Scrollowany kontener na grid roczników: 40% wysokości ekranu */}
+      {/* Scrollowany kontener na grid roczników - Responsive */}
       <div>
         <div className="
-          h-[40vh] overflow-y-auto p-3 sm:p-4
+          max-h-[40vh] overflow-y-auto p-2 sm:p-3 md:p-4
           [scrollbar-width:none] [-ms-overflow-style:none]
           [&::-webkit-scrollbar]:hidden
         ">
-          <div className="grid gap-4 grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 pr-1">
+          <div className="grid gap-3 sm:gap-4 grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 pr-1">
             {yearBlocks.map(({ year, months }) => {
               const yFiles = yearlyWithFiles.find((y) => y.year === year)?.files ?? {}
               return (
                 <Card key={year} className="flex flex-col">
                   <CardHeader className="pb-3">
-                    <div className="flex items-center justify-between gap-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                       <div>
-                        <CardTitle>{year}</CardTitle>
-                        <CardDescription>Yearly summary</CardDescription>
+                        <CardTitle className="text-lg sm:text-xl">{year}</CardTitle>
+                        <CardDescription className="text-xs sm:text-sm">Yearly summary</CardDescription>
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <DownloadButtons files={yFiles} />
                         <form action="/api/reports/generate" method="POST">
                           <input type="hidden" name="type" value="yearly" />
@@ -153,12 +153,12 @@ export default async function ReportsPage() {
                             year: "numeric",
                           })
                           return (
-                            <div key={key} className="flex items-center justify-between rounded-md border bg-muted/5 p-3">
+                            <div key={key} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-0 rounded-md border bg-muted/5 p-3">
                               <div className="min-w-0">
-                                <div className="font-medium truncate">{label}</div>
+                                <div className="text-sm sm:text-base font-medium truncate">{label}</div>
                                 <div className="text-xs text-muted-foreground">{currency}</div>
                               </div>
-                              <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-2 flex-shrink-0">
                                 <DownloadButtons files={files} compact />
                                 <form action="/api/reports/generate" method="POST">
                                   <input type="hidden" name="type" value="monthly" />

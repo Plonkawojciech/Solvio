@@ -19,6 +19,18 @@ const nextConfig: NextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
   },
+  // To naprawia błędy z Mindee SDK (canvas, pdf-parse, sharp)
+  webpack: (config, { isServer }) => {
+    if (isServer) {
+      config.externals = config.externals || [];
+      config.externals.push({
+        canvas: "commonjs canvas",
+        "pdf-parse": "commonjs pdf-parse",
+        sharp: "commonjs sharp",
+      });
+    }
+    return config;
+  },
 };
 
 export default nextConfig;

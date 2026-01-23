@@ -1,5 +1,8 @@
-import { createClient } from '@/lib/supabase/server';
-import { redirect } from 'next/navigation';
+'use client'
+
+import { useEffect, useState } from 'react';
+import { createClient } from '@/lib/supabase/client';
+import { useRouter } from 'next/navigation';
 import {
   Card,
   CardContent,
@@ -7,75 +10,138 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { Activity, CreditCard, DollarSign, Scan, Tag } from 'lucide-react';
+import { Activity, TrendingUp, TrendingDown, Wallet, Target, Zap, ArrowUpRight } from 'lucide-react';
 import { RecentExpensesTable } from '@/components/protected/dashboard/recent-expenses-table';
-import { SpendingChart } from '@/components/protected/dashboard/spending-chart';
+import { MonthlySpendingChart } from '@/components/protected/dashboard/monthly-spending-chart';
 import { SpendingByCategoryChart } from '@/components/protected/dashboard/spending-by-category-chart';
 import { BudgetOverview } from '@/components/protected/dashboard/budget-overview';
 import { AddExpenseTrigger } from '@/components/protected/dashboard/add-expense-trigger';
 import { ScanReceiptButton } from '@/components/protected/dashboard/scan-receipt-button';
 import { Button } from '@/components/ui/button';
-export default async function ProtectedPage() {
-  const supabase = await createClient();
+import { Progress } from '@/components/ui/progress';
+import Link from 'next/link';
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+export default function ProtectedPage() {
+  const router = useRouter();
+  const supabase = createClient();
+  
+  const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState<any>(null);
+  const [categories, setCategories] = useState<any[]>([]);
+  const [expenses, setExpenses] = useState<any[]>([]);
+  const [receipts, setReceipts] = useState<any[]>([]);
+  const [settings, setSettings] = useState<any>(null);
+  const [budgets, setBudgets] = useState<any[]>([]);
 
-  if (!user) {
-    redirect('/login');
-  }
-
-  // daty
-  const today = new Date();
-  const start30 = new Date(today);
-  start30.setDate(today.getDate() - 29); // włącznie z dziś => 30 dni
-
-  // równoległe zapytania
-  const [
-    { data: categories, error: categoriesError },
-    { data: settingsRow, error: settingsError },
-    { data: budgetsRows, error: budgetsError },
-    { data: expenses, error: expensesError },
-    { data: receipts, error: receiptsError },
-  ] = await Promise.all([
-    supabase.from('categories').select('id, name, icon').order('name'),
-    supabase
-      .from('user_settings')
-      .select('currency_id, language_id')
-      .eq('user_id', user.id)
-      .maybeSingle(),
-    supabase
-      .from('category_budgets')
-      .select('category_id, budget')
-      .eq('user_id', user.id),
-    supabase
-      .from('expenses')
-      .select('id, title, amount, date, category_id, categories (name)')
-      .eq('user_id', user.id)
-      .gte('date', start30.toISOString().slice(0, 10))
-      .order('date', { ascending: false })
-      .limit(300),
-    supabase
-      .from('receipts')
-      .select('id, notes, date')
-      .eq('user_id', user.id)
-      .gte('date', start30.toISOString().slice(0, 10))
-      .not('notes', 'is', null),
-  ]);
-
-  if (categoriesError || settingsError || budgetsError || expensesError) {
-    // Log errors in development only
-    if (process.env.NODE_ENV === 'development') {
-      if (categoriesError) console.error('[Dashboard] categories error:', categoriesError);
-      if (settingsError) console.error('[Dashboard] settings error:', settingsError);
-      if (budgetsError) console.error('[Dashboard] budgets error:', budgetsError);
-      if (expensesError) console.error('[Dashboard] expenses error:', expensesError);
+  const fetchData = async () => {
+    console.log('[Dashboard] Refreshing data...');
+    setLoading(true);
+    
+    const { data: { user: currentUser } } = await supabase.auth.getUser();
+    if (!currentUser) {
+      router.push('/login');
+      return;
     }
+    setUser(currentUser);
+
+    // daty
+    const today = new Date();
+    const start30 = new Date(today);
+    start30.setDate(today.getDate() - 29);
+    
+    // Poprzedni miesiąc (do porównania)
+    const start60 = new Date(today);
+    start60.setDate(today.getDate() - 59);
+    const end30 = new Date(today);
+    end30.setDate(today.getDate() - 30);
+
+    // równoległe zapytania
+    const [
+      { data: categoriesData, error: categoriesError },
+      { data: settingsRow, error: settingsError },
+      { data: budgetsRows, error: budgetsError },
+      { data: expensesData, error: expensesError },
+      { data: receiptsData, error: receiptsError },
+      { data: lastMonthExpenses },
+      { data: lastMonthReceipts },
+    ] = await Promise.all([
+      supabase.from('categories').select('id, name, icon').order('name'),
+      supabase
+        .from('user_settings')
+        .select('currency_id, language_id')
+        .eq('user_id', currentUser.id)
+        .maybeSingle(),
+      supabase
+        .from('category_budgets')
+        .select('category_id, budget')
+        .eq('user_id', currentUser.id),
+      supabase
+        .from('expenses')
+        .select('id, title, amount, date, category_id, categories (name), receipt_id, vendor')
+        .eq('user_id', currentUser.id)
+        .gte('date', start30.toISOString().slice(0, 10))
+        .order('date', { ascending: false })
+        .limit(300),
+      supabase
+        .from('receipts')
+        .select('id, notes, date, vendor, total')
+        .eq('user_id', currentUser.id)
+        .gte('date', start30.toISOString().slice(0, 10))
+        .not('notes', 'is', null)
+        .order('date', { ascending: false })
+        .limit(10),
+      // Poprzedni miesiąc
+      supabase
+        .from('expenses')
+        .select('amount, receipt_id')
+        .eq('user_id', currentUser.id)
+        .gte('date', start60.toISOString().slice(0, 10))
+        .lt('date', end30.toISOString().slice(0, 10)),
+      supabase
+        .from('receipts')
+        .select('notes')
+        .eq('user_id', currentUser.id)
+        .gte('date', start60.toISOString().slice(0, 10))
+        .lt('date', end30.toISOString().slice(0, 10))
+        .not('notes', 'is', null),
+    ]);
+
+    if (categoriesError || settingsError || budgetsError || expensesError) {
+      console.error('[Dashboard] errors:', { categoriesError, settingsError, budgetsError, expensesError });
+    }
+
+    setCategories(categoriesData || []);
+    setExpenses(expensesData || []);
+    setReceipts(receiptsData || []);
+    setSettings(settingsRow);
+    setBudgets(budgetsRows || []);
+    setLoading(false);
+    
+    console.log('[Dashboard] ✅ Data refreshed:', {
+      expenses: expensesData?.length || 0,
+      receipts: receiptsData?.length || 0,
+      categories: categoriesData?.length || 0,
+    });
+  };
+
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="flex flex-col items-center gap-4">
+          <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>
+          <p className="text-sm text-muted-foreground">Loading your financial data...</p>
+        </div>
+      </div>
+    );
   }
 
-  const currency = (settingsRow?.currency_id || 'PLN').toUpperCase();
-  const lang = (settingsRow?.language_id || 'EN').toUpperCase();
+  const today = new Date();
+  const currency = (settings?.currency_id || 'PLN').toUpperCase();
+  const lang = (settings?.language_id || 'EN').toUpperCase();
   const locale = lang === 'PL' ? 'pl-PL' : 'en-US';
 
   // mapy pomocnicze
@@ -89,27 +155,41 @@ export default async function ProtectedPage() {
     ])
   );
   const budgetByCatId = new Map<string, number>(
-    (budgetsRows ?? []).map((b) => [
+    (budgets ?? []).map((b) => [
       b.category_id as string,
       Number(b.budget || 0),
     ])
   );
 
   // recentExpenses (dla tabeli)
-  const recentExpenses =
-    (expenses ?? []).map((e) => ({
-      id: e.id as string,
-      description: e.title as string,
-      categoryId: e.category_id as string | null,
-      category: (e.categories as { name?: string } | null)?.name || 'No category',
-      amount: Number(e.amount),
-      date: e.date as string,
-    })) || [];
+  const recentExpenses = expenses.map((e) => ({
+    id: e.id as string,
+    description: e.title as string,
+    categoryId: e.category_id as string | null,
+    category: (e.categories as { name?: string } | null)?.name || 'No category',
+    amount: Number(e.amount),
+    date: e.date as string,
+    receiptId: e.receipt_id as string | null,
+    vendor: e.vendor as string | null,
+  }));
 
-  // sumy - z expenses
-  let totalSpent = recentExpenses.reduce((sum, e) => sum + e.amount, 0);
+  // UPROSZCZONE: Total = suma wszystkich expenses
+  const totalSpent = recentExpenses.reduce((sum, e) => sum + e.amount, 0);
+  console.log('[Dashboard] Total Spent:', totalSpent.toFixed(2), 'PLN', 'z', recentExpenses.length, 'transakcji');
   
-  // Dodaj sumy z receipt items
+  const totalTransactions = recentExpenses.length;
+  const avgDaily = totalSpent / 30;
+
+  // Total budget
+  const totalBudget = Array.from(budgetByCatId.values()).reduce((sum, b) => sum + b, 0);
+  const budgetRemaining = totalBudget - totalSpent;
+  const budgetProgress = totalBudget > 0 ? (totalSpent / totalBudget) * 100 : 0;
+
+  // wydatki per kategoria - z receipt items (nie expenses!)
+  const spentByCatId = new Map<string, number>();
+  let otherTotal = 0; // Produkty bez kategorii
+  
+  // Pobierz kategorie z receipt items
   if (receipts) {
     for (const receipt of receipts) {
       if (!receipt.notes) continue;
@@ -119,194 +199,269 @@ export default async function ProtectedPage() {
         
         for (const item of items) {
           if (item.price) {
-            const itemAmount = (item.price || 0) * (item.quantity || 1);
-            totalSpent += itemAmount;
+            if (item.category_id) {
+              // Ma kategorię
+              spentByCatId.set(
+                item.category_id,
+                (spentByCatId.get(item.category_id) || 0) + item.price
+              );
+            } else {
+              // Brak kategorii -> "Other"
+              otherTotal += item.price;
+            }
           }
         }
       } catch (e) {
-        // Ignoruj błędy parsowania
+        continue;
       }
     }
   }
   
-  const totalTransactions = recentExpenses.length;
-  const avgDaily = totalTransactions ? totalSpent / 30 : 0;
-
-  // wydatki per kategoria (po id) - z expenses
-  const spentByCatId = new Map<string, number>();
-  for (const e of recentExpenses) {
-    if (!e.categoryId) continue;
-    spentByCatId.set(
-      e.categoryId,
-      (spentByCatId.get(e.categoryId) || 0) + e.amount
-    );
+  // Dodaj "Other" do mapy jeśli są takie wydatki
+  if (otherTotal > 0) {
+    spentByCatId.set('other', otherTotal);
   }
+  
+  console.log('[Dashboard] Categories spending:', Array.from(spentByCatId.entries()));
+  console.log('[Dashboard] Other total:', otherTotal.toFixed(2));
 
-  // Dodaj wydatki z receipt items (produkty z paragonów)
-  if (receipts) {
-    for (const receipt of receipts) {
-      if (!receipt.notes) continue;
-      try {
-        const receiptData = JSON.parse(receipt.notes as string);
-        const items = receiptData.items || [];
-        
-        for (const item of items) {
-          // Jeśli item ma category_id i price, dodaj do statystyk
-          if (item.category_id && item.price) {
-            const itemAmount = (item.price || 0) * (item.quantity || 1);
-            spentByCatId.set(
-              item.category_id,
-              (spentByCatId.get(item.category_id) || 0) + itemAmount
-            );
-          }
-        }
-      } catch (e) {
-        // Ignoruj błędy parsowania
-        if (process.env.NODE_ENV === 'development') {
-          console.warn('[Dashboard] Failed to parse receipt notes:', e);
-        }
-      }
-    }
-  }
+  // Dodatkowe metryki
+  const mostExpensive = recentExpenses.length > 0
+    ? Math.max(...recentExpenses.map(e => e.amount))
+    : 0;
+  const receiptsScanned = receipts.length;
+  const avgTransaction = recentExpenses.length > 0
+    ? totalSpent / recentExpenses.length
+    : 0;
 
-  // dane do wykresu kołowego: tylko kategorie z wydatkami
-  const categorySpendingData = Array.from(spentByCatId.entries()).map(
-    ([catId, total]) => {
-      const name = catById.get(catId)?.name || 'Other';
-      return { name, total };
-    }
-  );
+  // Top 5 kategorii
+  const categorySpendingData = Array.from(spentByCatId.entries())
+    .map(([catId, total]) => ({
+      name: catId === 'other' ? 'Other' : (catById.get(catId)?.name || 'Other'),
+      total,
+    }))
+    .sort((a, b) => b.total - a.total)
+    .slice(0, 5);
 
-  // top category po wydatkach
-  const topCategory =
-    [...categorySpendingData].sort((a, b) => b.total - a.total)[0]?.name || '—';
+  const topCategory = categorySpendingData[0]?.name || '—';
 
-  // weekly chart 7 dni
-  const dailySpendingData = Array.from({ length: 7 })
+  // Budget data per kategoria
+  const budgetData = (categories ?? [])
+    .map((cat) => {
+      const id = cat.id as string;
+      const name = cat.name as string;
+      const spent = Number(spentByCatId.get(id) || 0);
+      const budget = budgetByCatId.get(id) || 0;
+      return { id, name, spent, budget };
+    })
+    .filter(item => item.budget > 0) // Tylko kategorie z budżetem
+    .sort((a, b) => b.spent - a.spent); // Sortuj po wydatkach
+
+  // Monthly chart (30 days) z kategoriami - z receipt items!
+  const monthlySpendingData = Array.from({ length: 30 })
     .map((_, i) => {
       const d = new Date(today);
-      d.setDate(today.getDate() - i);
+      d.setDate(today.getDate() - (29 - i)); // Od 30 dni temu do dziś
       const dateStr = d.toISOString().slice(0, 10);
-      const total = recentExpenses
-        .filter((r) => r.date?.startsWith(dateStr))
-        .reduce((sum, r) => sum + r.amount, 0);
-      return {
-        date: d.toLocaleDateString(locale, { month: 'short', day: 'numeric' }),
-        total,
+      
+      // Inicjalizuj obiekt danych dla tego dnia
+      const dayData: any = {
+        date: d.toLocaleDateString(locale, { day: 'numeric', month: 'short' }),
       };
-    })
-    .reverse();
-
-  // dane budżetowe:
-  // - jeśli budżet istnieje w DB -> użyj
-  // - jeśli brak i są wydatki -> fallback = 120% wydatków z 30 dni, zaokrąglone do 1 grosza
-  // - jeśli brak i brak wydatków -> fallback = 0 (pusta kategoria)
-  const budgetData = (categories ?? []).map((cat) => {
-    const id = cat.id as string;
-    const name = cat.name as string;
-    const spent = Number(spentByCatId.get(id) || 0);
-    const dbBudget = budgetByCatId.get(id);
-    const autoBudget = spent > 0 ? Math.round(spent * 1.2 * 100) / 100 : 0; // fallback
-    const budget = typeof dbBudget === 'number' ? dbBudget : autoBudget;
-    return { id, name, spent, budget };
+      
+      // Dla każdej kategorii, ustaw 0
+      categorySpendingData.forEach(cat => {
+        dayData[cat.name] = 0;
+      });
+      dayData['Other'] = 0;
+      
+      // Policz wydatki z receipt items tego dnia
+      receipts
+        .filter((receipt) => receipt.date?.startsWith(dateStr))
+        .forEach((receipt) => {
+          if (!receipt.notes) return;
+          try {
+            const receiptData = JSON.parse(receipt.notes as string);
+            const items = receiptData.items || [];
+            
+            for (const item of items) {
+              if (item.price) {
+                const catName = item.category_id 
+                  ? catById.get(item.category_id)?.name || 'Other'
+                  : 'Other';
+                
+                if (!dayData[catName]) dayData[catName] = 0;
+                dayData[catName] += item.price;
+              }
+            }
+          } catch (e) {
+            // ignore
+          }
+        });
+      
+      return dayData;
+    });
+  
+  // Lista unikalnych kategorii dla wykresu
+  const chartCategories = Array.from(
+    new Set([
+      ...categorySpendingData.map(c => c.name),
+      'Other'
+    ])
+  ).filter(cat => {
+    // Sprawdź czy ta kategoria ma jakiekolwiek wydatki
+    return monthlySpendingData.some(day => (day[cat] || 0) > 0);
   });
 
   return (
-    <div className="flex flex-col gap-4 sm:gap-6 md:gap-8">
-      <div className="flex flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-4">
-        <div>
-          <h2 className="text-2xl sm:text-3xl font-bold tracking-tight">
-            Financial Dashboard
-          </h2>
-          <p className="text-muted-foreground hidden sm:block pt-1 text-sm">
-            Summary of your recent expenses.
-          </p>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <ScanReceiptButton />
-          <AddExpenseTrigger />
-        </div>
-      </div>
+    <div className="flex flex-col gap-6">
+      {/* Hero Card - Main Overview - Responsive */}
+      <Card className="border-2">
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="text-2xl sm:text-3xl font-bold">This Month</CardTitle>
+              <CardDescription className="hidden sm:block">Your spending overview for the last 30 days</CardDescription>
+            </div>
+            <Wallet className="h-6 w-6 sm:h-8 sm:w-8 text-muted-foreground" />
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4 sm:space-y-6">
+          {/* Total Spent */}
+          <div>
+            <p className="text-sm text-muted-foreground mb-1">Total Spent</p>
+            <div className="flex items-baseline gap-2 sm:gap-3">
+              <span className="text-3xl sm:text-4xl font-bold">{totalSpent.toFixed(2)}</span>
+              <span className="text-xl sm:text-2xl text-muted-foreground">{currency}</span>
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              {totalTransactions} transactions · {avgDaily.toFixed(2)} {currency}/day
+            </p>
+          </div>
 
-      <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
+          {/* Budget Progress */}
+          {totalBudget > 0 && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Budget Progress</span>
+                <span className="font-medium">
+                  {budgetRemaining >= 0 ? (
+                    <span className="text-green-600">{budgetRemaining.toFixed(2)} {currency} left</span>
+                  ) : (
+                    <span className="text-red-600">{Math.abs(budgetRemaining).toFixed(2)} {currency} over</span>
+                  )}
+                </span>
+              </div>
+              <Progress 
+                value={Math.min(budgetProgress, 100)} 
+                className={budgetProgress > 100 ? 'bg-red-100' : ''}
+              />
+              <p className="text-xs text-muted-foreground">
+                {budgetProgress.toFixed(1)}% of {totalBudget.toFixed(2)} {currency} budget used
+              </p>
+            </div>
+          )}
+
+          {/* Quick Actions - Responsive */}
+          <div className="flex flex-col sm:flex-row gap-2 pt-2">
+            <ScanReceiptButton onAction={fetchData} />
+            <AddExpenseTrigger onAction={fetchData} />
+            <Link href="/expenses" className="w-full sm:w-auto">
+              <Button variant="outline" size="default" className="w-full sm:w-auto">
+                View All Expenses
+                <ArrowUpRight className="ml-2 h-4 w-4" />
+              </Button>
+            </Link>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Small Metrics Cards - Responsive */}
+      <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium min-h-10 flex items-center">
-              Total Expenses (30 days)
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              Receipts Scanned
             </CardTitle>
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-xl sm:text-2xl font-bold">
-              {totalSpent.toFixed(2)} {currency}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Total in the last 30 days
+            <div className="text-2xl font-bold">{receiptsScanned}</div>
+            <p className="text-xs text-muted-foreground mt-1">
+              AI-processed this month
             </p>
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium min-h-10 flex items-center">
-              Number of Transactions
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              Biggest Purchase
             </CardTitle>
-            <CreditCard className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-xl sm:text-2xl font-bold">{totalTransactions}</div>
-            <p className="text-xs text-muted-foreground">This month</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium min-h-10 flex items-center">
-              Average Daily Spending
-            </CardTitle>
-            <Activity className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-xl sm:text-2xl font-bold">
-              {avgDaily.toFixed(2)} {currency}
+            <div className="text-2xl font-bold">
+              {mostExpensive.toFixed(2)} {currency}
             </div>
-            <p className="text-xs text-muted-foreground">Daily average</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Largest single transaction
+            </p>
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium min-h-10 flex items-center">
-              Most Frequent Category
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              Avg Transaction
             </CardTitle>
-            <Tag className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-lg sm:text-xl md:text-2xl font-bold truncate">{topCategory}</div>
-            <p className="text-xs text-muted-foreground">
-              Category with the highest expenses
+            <div className="text-2xl font-bold">
+              {avgTransaction.toFixed(2)} {currency}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              Average per transaction
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              Top Category
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold truncate">{topCategory}</div>
+            <p className="text-xs text-muted-foreground mt-1">
+              Highest spending
             </p>
           </CardContent>
         </Card>
       </div>
 
-      <div className="grid gap-4 grid-cols-1 xl:grid-cols-3">
-        <Card className="xl:col-span-2">
+      {/* Main Content Grid - Responsive */}
+      <div className="grid gap-4 sm:gap-6 grid-cols-1 lg:grid-cols-3">
+        {/* Recent Activity - Takes 2 columns on large screens */}
+        <Card className="lg:col-span-2">
           <CardHeader>
-            <CardTitle>Recent Expenses</CardTitle>
-            <CardDescription>Your latest transactions.</CardDescription>
+            <CardTitle className="flex items-center gap-2">
+              <Activity className="h-5 w-5" />
+              Recent Activity
+            </CardTitle>
+            <CardDescription>Your latest expenses and receipts</CardDescription>
           </CardHeader>
           <CardContent>
             {recentExpenses.length === 0 ? (
-              <p className="text-muted-foreground text-sm">
-                No expenses found.
-              </p>
+              <div className="text-center py-12">
+                <p className="text-muted-foreground text-sm">No expenses yet.</p>
+                <p className="text-xs text-muted-foreground mt-2">Start by scanning a receipt or adding an expense manually.</p>
+              </div>
             ) : (
               <RecentExpensesTable
-                data={recentExpenses.map((e) => ({
+                data={recentExpenses.slice(0, 10).map((e) => ({
                   id: e.id,
                   description: e.description,
-                  category: e.category,
+                  vendor: e.vendor,
                   amount: e.amount,
                   date: e.date,
                 }))}
@@ -316,42 +471,75 @@ export default async function ProtectedPage() {
           </CardContent>
         </Card>
 
+        {/* Top Categories - 1 column */}
         <Card>
           <CardHeader>
-            <CardTitle>Expenses by Category</CardTitle>
-            <CardDescription>Breakdown of your expenses.</CardDescription>
+            <CardTitle className="flex items-center gap-2">
+              <Target className="h-5 w-5" />
+              Top Categories
+            </CardTitle>
+            <CardDescription>Where your money goes</CardDescription>
           </CardHeader>
           <CardContent>
-            <SpendingByCategoryChart
-              data={categorySpendingData}
-              currency={currency}
-            />
+            {categorySpendingData.length === 0 ? (
+              <p className="text-muted-foreground text-sm text-center py-8">No category data yet.</p>
+            ) : (
+              <div className="space-y-4">
+                <SpendingByCategoryChart
+                  data={categorySpendingData}
+                  currency={currency}
+                />
+                <div className="space-y-2 pt-4 border-t">
+                  {categorySpendingData.map((cat, idx) => (
+                    <div key={idx} className="flex items-center justify-between text-sm">
+                      <span className="text-muted-foreground">{cat.name}</span>
+                      <span className="font-medium">{cat.total.toFixed(2)} {currency}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
 
-      <div className="grid gap-4 grid-cols-1 lg:grid-cols-2">
+      {/* Category Budgets - Full Width */}
+      {budgetData.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle>Budget</CardTitle>
-            <CardDescription>Monthly budget tracking.</CardDescription>
+            <CardTitle className="flex items-center gap-2">
+              <Target className="h-5 w-5" />
+              Category Budgets
+            </CardTitle>
+            <CardDescription>
+              Track your spending against monthly budgets for each category
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <BudgetOverview data={budgetData} currency={currency} />
           </CardContent>
         </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Weekly Spending</CardTitle>
-            <CardDescription>
-              Your expenses from the last 7 days.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="pl-2">
-            <SpendingChart data={dailySpendingData} currency={currency} />
-          </CardContent>
-        </Card>
-      </div>
+      )}
+
+      {/* Full Width - Monthly Spending Trend */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <TrendingUp className="h-5 w-5" />
+            Last 30 Days - Spending by Category
+          </CardTitle>
+          <CardDescription>
+            Daily expenses breakdown showing spending across all categories
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="pl-2">
+          <MonthlySpendingChart 
+            data={monthlySpendingData} 
+            currency={currency}
+            categories={chartCategories}
+          />
+        </CardContent>
+      </Card>
     </div>
   );
 }

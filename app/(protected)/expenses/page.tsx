@@ -19,9 +19,19 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { Loader2, Trash2, ChevronDown, ChevronUp } from 'lucide-react'
+import { Loader2, Trash2, Edit2, Check, X } from 'lucide-react'
 import { AddExpenseTrigger } from '@/components/protected/dashboard/add-expense-trigger'
+import { ScanReceiptButton } from '@/components/protected/dashboard/scan-receipt-button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Input } from '@/components/ui/input'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 
 interface Expense {
   id: string
@@ -43,7 +53,6 @@ interface ReceiptItem {
 
 interface ReceiptData {
   items?: ReceiptItem[]
-  ocr_preview?: string
 }
 
 export default function ExpensesPage() {
@@ -57,12 +66,76 @@ export default function ExpensesPage() {
   const [receiptItems, setReceiptItems] = useState<ReceiptItem[]>([])
   const [loadingReceiptItems, setLoadingReceiptItems] = useState(false)
   const [categories, setCategories] = useState<Map<string, string>>(new Map())
+  const [categoriesList, setCategoriesList] = useState<Array<{ id: string; name: string }>>([])
+  
+  // Bulk selection dla expenses
+  const [selectedExpenseIds, setSelectedExpenseIds] = useState<Set<string>>(new Set())
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false)
+  
+  // Bulk selection dla items
+  const [selectedItemIndices, setSelectedItemIndices] = useState<Set<number>>(new Set())
+  
+  // Inline editing dla expenses
+  const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null)
+  const [editExpenseTitle, setEditExpenseTitle] = useState('')
+  const [editExpenseAmount, setEditExpenseAmount] = useState('')
+  const [isSavingExpense, setIsSavingExpense] = useState(false)
+  
+  // Inline editing dla items
+  const [editingItemIndex, setEditingItemIndex] = useState<number | null>(null)
+  const [editItemName, setEditItemName] = useState('')
+  const [editItemPrice, setEditItemPrice] = useState('')
+  const [editItemCategory, setEditItemCategory] = useState('')
+  const [isSavingItem, setIsSavingItem] = useState(false)
 
   useEffect(() => {
     fetchExpenses()
     fetchCategories()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Jedno odświeżenie po zakończeniu kategoryzacji (6s)
+  const handleAfterScan = async () => {
+    const initialExpensesCount = expenses.length
+    await fetchExpenses()
+    
+    console.log('[Auto-refresh] Czekam na kategorie... (6s)')
+    setTimeout(async () => {
+      console.log('[Auto-refresh] Odświeżam kategorie!')
+      const updatedExpenses = await fetchExpenses()
+      
+      // Automatycznie wybierz najnowszy expense (pierwszy na liście)
+      if (updatedExpenses && updatedExpenses.length > 0) {
+        const newestExpense = updatedExpenses[0]
+        
+        // Jeśli to nowy expense, automatycznie go zaznacz i pokaż items
+        if (updatedExpenses.length > initialExpensesCount || !selectedExpense) {
+          console.log('[Auto-refresh] Automatycznie wybieram najnowszy expense')
+          setSelectedExpense(newestExpense)
+          
+          if (newestExpense.receipt_id) {
+            setLoadingReceiptItems(true)
+            const { data: receiptData } = await supabase
+              .from('receipts')
+              .select('notes')
+              .eq('id', newestExpense.receipt_id)
+              .single()
+            
+            if (receiptData?.notes) {
+              try {
+                const parsed: ReceiptData = JSON.parse(receiptData.notes)
+                console.log('[Auto-refresh] ✅ Receipt items z kategoriami załadowane!')
+                setReceiptItems(parsed.items || [])
+              } catch (e) {
+                console.error('Failed to parse receipt notes:', e)
+              }
+            }
+            setLoadingReceiptItems(false)
+          }
+        }
+      }
+    }, 6000) // Jedno odświeżenie po 6s
+  }
 
   const fetchCategories = async () => {
     const { data, error } = await supabase
@@ -75,10 +148,11 @@ export default function ExpensesPage() {
         catMap.set(cat.id, cat.name)
       })
       setCategories(catMap)
+      setCategoriesList(data)
     }
   }
 
-  const fetchExpenses = async () => {
+  const fetchExpenses = async (): Promise<Expense[] | undefined> => {
     setLoading(true)
     setError(null)
     
@@ -86,7 +160,7 @@ export default function ExpensesPage() {
     if (!user) {
       setError('You must be logged in')
       setLoading(false)
-      return
+      return undefined
     }
 
     const { data, error: fetchError } = await supabase
@@ -97,10 +171,13 @@ export default function ExpensesPage() {
 
     if (fetchError) {
       setError('Failed to fetch expenses')
+      setLoading(false)
+      return undefined
     } else {
       setExpenses(data || [])
+      setLoading(false)
+      return data || []
     }
-    setLoading(false)
   }
 
   const deleteExpense = async (id: string) => {
@@ -122,10 +199,183 @@ export default function ExpensesPage() {
     }
   }
 
+  const bulkDeleteExpenses = async () => {
+    if (selectedExpenseIds.size === 0) return
+    
+    setIsBulkDeleting(true)
+    const ids = Array.from(selectedExpenseIds)
+    
+    const { error: deleteError } = await supabase
+      .from('expenses')
+      .delete()
+      .in('id', ids)
+    
+    if (deleteError) {
+      setError('Failed to delete expenses')
+    } else {
+      setSelectedExpenseIds(new Set())
+      setSelectedExpense(null)
+      await fetchExpenses()
+    }
+    setIsBulkDeleting(false)
+  }
+
+  const bulkDeleteItems = async () => {
+    if (!selectedExpense || selectedItemIndices.size === 0) return
+    
+    const updatedItems = receiptItems.filter((_, idx) => !selectedItemIndices.has(idx))
+    await saveReceiptItems(updatedItems)
+    setSelectedItemIndices(new Set())
+  }
+
+  const toggleExpenseSelection = (id: string) => {
+    const newSet = new Set(selectedExpenseIds)
+    if (newSet.has(id)) {
+      newSet.delete(id)
+    } else {
+      newSet.add(id)
+    }
+    setSelectedExpenseIds(newSet)
+  }
+
+  const toggleExpenseSelectAll = () => {
+    if (selectedExpenseIds.size === expenses.length) {
+      setSelectedExpenseIds(new Set())
+    } else {
+      setSelectedExpenseIds(new Set(expenses.map(e => e.id)))
+    }
+  }
+
+  const toggleItemSelection = (index: number) => {
+    const newSet = new Set(selectedItemIndices)
+    if (newSet.has(index)) {
+      newSet.delete(index)
+    } else {
+      newSet.add(index)
+    }
+    setSelectedItemIndices(newSet)
+  }
+
+  const toggleItemSelectAll = () => {
+    if (selectedItemIndices.size === receiptItems.length) {
+      setSelectedItemIndices(new Set())
+    } else {
+      setSelectedItemIndices(new Set(receiptItems.map((_, idx) => idx)))
+    }
+  }
+
+  const startEditingExpense = (expense: Expense) => {
+    setEditingExpenseId(expense.id)
+    setEditExpenseTitle(expense.title)
+    setEditExpenseAmount(expense.amount.toString())
+  }
+
+  const cancelEditingExpense = () => {
+    setEditingExpenseId(null)
+    setEditExpenseTitle('')
+    setEditExpenseAmount('')
+  }
+
+  const saveExpense = async (id: string) => {
+    setIsSavingExpense(true)
+    
+    const { error: updateError } = await supabase
+      .from('expenses')
+      .update({
+        title: editExpenseTitle,
+        amount: parseFloat(editExpenseAmount) || 0,
+      })
+      .eq('id', id)
+    
+    if (updateError) {
+      setError('Failed to update expense')
+    } else {
+      setEditingExpenseId(null)
+      await fetchExpenses()
+    }
+    setIsSavingExpense(false)
+  }
+
+  const handleExpenseKeyDown = (e: React.KeyboardEvent, id: string) => {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      saveExpense(id)
+    }
+  }
+
+  const startEditingItem = (index: number, item: ReceiptItem) => {
+    setEditingItemIndex(index)
+    setEditItemName(item.name)
+    setEditItemPrice((item.price ?? 0).toString())
+    setEditItemCategory(item.category_id ?? '')
+  }
+
+  const cancelEditingItem = () => {
+    setEditingItemIndex(null)
+    setEditItemName('')
+    setEditItemPrice('')
+    setEditItemCategory('')
+  }
+
+  const saveItem = async (index: number) => {
+    setIsSavingItem(true)
+    
+    const updatedItems = [...receiptItems]
+    updatedItems[index] = {
+      ...updatedItems[index],
+      name: editItemName,
+      price: parseFloat(editItemPrice) || 0,
+      category_id: editItemCategory || null,
+    }
+    
+    await saveReceiptItems(updatedItems)
+    setEditingItemIndex(null)
+    setIsSavingItem(false)
+  }
+
+  const handleItemKeyDown = (e: React.KeyboardEvent, index: number) => {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      saveItem(index)
+    }
+  }
+
+  const saveReceiptItems = async (items: ReceiptItem[]) => {
+    if (!selectedExpense?.receipt_id) return
+    
+    const { data: receiptData } = await supabase
+      .from('receipts')
+      .select('notes')
+      .eq('id', selectedExpense.receipt_id)
+      .single()
+    
+    let notesData: ReceiptData = {}
+    if (receiptData?.notes) {
+      try {
+        notesData = JSON.parse(receiptData.notes)
+      } catch (e) {
+        console.error('Failed to parse receipt notes:', e)
+      }
+    }
+    
+    notesData.items = items
+    
+    const { error: updateError } = await supabase
+      .from('receipts')
+      .update({ notes: JSON.stringify(notesData) })
+      .eq('id', selectedExpense.receipt_id)
+    
+    if (updateError) {
+      setError('Failed to update items')
+    } else {
+      setReceiptItems(items)
+    }
+  }
+
   const handleExpenseClick = async (expense: Expense) => {
     setSelectedExpense(expense)
+    setSelectedItemIndices(new Set())
     
-    // Jeśli expense ma receipt_id, pobierz produkty z paragonu
     if (expense.receipt_id) {
       setLoadingReceiptItems(true)
       setReceiptItems([])
@@ -158,12 +408,33 @@ export default function ExpensesPage() {
         {/* Nagłówek */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 sm:gap-6">
           <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold tracking-tight">Expenses</h1>
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center gap-2">
+            {selectedExpenseIds.size > 0 && (
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={bulkDeleteExpenses}
+                disabled={isBulkDeleting}
+              >
+                {isBulkDeleting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Deleting...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    Delete {selectedExpenseIds.size}
+                  </>
+                )}
+              </Button>
+            )}
+            <ScanReceiptButton onAction={handleAfterScan} />
             <AddExpenseTrigger onAction={fetchExpenses} />
           </div>
         </div>
 
-        {/* TABELA */}
+        {/* TABELA EXPENSES */}
         <section className="rounded-xl border p-4 sm:p-6 overflow-hidden flex-1">
           {loading ? (
             <div className="flex justify-center py-32">
@@ -183,6 +454,12 @@ export default function ExpensesPage() {
               <Table className="w-full text-sm sm:text-base">
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="w-12">
+                      <Checkbox
+                        checked={selectedExpenseIds.size === expenses.length && expenses.length > 0}
+                        onCheckedChange={toggleExpenseSelectAll}
+                      />
+                    </TableHead>
                     <TableHead>Title</TableHead>
                     <TableHead className="hidden sm:table-cell">Vendor</TableHead>
                     <TableHead>Amount</TableHead>
@@ -194,33 +471,104 @@ export default function ExpensesPage() {
                   {expenses.map((expense) => (
                     <TableRow
                       key={expense.id}
-                      onClick={() => handleExpenseClick(expense)}
-                      className={`cursor-pointer transition-colors ${
+                      className={`${
                         selectedExpense?.id === expense.id
                           ? 'bg-muted/40'
                           : 'hover:bg-muted/20'
                       }`}
                     >
-                      <TableCell className="font-medium">
-                        {expense.title}
+                      <TableCell onClick={(e) => e.stopPropagation()}>
+                        <Checkbox
+                          checked={selectedExpenseIds.has(expense.id)}
+                          onCheckedChange={() => toggleExpenseSelection(expense.id)}
+                        />
                       </TableCell>
-                      <TableCell className="hidden sm:table-cell">{expense.vendor || '—'}</TableCell>
-                      <TableCell className="font-medium">{expense.amount.toFixed(2)} PLN</TableCell>
-                      <TableCell className="hidden md:table-cell">
+                      <TableCell 
+                        className="font-medium cursor-pointer"
+                        onClick={() => handleExpenseClick(expense)}
+                      >
+                        {editingExpenseId === expense.id ? (
+                          <Input
+                            value={editExpenseTitle}
+                            onChange={(e) => setEditExpenseTitle(e.target.value)}
+                            onKeyDown={(e) => handleExpenseKeyDown(e, expense.id)}
+                            className="h-8"
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                        ) : (
+                          expense.title
+                        )}
+                      </TableCell>
+                      <TableCell 
+                        className="hidden sm:table-cell cursor-pointer"
+                        onClick={() => handleExpenseClick(expense)}
+                      >
+                        {expense.vendor || '—'}
+                      </TableCell>
+                      <TableCell 
+                        className="font-medium cursor-pointer"
+                        onClick={() => handleExpenseClick(expense)}
+                      >
+                        {editingExpenseId === expense.id ? (
+                          <Input
+                            value={editExpenseAmount}
+                            onChange={(e) => setEditExpenseAmount(e.target.value)}
+                            onKeyDown={(e) => handleExpenseKeyDown(e, expense.id)}
+                            type="number"
+                            step="0.01"
+                            className="h-8 w-24"
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                        ) : (
+                          `${expense.amount.toFixed(2)} PLN`
+                        )}
+                      </TableCell>
+                      <TableCell 
+                        className="hidden md:table-cell cursor-pointer"
+                        onClick={() => handleExpenseClick(expense)}
+                      >
                         {new Date(expense.date).toLocaleDateString()}
                       </TableCell>
-                      <TableCell className="text-right">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            setSelectedExpense(expense)
-                            setIsDeleteDialogOpen(true)
-                          }}
-                        >
-                          <Trash2 className="h-4 w-4 text-red-500" />
-                        </Button>
+                      <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                        {editingExpenseId === expense.id ? (
+                          <div className="flex justify-end gap-1">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => saveExpense(expense.id)}
+                              disabled={isSavingExpense}
+                            >
+                              <Check className="h-4 w-4 text-green-600" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={cancelEditingExpense}
+                            >
+                              <X className="h-4 w-4 text-red-500" />
+                            </Button>
+                          </div>
+                        ) : (
+                          <div className="flex justify-end gap-1">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => startEditingExpense(expense)}
+                            >
+                              <Edit2 className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => {
+                                setSelectedExpense(expense)
+                                setIsDeleteDialogOpen(true)
+                              }}
+                            >
+                              <Trash2 className="h-4 w-4 text-red-500" />
+                            </Button>
+                          </div>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -230,9 +578,148 @@ export default function ExpensesPage() {
           )}
         </section>
 
-        {/* PANEL SZCZEGÓŁÓW */}
+        {/* PANEL SZCZEGÓŁÓW - ITEMS */}
         <section className="w-full">
-          {selectedExpense ? (
+          {selectedExpense && selectedExpense.receipt_id ? (
+            <Card className="border p-4 sm:p-6">
+              <CardHeader className="flex flex-row items-center justify-between">
+                <CardTitle className="text-2xl font-semibold">
+                  Receipt Items - {selectedExpense.title}
+                </CardTitle>
+                {selectedItemIndices.size > 0 && (
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={bulkDeleteItems}
+                  >
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    Delete {selectedItemIndices.size}
+                  </Button>
+                )}
+              </CardHeader>
+              <CardContent>
+                {loadingReceiptItems ? (
+                  <div className="flex justify-center py-8">
+                    <Loader2 className="animate-spin h-6 w-6 text-muted-foreground" />
+                  </div>
+                ) : receiptItems.length > 0 ? (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-12">
+                          <Checkbox
+                            checked={selectedItemIndices.size === receiptItems.length && receiptItems.length > 0}
+                            onCheckedChange={toggleItemSelectAll}
+                          />
+                        </TableHead>
+                        <TableHead>Item</TableHead>
+                        <TableHead>Category</TableHead>
+                        <TableHead className="text-right">Qty</TableHead>
+                        <TableHead className="text-right">Price</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {receiptItems.map((item, index) => {
+                        const quantity = item.quantity ?? 1
+                        const totalPrice = item.price ?? 0
+                        const categoryName = item.category_id ? categories.get(item.category_id) || 'No category' : 'No category'
+                        
+                        return (
+                          <TableRow key={index}>
+                            <TableCell>
+                              <Checkbox
+                                checked={selectedItemIndices.has(index)}
+                                onCheckedChange={() => toggleItemSelection(index)}
+                              />
+                            </TableCell>
+                            <TableCell className="font-medium">
+                              {editingItemIndex === index ? (
+                                <Input
+                                  value={editItemName}
+                                  onChange={(e) => setEditItemName(e.target.value)}
+                                  onKeyDown={(e) => handleItemKeyDown(e, index)}
+                                  className="h-8"
+                                />
+                              ) : (
+                                item.name
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              {editingItemIndex === index ? (
+                                <Select value={editItemCategory} onValueChange={setEditItemCategory}>
+                                  <SelectTrigger className="h-8 w-32">
+                                    <SelectValue placeholder="Category" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {categoriesList.map(cat => (
+                                      <SelectItem key={cat.id} value={cat.id}>
+                                        {cat.name}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              ) : (
+                                <span className="inline-flex items-center px-2 py-1 rounded-md bg-primary/10 text-primary text-xs font-medium">
+                                  {categoryName}
+                                </span>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-right">{quantity}</TableCell>
+                            <TableCell className="text-right font-medium">
+                              {editingItemIndex === index ? (
+                                <Input
+                                  value={editItemPrice}
+                                  onChange={(e) => setEditItemPrice(e.target.value)}
+                                  onKeyDown={(e) => handleItemKeyDown(e, index)}
+                                  type="number"
+                                  step="0.01"
+                                  className="h-8 w-24"
+                                />
+                              ) : (
+                                `${totalPrice.toFixed(2)} PLN`
+                              )}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              {editingItemIndex === index ? (
+                                <div className="flex justify-end gap-1">
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => saveItem(index)}
+                                    disabled={isSavingItem}
+                                  >
+                                    <Check className="h-4 w-4 text-green-600" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={cancelEditingItem}
+                                  >
+                                    <X className="h-4 w-4 text-red-500" />
+                                  </Button>
+                                </div>
+                              ) : (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => startEditingItem(index, item)}
+                                >
+                                  <Edit2 className="h-4 w-4" />
+                                </Button>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        )
+                      })}
+                    </TableBody>
+                  </Table>
+                ) : (
+                  <p className="text-muted-foreground py-8 text-center">No items found</p>
+                )}
+              </CardContent>
+            </Card>
+          ) : selectedExpense ? (
             <Card className="border p-4 sm:p-6">
               <CardHeader>
                 <CardTitle className="text-2xl font-semibold">
@@ -242,101 +729,27 @@ export default function ExpensesPage() {
               <CardContent className="space-y-4 text-sm">
                 <div className="grid grid-cols-2 gap-4">
                   <p>
-                    <span className="font-medium text-muted-foreground">
-                      Vendor:
-                    </span>{' '}
+                    <span className="font-medium text-muted-foreground">Vendor:</span>{' '}
                     {selectedExpense.vendor || '—'}
                   </p>
                   <p>
-                    <span className="font-medium text-muted-foreground">
-                      Amount:
-                    </span>{' '}
+                    <span className="font-medium text-muted-foreground">Amount:</span>{' '}
                     {selectedExpense.amount.toFixed(2)} PLN
                   </p>
                   <p>
-                    <span className="font-medium text-muted-foreground">
-                      Date:
-                    </span>{' '}
+                    <span className="font-medium text-muted-foreground">Date:</span>{' '}
                     {new Date(selectedExpense.date).toLocaleDateString()}
                   </p>
                 </div>
-
-                {/* Produkty z paragonu */}
-                {selectedExpense.receipt_id && (
-                  <div className="mt-6 pt-6 border-t">
-                    <h3 className="font-semibold text-base mb-4">Receipt Items</h3>
-                    {loadingReceiptItems ? (
-                      <div className="flex justify-center py-4">
-                        <Loader2 className="animate-spin h-5 w-5 text-muted-foreground" />
-                      </div>
-                    ) : receiptItems.length > 0 ? (
-                      <div className="space-y-2">
-                        <Table>
-                          <TableHeader>
-                            <TableRow>
-                              <TableHead>Item</TableHead>
-                              <TableHead>Category</TableHead>
-                              <TableHead className="text-right">Quantity</TableHead>
-                              <TableHead className="text-right">Price</TableHead>
-                              <TableHead className="text-right">Total</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {receiptItems.map((item, index) => {
-                              const quantity = item.quantity ?? 1
-                              const price = item.price ?? 0
-                              const total = quantity * price
-                              const categoryName = item.category_id ? categories.get(item.category_id) || 'No category' : 'No category'
-                              return (
-                                <TableRow key={index}>
-                                  <TableCell className="font-medium">
-                                    {item.name}
-                                  </TableCell>
-                                  <TableCell>
-                                    <span className="text-sm text-muted-foreground">
-                                      {categoryName}
-                                    </span>
-                                  </TableCell>
-                                  <TableCell className="text-right">
-                                    {quantity}
-                                  </TableCell>
-                                  <TableCell className="text-right">
-                                    {price.toFixed(2)} PLN
-                                  </TableCell>
-                                  <TableCell className="text-right font-medium">
-                                    {total.toFixed(2)} PLN
-                                  </TableCell>
-                                </TableRow>
-                              )
-                            })}
-                          </TableBody>
-                        </Table>
-                      </div>
-                    ) : (
-                      <p className="text-muted-foreground">No items found in receipt</p>
-                    )}
-                  </div>
-                )}
-
-                {!selectedExpense.receipt_id && selectedExpense.notes && (
+                {selectedExpense.notes && (
                   <div className="mt-4 pt-4 border-t">
                     <p>
-                      <span className="font-medium text-muted-foreground">
-                        Notes:
-                      </span>{' '}
+                      <span className="font-medium text-muted-foreground">Notes:</span>{' '}
                       {selectedExpense.notes}
                     </p>
                   </div>
                 )}
               </CardContent>
-              <div className="mt-6 flex justify-end">
-                <Button
-                  variant="destructive"
-                  onClick={() => setIsDeleteDialogOpen(true)}
-                >
-                  Delete
-                </Button>
-              </div>
             </Card>
           ) : (
             <div className="h-48 flex items-center justify-center text-muted-foreground border rounded-xl">
@@ -352,15 +765,12 @@ export default function ExpensesPage() {
           <DialogHeader>
             <DialogTitle>Delete Expense</DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete “{selectedExpense?.title}”? This
+              Are you sure you want to delete "{selectedExpense?.title}"? This
               action cannot be undone.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="flex justify-end gap-2">
-            <Button
-              variant="outline"
-              onClick={() => setIsDeleteDialogOpen(false)}
-            >
+            <Button variant="outline" onClick={() => setIsDeleteDialogOpen(false)}>
               Cancel
             </Button>
             <Button

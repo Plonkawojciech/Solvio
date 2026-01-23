@@ -11,9 +11,17 @@ export function ScanReceiptButton({ onAction }: { onAction?: () => void }) {
   const router = useRouter()
 
   const handleAction = React.useCallback(() => {
-    onAction?.()
-    router.refresh()         
     setIsSheetOpen(false)
+    
+    // Odśwież natychmiast
+    onAction?.()
+    router.refresh()
+    
+    // Odśwież ponownie po 7s (gdy kategorie będą gotowe w tle)
+    setTimeout(() => {
+      onAction?.()
+      router.refresh()
+    }, 7000)
   }, [onAction, router])
 
   return (

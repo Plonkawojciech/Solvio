@@ -220,12 +220,8 @@ export function AddExpenseSheet({
           }
         };
 
-        // Przekonwertuj wszystkie pliki HEIC przed uploadem
-        const convertedFiles = await Promise.all(
-          files.map(file => convertHeicIfNeeded(file))
-        );
-
-        for (const file of convertedFiles) {
+        // Nie konwertujemy HEIC - obsługiwane bezpośrednio
+        for (const file of files) {
           const path = `${user.id}/${receiptId}/${file.name}`
           const { error: uploadError } = await supabase.storage
             .from('receipts')

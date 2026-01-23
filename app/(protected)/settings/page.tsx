@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server"
 import { redirect } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { SettingsForm } from "@/components/protected/settings/settings-form"
+import { CategoriesManager } from "@/components/protected/settings/categories-manager"
 
 export default async function SettingsPage() {
   const supabase = await createClient()
@@ -72,6 +73,24 @@ export default async function SettingsPage() {
             categoryBudgets={categoryBudgets}
             currencies={currencies ?? []}
             languages={languages ?? []}
+          />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Manage Categories</CardTitle>
+          <CardDescription>
+            Add, edit, or remove expense categories. These categories are used by AI when scanning receipts.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <CategoriesManager 
+            initialCategories={categories?.map(c => ({
+              id: c.id as string,
+              name: c.name as string,
+              icon: c.icon as string | null,
+            })) ?? []} 
           />
         </CardContent>
       </Card>
