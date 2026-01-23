@@ -50,6 +50,100 @@ interface ScanReceiptSheetProps {
   onParsed?: (result: OcrResult | null) => void;
 }
 
+function isHeicFile(file: File) {
+  return (
+    file.type.includes('heic') ||
+    file.type.includes('heif') ||
+    !!file.name.toLowerCase().match(/\.(heic|heif)$/)
+  );
+}
+
+function isImageFile(file: File) {
+  return file.type.startsWith('image/') || !!file.name.toLowerCase().match(/\.(jpe?g|png|webp|heic|heif)$/);
+}
+
+async function convertHeicToJpegFile(file: File): Promise<File> {
+  try {
+    const arrayBuffer = await file.arrayBuffer();
+    const response = await fetch('/api/v1/convert-heic', {
+      method: 'POST',
+      body: (() => {
+        const fd = new FormData();
+        fd.append('file', new Blob([arrayBuffer], { type: file.type }), file.name);
+        return fd;
+      })(),
+    });
+
+    if (!response.ok) return file;
+    const blob = await response.blob();
+    const uploadFileName = file.name.replace(/\.(heic|heif)$/i, '.jpg');
+    return new File([blob], uploadFileName, { type: 'image/jpeg' });
+  } catch {
+    return file;
+  }
+}
+
+async function compressImageToTarget(
+  file: File,
+  targetBytes: number,
+  options?: { maxDim?: number }
+): Promise<File> {
+  // If already small enough, keep as-is (but still normalize HEIC earlier).
+  if (file.size <= targetBytes) return file;
+
+  // Decode
+  const img = await createImageBitmap(file);
+  const maxDim = options?.maxDim ?? 2000;
+
+  const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+  let w = Math.max(1, Math.round(img.width * scale));
+  let h = Math.max(1, Math.round(img.height * scale));
+
+  // Draw
+  let canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return file;
+  ctx.drawImage(img, 0, 0, w, h);
+
+  // Try JPEG with decreasing quality
+  const tryEncode = (quality: number) =>
+    new Promise<Blob | null>((resolve) => {
+      canvas.toBlob((b) => resolve(b), 'image/jpeg', quality);
+    });
+
+  let bestBlob: Blob | null = null;
+
+  for (const q of [0.85, 0.78, 0.72, 0.66, 0.6, 0.55]) {
+    const blob = await tryEncode(q);
+    if (!blob) continue;
+    bestBlob = blob;
+    if (blob.size <= targetBytes) break;
+  }
+
+  // If still too large, progressively downscale and re-encode
+  let safety = 0;
+  while (bestBlob && bestBlob.size > targetBytes && Math.max(w, h) > 900 && safety < 4) {
+    safety++;
+    w = Math.max(1, Math.round(w * 0.85));
+    h = Math.max(1, Math.round(h * 0.85));
+    canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx2 = canvas.getContext('2d');
+    if (!ctx2) break;
+    ctx2.drawImage(img, 0, 0, w, h);
+    const blob = await tryEncode(0.72);
+    if (!blob) break;
+    bestBlob = blob;
+  }
+
+  if (!bestBlob) return file;
+  const outName = file.name.replace(/\.(png|webp|jpe?g|heic|heif)$/i, '.jpg');
+  return new File([bestBlob], outName, { type: 'image/jpeg' });
+}
+
 export function ScanReceiptSheet({
   isOpen,
   onClose,
@@ -107,17 +201,40 @@ export function ScanReceiptSheet({
     try {
       setIsUploading(true);
 
-      // Validate file sizes (max 4MB per file - Vercel limit is 4.5MB)
-      const maxFileSize = 4 * 1024 * 1024; // 4MB
-      for (const file of files) {
-        if (file.size > maxFileSize) {
-          const isPl = getLanguage() === 'pl'
+      // Vercel request size is limited (413). We compress images before sending to OCR.
+      // PDFs cannot be safely compressed here, so we hard-block only large PDFs.
+      const maxRequestBytes = 4 * 1024 * 1024; // ~4MB (keep some overhead headroom)
+      const budgetForFiles = Math.floor(maxRequestBytes * 0.9); // reserve ~10% for multipart overhead
+      const perFileTarget = Math.max(450 * 1024, Math.floor(budgetForFiles / Math.max(1, files.length))); // >= 450KB
+
+      const optimizedForOcr: File[] = [];
+      for (const original of files) {
+        // Large PDFs will likely 413 on Vercel.
+        if (original.type === 'application/pdf' && original.size > perFileTarget) {
+          const isPl = getLanguage() === 'pl';
           throw new Error(
-            isPl 
-              ? `Plik ${file.name} jest za duży. Maksymalny rozmiar to 4MB.`
-              : `File ${file.name} is too large. Maximum size is 4MB.`
+            isPl
+              ? `PDF ${original.name} jest za duży. Spróbuj zdjęcie albo mniejszy PDF.`
+              : `PDF ${original.name} is too large. Try a photo or a smaller PDF.`
           );
         }
+
+        if (!isImageFile(original)) {
+          optimizedForOcr.push(original);
+          continue;
+        }
+
+        let f = original;
+        if (isHeicFile(f)) {
+          f = await convertHeicToJpegFile(f);
+        }
+
+        // If still too big, compress (resize+jpeg).
+        if (f.size > perFileTarget) {
+          f = await compressImageToTarget(f, perFileTarget, { maxDim: 2000 });
+        }
+
+        optimizedForOcr.push(f);
       }
 
       // 1) rekord w receipts
@@ -144,8 +261,7 @@ export function ScanReceiptSheet({
       const uploadResults = await Promise.allSettled(
         files.map(async (file, index) => {
           // Sprawdź czy to HEIC
-          const isHeic = file.type.includes('heic') || file.type.includes('heif') || 
-                         file.name.toLowerCase().match(/\.(heic|heif)$/);
+          const isHeic = isHeicFile(file);
           
           let fileToUpload = file;
           let uploadFileName = file.name;
@@ -153,20 +269,10 @@ export function ScanReceiptSheet({
           // Jeśli HEIC, konwertuj do JPEG dla Supabase Storage
           if (isHeic) {
             try {
-              const arrayBuffer = await file.arrayBuffer();
-              const response = await fetch('/api/v1/convert-heic', {
-                method: 'POST',
-                body: (() => {
-                  const fd = new FormData();
-                  fd.append('file', new Blob([arrayBuffer], { type: file.type }), file.name);
-                  return fd;
-                })(),
-              });
-              
-              if (response.ok) {
-                const blob = await response.blob();
-                uploadFileName = file.name.replace(/\.(heic|heif)$/i, '.jpg');
-                fileToUpload = new File([blob], uploadFileName, { type: 'image/jpeg' });
+              const converted = await convertHeicToJpegFile(file);
+              if (converted !== file) {
+                uploadFileName = converted.name;
+                fileToUpload = converted;
               }
             } catch (err) {
               console.warn('[ScanReceipt] HEIC conversion for storage failed, using original');
@@ -227,7 +333,7 @@ export function ScanReceiptSheet({
       const fd = new FormData();
       fd.append('receiptId', receiptId);
       fd.append('userId', user.id);
-      for (const f of files) fd.append('files', f, f.name);
+      for (const f of optimizedForOcr) fd.append('files', f, f.name);
 
       const res = await fetch('/api/v1/ocr-receipt', {
         method: 'POST',
