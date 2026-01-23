@@ -185,8 +185,24 @@ export function AddExpenseSheet({
             });
 
             if (!response.ok) {
-              const error = await response.json().catch(() => ({ error: 'Conversion failed' }));
-              throw new Error(error.error || 'HEIC conversion failed');
+              let errorMsg = 'Conversion failed';
+              try {
+                const errorText = await response.text();
+                try {
+                  const errorData = JSON.parse(errorText);
+                  errorMsg = errorData.error || errorMsg;
+                } catch {
+                  errorMsg = errorText || errorMsg;
+                  if (process.env.NODE_ENV === 'development') {
+                    console.error('[AddExpense] Response not JSON:', errorText.substring(0, 500));
+                  }
+                }
+              } catch (textErr) {
+                if (process.env.NODE_ENV === 'development') {
+                  console.error('[AddExpense] Failed to read response:', textErr);
+                }
+              }
+              throw new Error(errorMsg);
             }
 
             const blob = await response.blob();
@@ -217,14 +233,27 @@ export function AddExpenseSheet({
               upsert: true,
               contentType: file.type || 'image/jpeg',
             })
-          if (uploadError) throw uploadError
+          if (uploadError) {
+            if (process.env.NODE_ENV === 'development') {
+              console.error('[AddExpense] Storage upload error:', uploadError);
+            }
+            throw new Error(`Storage upload failed: ${uploadError.message || 'Unknown error'}`);
+          }
 
           const { data: pub } = supabase.storage
             .from('receipts')
             .getPublicUrl(path)
-          await supabase
+          
+          const { error: insertError } = await supabase
             .from('receipt_images')
             .insert([{ receipt_id: receiptId, image_url: pub.publicUrl }])
+          
+          if (insertError) {
+            if (process.env.NODE_ENV === 'development') {
+              console.error('[AddExpense] receipt_images insert error:', insertError);
+            }
+            throw new Error(`Failed to save receipt image: ${insertError.message || 'Unknown error'}`);
+          }
         }
         setIsUploading(false)
       }
