@@ -20,11 +20,12 @@ import { ScanReceiptButton } from '@/components/protected/dashboard/scan-receipt
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import Link from 'next/link';
-import { getLanguage, t } from '@/lib/i18n';
+import { useTranslation } from '@/lib/i18n';
 
 export default function ProtectedPage() {
   const router = useRouter();
   const supabase = createClient();
+  const { t, lang, mounted } = useTranslation();
   
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState<any>(null);
@@ -142,10 +143,8 @@ export default function ProtectedPage() {
 
   const today = new Date();
   const currency = (settings?.currency_id || 'PLN').toUpperCase();
-  const lang = (settings?.language_id || 'EN').toUpperCase();
-  const locale = lang === 'PL' ? 'pl-PL' : 'en-US';
-  const currentLang = getLanguage();
-  const isPolish = currentLang === 'pl';
+  const locale = lang === 'pl' ? 'pl-PL' : 'en-US';
+  const isPolish = lang === 'pl';
 
   // mapy pomocnicze
   const catById = new Map<

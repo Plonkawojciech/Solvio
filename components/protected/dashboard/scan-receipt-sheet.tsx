@@ -107,11 +107,16 @@ export function ScanReceiptSheet({
     try {
       setIsUploading(true);
 
-      // Validate file sizes (max 10MB per file)
-      const maxFileSize = 10 * 1024 * 1024; // 10MB
+      // Validate file sizes (max 4MB per file - Vercel limit is 4.5MB)
+      const maxFileSize = 4 * 1024 * 1024; // 4MB
       for (const file of files) {
         if (file.size > maxFileSize) {
-          throw new Error(`File ${file.name} is too large. Maximum size is 10MB.`);
+          const isPl = getLanguage() === 'pl'
+          throw new Error(
+            isPl 
+              ? `Plik ${file.name} jest za duży. Maksymalny rozmiar to 4MB.`
+              : `File ${file.name} is too large. Maximum size is 4MB.`
+          );
         }
       }
 
@@ -233,15 +238,42 @@ export function ScanReceiptSheet({
       const responseText = await res.text();
       
       if (!res.ok) {
-        let errorMsg = 'OCR zwrócił błąd.';
+        const isPl = getLanguage() === 'pl'
+        let errorMsg = isPl ? 'OCR zwrócił błąd.' : 'OCR returned an error.';
+        
+        // Obsługa specjalnych kodów błędów
+        if (res.status === 413) {
+          errorMsg = isPl 
+            ? 'Plik jest za duży. Maksymalny rozmiar to 4MB na plik.'
+            : 'File is too large. Maximum size is 4MB per file.';
+          toast.error(isPl ? 'Plik za duży' : 'File too large', {
+            description: errorMsg,
+            duration: 5000,
+          });
+          throw new Error(errorMsg);
+        }
+        
+        if (res.status === 400) {
+          errorMsg = isPl
+            ? 'Nieprawidłowy format pliku. Użyj JPG, PNG, HEIC lub PDF.'
+            : 'Invalid file format. Use JPG, PNG, HEIC or PDF.';
+          toast.error(isPl ? 'Błąd formatu' : 'Format error', {
+            description: errorMsg,
+            duration: 5000,
+          });
+          throw new Error(errorMsg);
+        }
+        
         try {
           const errorData = JSON.parse(responseText);
           
           // Sprawdź czy to duplikat
           if (errorData.error === 'duplicate') {
-            errorMsg = `⚠️ Ten paragon został już wgrany!\n\n${errorData.message || 'Duplikat wykryty.'}`;
-            toast.warning('Duplikat paragonu', {
-              description: errorData.message || 'Ten paragon został już wcześniej dodany.',
+            errorMsg = isPl
+              ? `⚠️ Ten paragon został już wgrany!\n\n${errorData.message || 'Duplikat wykryty.'}`
+              : `⚠️ This receipt was already uploaded!\n\n${errorData.message || 'Duplicate detected.'}`;
+            toast.warning(isPl ? 'Duplikat paragonu' : 'Duplicate receipt', {
+              description: errorData.message || (isPl ? 'Ten paragon został już wcześniej dodany.' : 'This receipt was already added.'),
               duration: 5000,
             });
           } else {
