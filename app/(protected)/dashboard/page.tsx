@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
 import {
@@ -27,6 +27,23 @@ export default function ProtectedPage() {
   const supabase = createClient();
   const { t, lang, mounted } = useTranslation();
   
+  // Funkcja do tłumaczenia nazw kategorii
+  const translateCategoryName = (categoryName: string): string => {
+    const categoryMap: Record<string, string> = {
+      'Food': t('categories.food'),
+      'Groceries': t('categories.groceries'),
+      'Health': t('categories.health'),
+      'Transport': t('categories.transport'),
+      'Shopping': t('categories.shopping'),
+      'Electronics': t('categories.electronics'),
+      'Home & Garden': t('categories.homeGarden'),
+      'Entertainment': t('categories.entertainment'),
+      'Bills & Utilities': t('categories.billsUtilities'),
+      'Other': t('categories.other'),
+    }
+    return categoryMap[categoryName] || categoryName
+  }
+  
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState<any>(null);
   const [categories, setCategories] = useState<any[]>([]);
@@ -34,8 +51,9 @@ export default function ProtectedPage() {
   const [receipts, setReceipts] = useState<any[]>([]);
   const [settings, setSettings] = useState<any>(null);
   const [budgets, setBudgets] = useState<any[]>([]);
+  const [refreshKey, setRefreshKey] = useState(0); // Klucz do wymuszenia re-renderu wszystkich komponentów
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     console.log('[Dashboard] Refreshing data...');
     setLoading(true);
     
@@ -91,7 +109,7 @@ export default function ProtectedPage() {
         .gte('date', start30.toISOString().slice(0, 10))
         .not('notes', 'is', null)
         .order('date', { ascending: false })
-        .limit(10),
+        .limit(100), // Zwiększony limit, aby pobrać wszystkie paragony z ostatnich 30 dni
       // Poprzedni miesiąc
       supabase
         .from('expenses')
@@ -118,17 +136,32 @@ export default function ProtectedPage() {
     setSettings(settingsRow);
     setBudgets(budgetsRows || []);
     setLoading(false);
+    setRefreshKey(prev => prev + 1); // Zwiększ klucz, aby wymusić re-render wszystkich komponentów
     
     console.log('[Dashboard] ✅ Data refreshed:', {
       expenses: expensesData?.length || 0,
       receipts: receiptsData?.length || 0,
       categories: categoriesData?.length || 0,
     });
-  };
+  }, [supabase, router]);
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [fetchData]);
+
+  // Odśwież dane gdy expenses się zmienią (np. po usunięciu paragonu)
+  useEffect(() => {
+    const handleExpensesUpdated = () => {
+      console.log('[Dashboard] Expenses updated event received, refreshing data...');
+      fetchData();
+    };
+
+    window.addEventListener('expensesUpdated', handleExpensesUpdated);
+
+    return () => {
+      window.removeEventListener('expensesUpdated', handleExpensesUpdated);
+    };
+  }, [fetchData]);
 
   if (loading) {
     return (
@@ -461,6 +494,7 @@ export default function ProtectedPage() {
               </div>
             ) : (
               <RecentExpensesTable
+                key={`recent-${refreshKey}-${recentExpenses.length}`}
                 data={recentExpenses.slice(0, 10).map((e) => ({
                   id: e.id,
                   description: e.description,
@@ -489,6 +523,7 @@ export default function ProtectedPage() {
             ) : (
               <div className="space-y-4">
                 <SpendingByCategoryChart
+                  key={`category-${refreshKey}-${categorySpendingData.length}`}
                   data={categorySpendingData}
                   currency={currency}
                 />
@@ -519,7 +554,11 @@ export default function ProtectedPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <BudgetOverview data={budgetData} currency={currency} />
+            <BudgetOverview 
+              key={`budget-${refreshKey}-${budgetData.length}`}
+              data={budgetData} 
+              currency={currency} 
+            />
           </CardContent>
         </Card>
       )}
@@ -537,6 +576,7 @@ export default function ProtectedPage() {
         </CardHeader>
         <CardContent className="pl-2">
           <MonthlySpendingChart 
+            key={`monthly-${refreshKey}-${monthlySpendingData.length}`}
             data={monthlySpendingData} 
             currency={currency}
             categories={chartCategories}

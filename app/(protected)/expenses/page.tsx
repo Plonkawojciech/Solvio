@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useTranslation } from '@/lib/i18n'
 import { Button } from '@/components/ui/button'
@@ -20,7 +21,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { Loader2, Trash2, Edit2, Check, X } from 'lucide-react'
+import { Loader2, Trash2, Edit2, Check, X, Image as ImageIcon } from 'lucide-react'
 import { AddExpenseTrigger } from '@/components/protected/dashboard/add-expense-trigger'
 import { ScanReceiptButton } from '@/components/protected/dashboard/scan-receipt-button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -57,9 +58,27 @@ interface ReceiptData {
 }
 
 export default function ExpensesPage() {
+  const router = useRouter()
   const supabase = createClient()
   const { t, lang, mounted } = useTranslation()
   const isPolish = lang === 'pl'
+  
+  // Funkcja do tłumaczenia nazw kategorii
+  const translateCategoryName = (categoryName: string): string => {
+    const categoryMap: Record<string, string> = {
+      'Food': t('categories.food'),
+      'Groceries': t('categories.groceries'),
+      'Health': t('categories.health'),
+      'Transport': t('categories.transport'),
+      'Shopping': t('categories.shopping'),
+      'Electronics': t('categories.electronics'),
+      'Home & Garden': t('categories.homeGarden'),
+      'Entertainment': t('categories.entertainment'),
+      'Bills & Utilities': t('categories.billsUtilities'),
+      'Other': t('categories.other'),
+    }
+    return categoryMap[categoryName] || categoryName
+  }
   const [expenses, setExpenses] = useState<Expense[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -91,6 +110,11 @@ export default function ExpensesPage() {
   const [editItemPrice, setEditItemPrice] = useState('')
   const [editItemCategory, setEditItemCategory] = useState('')
   const [isSavingItem, setIsSavingItem] = useState(false)
+  
+  // Receipt image preview
+  const [receiptImageUrl, setReceiptImageUrl] = useState<string | null>(null)
+  const [isImageDialogOpen, setIsImageDialogOpen] = useState(false)
+  const [loadingImage, setLoadingImage] = useState(false)
 
   const fetchSettings = async () => {
     const { data: { user } } = await supabase.auth.getUser()
@@ -118,11 +142,15 @@ export default function ExpensesPage() {
   const handleAfterScan = async () => {
     const initialExpensesCount = expenses.length
     await fetchExpenses()
+    // Wyślij custom event do dashboardu
+    window.dispatchEvent(new CustomEvent('expensesUpdated'))
     
     console.log('[Auto-refresh] Czekam na kategorie... (6s)')
     setTimeout(async () => {
       console.log('[Auto-refresh] Odświeżam kategorie!')
       const updatedExpenses = await fetchExpenses()
+      // Wyślij custom event do dashboardu
+      window.dispatchEvent(new CustomEvent('expensesUpdated'))
       
       // Automatycznie wybierz najnowszy expense (pierwszy na liście)
       if (updatedExpenses && updatedExpenses.length > 0) {
@@ -215,6 +243,8 @@ export default function ExpensesPage() {
       setSelectedExpense(null)
       setReceiptItems([])
       await fetchExpenses()
+      // Wyślij custom event do dashboardu
+      window.dispatchEvent(new CustomEvent('expensesUpdated'))
       setIsDeleting(false)
     }
   }
@@ -236,6 +266,8 @@ export default function ExpensesPage() {
       setSelectedExpenseIds(new Set())
       setSelectedExpense(null)
       await fetchExpenses()
+      // Wyślij custom event do dashboardu
+      window.dispatchEvent(new CustomEvent('expensesUpdated'))
     }
     setIsBulkDeleting(false)
   }
@@ -246,6 +278,7 @@ export default function ExpensesPage() {
     const updatedItems = receiptItems.filter((_, idx) => !selectedItemIndices.has(idx))
     await saveReceiptItems(updatedItems)
     setSelectedItemIndices(new Set())
+    // Event jest już wysyłany w saveReceiptItems
   }
 
   const toggleExpenseSelection = (id: string) => {
@@ -389,6 +422,8 @@ export default function ExpensesPage() {
       setError('Failed to update items')
     } else {
       setReceiptItems(items)
+      // Wyślij custom event do dashboardu (items się zmieniły, więc kategorie też)
+      window.dispatchEvent(new CustomEvent('expensesUpdated'))
     }
   }
 
@@ -419,6 +454,52 @@ export default function ExpensesPage() {
       setLoadingReceiptItems(false)
     } else {
       setReceiptItems([])
+    }
+  }
+
+  const handleViewReceiptImage = async (receiptId: string) => {
+    setLoadingImage(true)
+    setIsImageDialogOpen(true)
+    setReceiptImageUrl(null)
+    
+    try {
+      // Pobierz URL zdjęcia z tabeli receipt_images
+      const { data: imageData, error: imageError } = await supabase
+        .from('receipt_images')
+        .select('image_url')
+        .eq('receipt_id', receiptId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      
+      if (!imageError && imageData?.image_url) {
+        setReceiptImageUrl(imageData.image_url)
+      } else {
+        // Fallback: spróbuj wygenerować URL z Storage
+        const { data: { user } } = await supabase.auth.getUser()
+        if (user) {
+          // Pobierz wszystkie pliki z folderu receipt
+          const { data: files, error: listError } = await supabase.storage
+            .from('receipts')
+            .list(`${user.id}/${receiptId}`)
+          
+          if (!listError && files && files.length > 0) {
+            // Weź pierwszy plik
+            const firstFile = files[0]
+            const { data: urlData } = supabase.storage
+              .from('receipts')
+              .getPublicUrl(`${user.id}/${receiptId}/${firstFile.name}`)
+            
+            if (urlData?.publicUrl) {
+              setReceiptImageUrl(urlData.publicUrl)
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load receipt image:', error)
+    } finally {
+      setLoadingImage(false)
     }
   }
 
@@ -454,7 +535,11 @@ export default function ExpensesPage() {
               </Button>
             )}
             <ScanReceiptButton onAction={handleAfterScan} />
-            <AddExpenseTrigger onAction={fetchExpenses} />
+            <AddExpenseTrigger onAction={async () => {
+              await fetchExpenses()
+              // Wyślij custom event do dashboardu
+              window.dispatchEvent(new CustomEvent('expensesUpdated'))
+            }} />
           </div>
         </div>
 
@@ -554,17 +639,33 @@ export default function ExpensesPage() {
                             </Button>
                           </>
                         ) : (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => {
-                              setSelectedExpense(expense);
-                              setIsDeleteDialogOpen(true);
-                            }}
-                            className="h-7 w-7"
-                          >
-                            <Trash2 className="h-3 w-3 text-red-500" />
-                          </Button>
+                          <>
+                            {expense.receipt_id && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleViewReceiptImage(expense.receipt_id!);
+                                }}
+                                className="h-7 w-7"
+                                title={t('expenses.viewReceipt') || 'View receipt'}
+                              >
+                                <ImageIcon className="h-3 w-3 text-blue-500" />
+                              </Button>
+                            )}
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => {
+                                setSelectedExpense(expense);
+                                setIsDeleteDialogOpen(true);
+                              }}
+                              className="h-7 w-7"
+                            >
+                              <Trash2 className="h-3 w-3 text-red-500" />
+                            </Button>
+                          </>
                         )}
                       </div>
                     </div>
@@ -673,6 +774,16 @@ export default function ExpensesPage() {
                           </div>
                         ) : (
                           <div className="flex justify-end gap-1">
+                            {expense.receipt_id && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleViewReceiptImage(expense.receipt_id!)}
+                                title={t('expenses.viewReceipt') || 'View receipt'}
+                              >
+                                <ImageIcon className="h-4 w-4 text-blue-500" />
+                              </Button>
+                            )}
                             <Button
                               variant="ghost"
                               size="icon"
@@ -742,7 +853,8 @@ export default function ExpensesPage() {
                       {receiptItems.map((item, index) => {
                         const quantity = item.quantity ?? 1
                         const totalPrice = item.price ?? 0
-                        const categoryName = item.category_id ? categories.get(item.category_id) || t('expenses.noCategory') : t('expenses.noCategory')
+                        const rawCategoryName = item.category_id ? categories.get(item.category_id) || t('expenses.noCategory') : t('expenses.noCategory')
+                        const categoryName = translateCategoryName(rawCategoryName)
                         
                         return (
                           <div
@@ -839,7 +951,8 @@ export default function ExpensesPage() {
                           {receiptItems.map((item, index) => {
                         const quantity = item.quantity ?? 1
                         const totalPrice = item.price ?? 0
-                        const categoryName = item.category_id ? categories.get(item.category_id) || t('expenses.noCategory') : t('expenses.noCategory')
+                        const rawCategoryName = item.category_id ? categories.get(item.category_id) || t('expenses.noCategory') : t('expenses.noCategory')
+                        const categoryName = translateCategoryName(rawCategoryName)
                         
                         return (
                           <TableRow key={index}>
@@ -1004,6 +1117,49 @@ export default function ExpensesPage() {
               ) : (
                 t('expenses.delete')
               )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog podglądu zdjęcia paragonu */}
+      <Dialog open={isImageDialogOpen} onOpenChange={setIsImageDialogOpen}>
+        <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-auto">
+          <DialogHeader>
+            <DialogTitle suppressHydrationWarning>
+              {t('expenses.receiptImage') || 'Receipt Image'}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="flex justify-center items-center min-h-[400px]">
+            {loadingImage ? (
+              <div className="flex flex-col items-center justify-center py-16">
+                <Loader2 className="animate-spin h-8 w-8 text-muted-foreground mb-4" />
+                <p className="text-muted-foreground" suppressHydrationWarning>
+                  {t('expenses.loadingImage') || 'Loading image...'}
+                </p>
+              </div>
+            ) : receiptImageUrl ? (
+              <img
+                src={receiptImageUrl}
+                alt="Receipt"
+                className="max-w-full max-h-[70vh] object-contain rounded-lg"
+                onError={() => {
+                  console.error('Failed to load receipt image');
+                  setReceiptImageUrl(null);
+                }}
+              />
+            ) : (
+              <div className="flex flex-col items-center justify-center py-16">
+                <ImageIcon className="h-12 w-12 text-muted-foreground mb-4" />
+                <p className="text-muted-foreground" suppressHydrationWarning>
+                  {t('expenses.noImage') || 'No image available'}
+                </p>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsImageDialogOpen(false)} suppressHydrationWarning>
+              {t('common.close') || 'Close'}
             </Button>
           </DialogFooter>
         </DialogContent>

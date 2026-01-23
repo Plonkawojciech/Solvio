@@ -170,8 +170,69 @@ function normalizeStoreName(merchant: string | null): string {
   return merchant;
 }
 
+// --- GPT EKSTRAKCJA NAZWY SKLEPU Z TEKSTU ---
+async function extractStoreNameWithGPT(rawText: string): Promise<string | null> {
+  if (!openai || !rawText || rawText.trim().length < 10) {
+    return null;
+  }
+
+  try {
+    console.log('[GPT Store Extraction] Próbuję wyciągnąć nazwę sklepu z tekstu...');
+    
+    // Weź pierwsze 1000 znaków tekstu (zwykle tam jest nazwa sklepu)
+    const textSample = rawText.substring(0, 1000).trim();
+    
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-4o',
+      temperature: 0,
+      max_tokens: 50,
+      messages: [
+        {
+          role: 'system',
+          content: `Jesteś ekspertem w rozpoznawaniu nazw sklepów z paragonów. Twoim zadaniem jest znaleźć dokładną nazwę sklepu w tekście paragonu.
+
+INSTRUKCJE:
+1. Znajdź nazwę sklepu w tekście (zwykle na początku paragonu)
+2. Zwróć TYLKO czystą nazwę sklepu, bez form prawnych (sp. z o.o., S.A., etc.), bez adresów, bez "Zakupy", "Paragon", etc.
+3. Rozpoznaj popularne sieci: Lidl, Biedronka, Żabka, Dino, Kaufland, Carrefour, Tesco, Auchan, Real, Leclerc, Selgros, Makro, Castorama, Leroy Merlin, OBI, IKEA, MediaMarkt, RTV Euro AGD, Empik, Rossmann, Hebe, Super-Pharm, Stokrotka, Polo Market, ABC, SPAR, Netto, Aldi, Penny, REWE, E.Leclerc, Intermarché
+4. Jeśli widzisz "LIDL" (nawet jako "LIDL", "Lidl", "lidl", "LIDL SP. Z O.O.", "STOWT LIDL", "OWT LIDL"), zwróć "Lidl"
+5. Jeśli widzisz "BIEDRONKA", zwróć "Biedronka"
+6. Jeśli widzisz "ŻABKA" lub "ZABKA", zwróć "Żabka"
+7. Jeśli nie rozpoznajesz znanej sieci, zwróć najczystszą możliwą nazwę sklepu (bez form prawnych, bez prefiksów jak OWT, STOWT)
+8. Jeśli nie możesz znaleźć nazwy sklepu, zwróć "null"
+
+PRZYKŁADY:
+- "STOWT LIDL SP. Z O.O." → "Lidl"
+- "OWT LIDL" → "Lidl"
+- "BIEDRONKA - Zakupy" → "Biedronka"
+- "ŻABKA 123" → "Żabka"
+- "Kaufland Polska Sp. z o.o." → "Kaufland"
+- "Carrefour Market" → "Carrefour"`,
+        },
+        {
+          role: 'user',
+          content: `Znajdź nazwę sklepu w tym tekście paragonu:\n\n${textSample}`,
+        },
+      ],
+    });
+
+    const response = completion.choices[0]?.message?.content?.trim() || null;
+    
+    if (response && response.toLowerCase() !== 'null' && response.length > 1 && response.length < 100) {
+      console.log(`[GPT Store Extraction] ✅ Znaleziono nazwę sklepu: "${response}"`);
+      return response;
+    }
+    
+    console.log(`[GPT Store Extraction] ❌ Nie znaleziono nazwy sklepu (odpowiedź: "${response}")`);
+    return null;
+  } catch (error) {
+    console.error('[GPT Store Extraction] Błąd:', error);
+    return null;
+  }
+}
+
 // --- EKSTRAKCJA DANYCH ---
-function extractReceiptData(azureResult: any) {
+async function extractReceiptData(azureResult: any) {
   const document = azureResult.analyzeResult?.documents?.[0];
   if (!document) {
     throw new Error('No document found in Azure result');
@@ -179,16 +240,48 @@ function extractReceiptData(azureResult: any) {
 
   const fields = document.fields || {};
 
-  // Total - ZAWSZE używaj wartości z paragonu, NIE obliczaj
-  let total: number | null = fields.Total?.valueNumber ?? null;
+  // Total - KWOTA FINALNA DO ZAPŁATY (po podatku)
+  // Priorytet: Total (kwota finalna) > Subtotal + TotalTax > Subtotal
+  let total: number | null = null;
   
-  // Jeśli total jest stringiem, sparsuj go (ale NIE obliczaj)
-  if (total === null && fields.Total?.valueString && typeof fields.Total.valueString === 'string') {
+  // 1. Priorytet: Total (kwota finalna do zapłaty - PO PODATKU)
+  if (fields.Total?.valueNumber !== undefined && fields.Total?.valueNumber !== null) {
+    total = fields.Total.valueNumber;
+    console.log(`[Total Extraction] Użyto Total (kwota finalna): ${total}`);
+  } else if (fields.Total?.valueString && typeof fields.Total.valueString === 'string') {
     try {
       const totalStr = fields.Total.valueString.replace(/[^\d.,-]/g, '').replace(',', '.');
       total = parseFloat(totalStr) || null;
+      if (total !== null) {
+        console.log(`[Total Extraction] Użyto Total (kwota finalna) z stringa: ${total}`);
+      }
     } catch {
       total = null;
+    }
+  }
+  
+  // 2. Fallback: Jeśli Total nie istnieje, użyj Subtotal + TotalTax (kwota przed podatkiem + podatek = kwota finalna)
+  if (total === null) {
+    const subtotal = fields.Subtotal?.valueNumber ?? null;
+    const totalTax = fields.TotalTax?.valueNumber ?? null;
+    
+    if (subtotal !== null && totalTax !== null) {
+      total = subtotal + totalTax;
+      console.log(`[Total Extraction] Użyto Subtotal (${subtotal}) + TotalTax (${totalTax}) = ${total}`);
+    } else if (subtotal !== null) {
+      // Jeśli nie ma podatku, użyj Subtotal (może być to już kwota finalna)
+      total = subtotal;
+      console.log(`[Total Extraction] Użyto Subtotal jako kwota finalna: ${total}`);
+    }
+  }
+  
+  // 3. Ostateczny fallback: sprawdź czy są inne pola z kwotą finalną
+  if (total === null) {
+    // Sprawdź inne możliwe pola (np. AmountDue, FinalAmount, itp.)
+    const amountDue = fields.AmountDue?.valueNumber ?? null;
+    if (amountDue !== null) {
+      total = amountDue;
+      console.log(`[Total Extraction] Użyto AmountDue: ${total}`);
     }
   }
   
@@ -304,7 +397,26 @@ function extractReceiptData(azureResult: any) {
     }
   }
   
-  // Fallback: jeśli nadal brak, użyj "Unknown Store"
+  // Fallback: jeśli nadal brak lub nazwa jest nieprawidłowa, spróbuj GPT
+  const isInvalidStoreName = !merchant || 
+                             merchant.length < 2 || 
+                             merchant === 'Unknown Store' ||
+                             merchant.toLowerCase().includes('zakupy') ||
+                             merchant.toLowerCase().includes('paragon') ||
+                             merchant.toLowerCase().includes('receipt') ||
+                             merchant.toLowerCase().includes('shop') ||
+                             merchant.match(/^[\d\s\-\.]+$/); // Tylko cyfry i znaki specjalne
+  
+  if (isInvalidStoreName && azureResult.analyzeResult?.content) {
+    console.log(`[Store Extraction] Nazwa sklepu nieprawidłowa ("${merchant}"), próbuję GPT...`);
+    const gptStoreName = await extractStoreNameWithGPT(azureResult.analyzeResult.content);
+    if (gptStoreName && gptStoreName !== 'Unknown Store') {
+      merchant = gptStoreName;
+      console.log(`[Store Extraction] ✅ GPT znalazł nazwę sklepu: "${merchant}"`);
+    }
+  }
+  
+  // Ostateczny fallback: jeśli nadal brak, użyj "Unknown Store"
   if (!merchant || merchant.length < 2) {
     merchant = 'Unknown Store';
   } else {
@@ -467,7 +579,7 @@ async function categorizeAllItems(
       messages: [
         { 
           role: 'system', 
-          content: `Jesteś ekspertem w kategoryzacji produktów z paragonów. Twoim zadaniem jest przypisanie każdego produktu do NAJLEPIEJ PASUJĄCEJ kategorii.
+          content: `Jesteś ekspertem w kategoryzacji produktów z paragonów polskich sklepów. Twoim zadaniem jest przypisanie każdego produktu do NAJLEPIEJ PASUJĄCEJ kategorii.
 
 DOSTĘPNE KATEGORIE (każda ma UUID):
 ${categoryMap}
@@ -476,28 +588,28 @@ INSTRUKCJE KATEGORYZACJI - PRZYPISZ DO NAJLEPIEJ PASUJĄCEJ:
 
 🍔 FOOD - TYLKO jedzenie z restauracji/kawiarni/fast foodów:
    - Restauracje, fast food, jedzenie na wynos, food delivery
-   - Pizza, sushi, kebab, burgery, frytki, hot dogi
+   - Pizza, sushi, kebab, burgery, frytki, hot dogi, zapiekanki
    - Obiady, śniadania, kolacje w restauracjach
    - Kawa, herbata, napoje w kawiarniach/restauracjach (NIE woda z supermarketu!)
-   - Przykłady: "Pizza Margherita", "Kebab", "Obiad w restauracji", "Kawa latte", "McDonald's", "KFC"
+   - Przykłady: "Pizza Margherita", "Kebab", "Obiad w restauracji", "Kawa latte", "McDonald's", "KFC", "Zapiekanka"
    - NIE: produkty spożywcze z supermarketu (to GROCERIES!)
 
 🛒 GROCERIES - Wszystkie produkty spożywcze i artykuły z supermarketu/sklepu:
-   - Mięso, wędliny, ryby, owoce morza (krewetki, kraby, małże, kalmary)
-   - Nabiał: mleko, ser, jogurt, masło, śmietana, jajka, twaróg
-   - Warzywa, owoce, pieczywo (chleb, bułki, bagietki)
-   - Produkty sypkie: mąka, cukier, sól, skrobia, drożdże, ryż, makaron, kasza, płatki
-   - Napoje: woda, soki, napoje gazowane, mleko roślinne
-   - Olej, oliwa, ocet, przyprawy, sosy, ketchup, majonez
+   - Mięso, wędliny, ryby, owoce morza (krewetki, kraby, małże, kalmary, śledzie, makrele)
+   - Nabiał: mleko, ser, jogurt, masło, śmietana, jajka, twaróg, kefir, maślanka
+   - Warzywa, owoce, pieczywo (chleb, bułki, bagietki, rogale)
+   - Produkty sypkie: mąka, cukier, sól, skrobia, drożdże, ryż, makaron, kasza, płatki, otręby
+   - Napoje: woda, soki, napoje gazowane, mleko roślinne, kawa w sklepie, herbata w sklepie
+   - Olej, oliwa, ocet, przyprawy, sosy, ketchup, majonez, musztarda
    - Artykuły gospodarstwa domowego: papier toaletowy, ręczniki papierowe, worki, folie, zapałki
-   - Środki czystości: mydło, proszki do prania, płyny, gąbki, ścierki
-   - Przykłady: "Chleb", "Mleko 3.2%", "Jajka 10szt", "Pomidory", "Woda mineralna", "Skrobia ziemniaczana", "Krewetki", "Banany", "Mąka pszenna"
+   - Środki czystości: mydło, proszki do prania, płyny, gąbki, ścierki, płyny do naczyń
+   - Przykłady: "Chleb", "Mleko 3.2%", "Jajka 10szt", "Pomidory", "Woda mineralna", "Skrobia ziemniaczana", "Krewetki", "Banany", "Mąka pszenna", "Jajko niespodzianka", "Kawa mielona", "Herbata"
 
 💊 HEALTH - Apteka, leki, kosmetyki pielęgnacyjne:
    - Apteka, leki, witaminy, suplementy, probiotyki
-   - Produkty medyczne: plastry, bandaże, termometry, strzykawki
-   - Kosmetyki do pielęgnacji: kremy, żele, szampony, pasty do zębów, mydła, balsamy
-   - Przykłady: "Aspiryna", "Witamina D", "Krem do twarzy", "Szampon", "Pasta do zębów", "Bandaż"
+   - Produkty medyczne: plastry, bandaże, termometry, strzykawki, rękawiczki
+   - Kosmetyki do pielęgnacji: kremy, żele, szampony, pasty do zębów, mydła, balsamy, toniki
+   - Przykłady: "Aspiryna", "Witamina D", "Krem do twarzy", "Szampon", "Pasta do zębów", "Bandaż", "Mydło"
 
 🚗 TRANSPORT - Paliwo, transport, samochód:
    - Paliwo: benzyna, diesel, LPG, CNG
@@ -550,12 +662,15 @@ INSTRUKCJE KATEGORYZACJI - PRZYPISZ DO NAJLEPIEJ PASUJĄCEJ:
 KRYTYCZNE ZASADY (PRZESTRZEGAJ ICH!):
 1. Produkty spożywcze z supermarketu → GROCERIES (NIE Food!)
 2. Restauracje, fast food, jedzenie na wynos → FOOD
-3. Kosmetyki pielęgnacyjne (kremy, szampony, mydła) → HEALTH
-4. Kosmetyki dekoracyjne (szminka, tusz, podkład) → SHOPPING
+3. Kosmetyki pielęgnacyjne (kremy, szampony, mydła, pasty do zębów) → HEALTH
+4. Kosmetyki dekoracyjne (szminka, tusz, podkład, cienie) → SHOPPING
 5. Woda, soki, napoje z supermarketu → GROCERIES
 6. Kawa/herbata w kawiarni → FOOD, kawa/herbata w sklepie → GROCERIES
-7. Jeśli produkt pasuje do kilku kategorii, wybierz NAJLEPIEJ PASUJĄCĄ
-8. Jeśli nie jesteś pewien, wybierz kategorię która najlepiej pasuje (nie zostawiaj null jeśli możesz wybrać)
+7. Owoce morza (krewetki, kraby, małże) → GROCERIES (to jedzenie!)
+8. Skrobia, mąka, cukier, sól → GROCERIES
+9. Jeśli produkt pasuje do kilku kategorii, wybierz NAJLEPIEJ PASUJĄCĄ
+10. Jeśli nie jesteś pewien, wybierz kategorię która najlepiej pasuje (nie zostawiaj null jeśli możesz wybrać)
+11. Analizuj nazwę produktu dokładnie - "jajko niespodzianka" to GROCERIES, "krewetki" to GROCERIES
 
 ZWRÓĆ TYLKO tablicę JSON z UUID kategorii w tej samej kolejności co produkty:
 ["uuid1", "uuid2", null, "uuid3", ...]
@@ -569,11 +684,16 @@ Każdy element tablicy odpowiada produktowi w tej samej pozycji. Jeśli nie moż
 Produkty do kategoryzacji:
 ${itemsList}
 
-Pamiętaj:
-- Produkty spożywcze z supermarketu → GROCERIES
-- Restauracje/fast food → FOOD
-- Kosmetyki pielęgnacyjne → HEALTH
-- Kosmetyki dekoracyjne → SHOPPING
+Pamiętaj o kluczowych zasadach:
+- Produkty spożywcze z supermarketu (chleb, mleko, jajka, warzywa, owoce, mięso, ryby, owoce morza, napoje, przyprawy) → GROCERIES
+- Restauracje/fast food/jedzenie na wynos → FOOD
+- Kosmetyki pielęgnacyjne (kremy, szampony, mydła, pasty do zębów) → HEALTH
+- Kosmetyki dekoracyjne (szminka, tusz, podkład) → SHOPPING
+- Skrobia, mąka, cukier, sól → GROCERIES
+- Krewetki, kraby, małże → GROCERIES (to jedzenie!)
+- Kawa/herbata w sklepie → GROCERIES
+
+Analizuj każdy produkt dokładnie i wybierz NAJLEPIEJ PASUJĄCĄ kategorię.
 
 Zwróć TYLKO tablicę JSON: ["uuid1", "uuid2", null, "uuid3", ...]`
         },
@@ -703,13 +823,13 @@ export async function POST(req: NextRequest) {
       console.log(`📦 Processing file ${i + 1}/${files.length}: ${file.name}`);
       console.log(`========================================\n`);
 
-      // Dla kolejnych plików, utwórz nowy receipt
+      // Dla kolejnych plików, utwórz nowy receipt (bez statusu - użyj wartości domyślnej z bazy)
       if (i > 0) {
         const { data: newReceipt, error: newReceiptError } = await supabase
           .from('receipts')
           .insert([{
             user_id: userId,
-            status: 'processing',
+            // Nie ustawiamy statusu - użyj wartości domyślnej z bazy (tak jak przy pierwszym pliku)
           }])
           .select()
           .single();
@@ -810,7 +930,7 @@ export async function POST(req: NextRequest) {
 
         // 4. Azure OCR
         const azureResult = await processAzureOCR(buffer, mimeType);
-        const { total, merchant, date, time, currency, items } = extractReceiptData(azureResult);
+        const { total, merchant, date, time, currency, items } = await extractReceiptData(azureResult);
 
         // 5. Przygotuj dane do zapisu
         const finalTotal = total ?? 0;

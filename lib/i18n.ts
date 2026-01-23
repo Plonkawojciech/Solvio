@@ -73,6 +73,22 @@ const translations = {
     'expenses.selectAll': 'Zaznacz wszystkie',
     'expenses.retry': 'Spróbuj ponownie',
     'expenses.addFirst': 'Dodaj swój pierwszy!',
+    'expenses.viewReceipt': 'Zobacz paragon',
+    'expenses.receiptImage': 'Zdjęcie paragonu',
+    'expenses.loadingImage': 'Ładowanie zdjęcia...',
+    'expenses.noImage': 'Brak zdjęcia',
+    
+    // Categories
+    'categories.food': 'Jedzenie',
+    'categories.groceries': 'Zakupy spożywcze',
+    'categories.health': 'Zdrowie',
+    'categories.transport': 'Transport',
+    'categories.shopping': 'Zakupy',
+    'categories.electronics': 'Elektronika',
+    'categories.homeGarden': 'Dom i Ogród',
+    'categories.entertainment': 'Rozrywka',
+    'categories.billsUtilities': 'Rachunki i Media',
+    'categories.other': 'Inne',
     
     // Settings
     'settings.title': 'Ustawienia',
@@ -214,6 +230,22 @@ const translations = {
     'expenses.selectAll': 'Select all',
     'expenses.retry': 'Retry',
     'expenses.addFirst': 'Add your first one!',
+    'expenses.viewReceipt': 'View receipt',
+    'expenses.receiptImage': 'Receipt Image',
+    'expenses.loadingImage': 'Loading image...',
+    'expenses.noImage': 'No image available',
+    
+    // Categories
+    'categories.food': 'Food',
+    'categories.groceries': 'Groceries',
+    'categories.health': 'Health',
+    'categories.transport': 'Transport',
+    'categories.shopping': 'Shopping',
+    'categories.electronics': 'Electronics',
+    'categories.homeGarden': 'Home & Garden',
+    'categories.entertainment': 'Entertainment',
+    'categories.billsUtilities': 'Bills & Utilities',
+    'categories.other': 'Other',
     
     // Settings
     'settings.title': 'Settings',
