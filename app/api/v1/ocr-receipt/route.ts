@@ -195,15 +195,22 @@ async function categorizeAllItems(
 Categories:
 ${categoryMap}
 
-Rules (DOKŁADNIE):
-- Food: mięso, nabiał, jajka, warzywa, owoce, chleb, ser, jogurt, mleko, masło, krewetki, ryby, drożdże, skrobia, mąka, cukier, sól, przyprawy, woda, napoje, soki, olej, oliwa
-- Groceries: papier toaletowy, ręczniki papierowe, środki czystości, folie, worki, mydło, proszki
-- Electronics: telefony, ładowarki, baterie, słuchawki, kable, komputery
-- Health: leki, witaminy, plastry, bandaże, suplementy
-- Transport: benzyna, olej silnikowy, płyn do spryskiwaczy
-- Shopping: ubrania, buty, kosmetyki
+Rules (DOKŁADNIE - przypisz do najlepiej pasującej kategorii):
+- Food: restauracje, fast food, jedzenie na wynos, pizza, sushi, kebab, obiady, śniadania, kawa na mieście
+- Groceries: zakupy w supermarkecie (wszystkie produkty spożywcze), mięso, nabiał, jajka, warzywa, owoce, chleb, ser, jogurt, mleko, masło, krewetki, ryby, drożdże, skrobia, mąka, cukier, sól, przyprawy, woda, napoje, soki, olej, oliwa, papier toaletowy, ręczniki papierowe, środki czystości, folie, worki, mydło, proszki
+- Health: apteka, leki, witaminy, plastry, bandaże, suplementy, produkty medyczne, kosmetyki do pielęgnacji
+- Transport: benzyna, olej silnikowy, płyn do spryskiwaczy, bilety komunikacji, parking, taksówki, Uber, naprawa samochodu
+- Shopping: ubrania, buty, torebki, akcesoria modowe, perfumy, kosmetyki dekoracyjne, biżuteria
+- Electronics: telefony, ładowarki, baterie, słuchawki, kable, komputery, tablety, smartwatche, elektronika
+- Home & Garden: meble, dekoracje, narzędzia, farby, rośliny, ogród, wyposażenie domu, AGD, RTV
+- Entertainment: kino, teatr, koncerty, gry, streaming (Netflix, Spotify), książki, hobby, sport
+- Bills & Utilities: prąd, woda, gaz, internet, telefon, TV, czynsz, ubezpieczenia, abonamenty
+- Other: wszystko co nie pasuje do powyższych kategorii
 
-WAŻNE: Woda, masło, drożdże, skrobia, soki → zawsze Food!
+WAŻNE: 
+- Produkty spożywcze z supermarketu → Groceries (nie Food!)
+- Restauracje, fast food → Food
+- Kosmetyki pielęgnacyjne → Health, kosmetyki dekoracyjne → Shopping
 
 Return ONLY JSON array: ["uuid1", "uuid2", ...] or ["uuid1", null, "uuid3", ...]`
         },
@@ -262,185 +269,227 @@ export async function POST(req: NextRequest) {
       .select('id, name')
       .order('name');
 
-    // 3. Przetwórz pierwszy plik
-    const file = files[0];
-    const buffer = Buffer.from(await file.arrayBuffer());
-    const mimeType = file.type || 'image/jpeg';
+    // 3. PRZETWÓRZ WSZYSTKIE PLIKI PO KOLEI
+    const results = [];
+    let currentReceiptId = receiptId; // Pierwszy plik używa istniejącego receipt_id
 
-    console.log(`📦 Processing: ${file.name} (${mimeType})\n`);
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      console.log(`\n========================================`);
+      console.log(`📦 Processing file ${i + 1}/${files.length}: ${file.name}`);
+      console.log(`========================================\n`);
 
-    // 4. Azure OCR
-    const azureResult = await processAzureOCR(buffer, mimeType);
-    const { total, merchant, date, time, currency, items } = extractReceiptData(azureResult);
-
-    // 5. Przygotuj dane do zapisu
-    const finalTotal = total ?? 0;
-    const finalDate = date || new Date().toISOString().split('T')[0];
-    const finalMerchant = merchant || 'Unknown Store';
-
-    // 6. WYKRYWANIE DUPLIKATÓW (tylko aktywne paragony!)
-    console.log('[Duplicate Check] Checking for duplicates...');
-    console.log(`  Vendor: ${finalMerchant}`);
-    console.log(`  Total: ${finalTotal}`);
-    console.log(`  Date: ${finalDate}`);
-    
-    const { data: existingReceipt, error: duplicateCheckError } = await supabase
-      .from('receipts')
-      .select('id, created_at, vendor, total, date')
-      .eq('user_id', userId)
-      .eq('vendor', finalMerchant)
-      .eq('total', finalTotal)
-      .eq('date', finalDate)
-      .eq('status', 'processed')
-      .maybeSingle();
-
-    if (existingReceipt) {
-      // Sprawdź czy istnieje aktywny expense dla tego receipt
-      // Jeśli nie ma expense, to paragon został usunięty i można go dodać ponownie
-      const { data: existingExpense } = await supabase
-        .from('expenses')
-        .select('id')
-        .eq('receipt_id', existingReceipt.id)
-        .eq('user_id', userId)
-        .maybeSingle();
-
-      if (existingExpense) {
-        console.log('[Duplicate Check] ❌ DUPLICATE FOUND! (active expense exists)');
-        console.log('  Existing receipt ID:', existingReceipt.id);
-        console.log('  Existing expense ID:', existingExpense.id);
-        console.log('  Uploaded on:', existingReceipt.created_at);
-        
-        // Usuń aktualny receipt (duplikat)
-        await supabase
+      // Dla kolejnych plików, utwórz nowy receipt
+      if (i > 0) {
+        const { data: newReceipt, error: newReceiptError } = await supabase
           .from('receipts')
-          .delete()
-          .eq('id', receiptId);
-        
-        return json({
-          success: false,
-          error: 'duplicate',
-          message: `This receipt was already uploaded on ${new Date(existingReceipt.created_at).toLocaleDateString()}`,
-          duplicate_receipt_id: existingReceipt.id,
-        }, 409); // 409 Conflict
-      } else {
-        console.log('[Duplicate Check] ⚠️ Receipt exists but was deleted (no expense) - allowing re-upload');
-        // Paragon istnieje ale nie ma expense, więc został usunięty - pozwól na ponowne dodanie
-      }
-    }
-    
-    console.log('[Duplicate Check] ✅ No active duplicates found');
-
-    console.log('\n========================================');
-    console.log('💾 Saving to Supabase (bez kategorii - szybko!)...');
-    console.log('========================================\n');
-
-    // 6. Zaktualizuj receipts (bez kategorii - natychmiast!)
-    const { error: receiptError } = await supabase
-      .from('receipts')
-      .update({
-        status: 'processed',
-        vendor: finalMerchant,
-        date: finalDate,
-        total: finalTotal,
-        currency: currency,
-        notes: JSON.stringify({
-          ocr_engine: 'azure_document_intelligence',
-          processed_at: new Date().toISOString(),
-          items: items.map(item => ({ ...item, category_id: null })), // Bez kategorii na razie
-        }),
-      })
-      .eq('id', receiptId)
-      .eq('user_id', userId);
-
-    if (receiptError) {
-      console.error('[Supabase] Receipt update error:', receiptError);
-      throw new Error(`Failed to update receipt: ${receiptError.message}`);
-    }
-
-    console.log('✅ Receipt updated');
-
-    // 7. Usuń stare expenses dla tego paragonu
-    await supabase
-      .from('expenses')
-      .delete()
-      .eq('receipt_id', receiptId)
-      .eq('user_id', userId);
-
-    // 8. Wstaw nowy expense
-    const { error: expenseError } = await supabase
-      .from('expenses')
-      .insert([{
-        user_id: userId,
-        receipt_id: receiptId,
-        title: `${finalMerchant} - Zakupy`,
-        amount: finalTotal,
-        date: finalDate,
-        vendor: finalMerchant,
-        quantity: 1,
-        source: 'ocr',
-        category_id: null,
-      }]);
-
-    if (expenseError) {
-      console.error('[Supabase] Expense insert error:', expenseError);
-      throw new Error(`Failed to insert expense: ${expenseError.message}`);
-    }
-
-    console.log('✅ Expense created');
-
-    console.log('\n========================================');
-    console.log('✅ SUCCESS! (kategorie będą w tle)');
-    console.log('========================================\n');
-
-    // 9. KATEGORIE W TLE (nie czekamy!)
-    categorizeAllItems(items, categories || [])
-      .then(async (categorizedItems) => {
-        console.log('[Background] Kategorie gotowe - aktualizacja...');
-        
-        const { data: currentReceipt } = await supabase
-          .from('receipts')
-          .select('notes')
-          .eq('id', receiptId)
+          .insert([{
+            user_id: userId,
+            status: 'processing',
+          }])
+          .select()
           .single();
+
+        if (newReceiptError || !newReceipt) {
+          console.error(`[File ${i + 1}] Failed to create receipt:`, newReceiptError);
+          results.push({ file: file.name, success: false, error: 'Failed to create receipt' });
+          continue;
+        }
+
+        currentReceiptId = newReceipt.id;
+        console.log(`[File ${i + 1}] Created new receipt ID: ${currentReceiptId}`);
+      }
+
+      try {
+        const buffer = Buffer.from(await file.arrayBuffer());
+        const mimeType = file.type || 'image/jpeg';
+
+        // 4. Azure OCR
+        const azureResult = await processAzureOCR(buffer, mimeType);
+        const { total, merchant, date, time, currency, items } = extractReceiptData(azureResult);
+
+        // 5. Przygotuj dane do zapisu
+        const finalTotal = total ?? 0;
+        const finalDate = date || new Date().toISOString().split('T')[0];
+        const finalMerchant = merchant || 'Unknown Store';
+
+        // 6. WYKRYWANIE DUPLIKATÓW (tylko aktywne paragony!)
+        console.log(`[File ${i + 1}] [Duplicate Check] Checking for duplicates...`);
+        console.log(`  Vendor: ${finalMerchant}`);
+        console.log(`  Total: ${finalTotal}`);
+        console.log(`  Date: ${finalDate}`);
         
-        if (currentReceipt?.notes) {
-          try {
-            const notesData = JSON.parse(currentReceipt.notes);
-            notesData.items = categorizedItems;
+        const { data: existingReceipt } = await supabase
+          .from('receipts')
+          .select('id, created_at, vendor, total, date')
+          .eq('user_id', userId)
+          .eq('vendor', finalMerchant)
+          .eq('total', finalTotal)
+          .eq('date', finalDate)
+          .eq('status', 'processed')
+          .maybeSingle();
+
+        if (existingReceipt) {
+          // Sprawdź czy istnieje aktywny expense dla tego receipt
+          const { data: existingExpense } = await supabase
+            .from('expenses')
+            .select('id')
+            .eq('receipt_id', existingReceipt.id)
+            .eq('user_id', userId)
+            .maybeSingle();
+
+          if (existingExpense) {
+            console.log(`[File ${i + 1}] [Duplicate Check] ❌ DUPLICATE FOUND!`);
+            console.log('  Existing receipt ID:', existingReceipt.id);
+            console.log('  Uploaded on:', existingReceipt.created_at);
             
+            // Usuń aktualny receipt (duplikat)
             await supabase
               .from('receipts')
-              .update({ notes: JSON.stringify(notesData) })
-              .eq('id', receiptId);
+              .delete()
+              .eq('id', currentReceiptId);
             
-            console.log('[Background] ✅ Kategorie zapisane!');
-            categorizedItems.forEach((item, idx) => {
-              const catName = categories?.find(c => c.id === item.category_id)?.name || 'No category';
-              console.log(`  ${idx + 1}. ${item.name} → ${catName}`);
+            results.push({
+              file: file.name,
+              success: false,
+              error: 'duplicate',
+              message: `This receipt was already uploaded on ${new Date(existingReceipt.created_at).toLocaleDateString()}`,
             });
-          } catch (e) {
-            console.error('[Background] Error updating categories:', e);
+            continue; // Przejdź do następnego pliku
+          } else {
+            console.log(`[File ${i + 1}] [Duplicate Check] ⚠️ Receipt exists but was deleted - allowing re-upload`);
           }
         }
-      })
-      .catch((err) => {
-        console.error('[Background] Category error:', err);
-      });
+        
+        console.log(`[File ${i + 1}] [Duplicate Check] ✅ No active duplicates found`);
 
-    // Zwróć sukces NATYCHMIAST (nie czekaj na kategorie!)
+        console.log(`\n[File ${i + 1}] 💾 Saving to Supabase...\n`);
+
+        // 7. Zaktualizuj receipts (bez kategorii - natychmiast!)
+        const { error: receiptError } = await supabase
+          .from('receipts')
+          .update({
+            status: 'processed',
+            vendor: finalMerchant,
+            date: finalDate,
+            total: finalTotal,
+            currency: currency,
+            notes: JSON.stringify({
+              ocr_engine: 'azure_document_intelligence',
+              processed_at: new Date().toISOString(),
+              items: items.map(item => ({ ...item, category_id: null })),
+            }),
+          })
+          .eq('id', currentReceiptId)
+          .eq('user_id', userId);
+
+        if (receiptError) {
+          console.error(`[File ${i + 1}] Receipt update error:`, receiptError);
+          results.push({ file: file.name, success: false, error: receiptError.message });
+          continue;
+        }
+
+        console.log(`[File ${i + 1}] ✅ Receipt updated`);
+
+        // 8. Usuń stare expenses dla tego paragonu
+        await supabase
+          .from('expenses')
+          .delete()
+          .eq('receipt_id', currentReceiptId)
+          .eq('user_id', userId);
+
+        // 9. Wstaw nowy expense
+        const { error: expenseError } = await supabase
+          .from('expenses')
+          .insert([{
+            user_id: userId,
+            receipt_id: currentReceiptId,
+            title: `${finalMerchant} - Zakupy`,
+            amount: finalTotal,
+            date: finalDate,
+            vendor: finalMerchant,
+            quantity: 1,
+            source: 'ocr',
+            category_id: null,
+          }]);
+
+        if (expenseError) {
+          console.error(`[File ${i + 1}] Expense insert error:`, expenseError);
+          results.push({ file: file.name, success: false, error: expenseError.message });
+          continue;
+        }
+
+        console.log(`[File ${i + 1}] ✅ Expense created`);
+
+        // 10. KATEGORIE W TLE (nie czekamy!)
+        categorizeAllItems(items, categories || [])
+          .then(async (categorizedItems) => {
+            console.log(`[File ${i + 1}] [Background] Kategorie gotowe - aktualizacja...`);
+            
+            const { data: currentReceipt } = await supabase
+              .from('receipts')
+              .select('notes')
+              .eq('id', currentReceiptId)
+              .single();
+            
+            if (currentReceipt?.notes) {
+              try {
+                const notesData = JSON.parse(currentReceipt.notes);
+                notesData.items = categorizedItems;
+                
+                await supabase
+                  .from('receipts')
+                  .update({ notes: JSON.stringify(notesData) })
+                  .eq('id', currentReceiptId);
+                
+                console.log(`[File ${i + 1}] [Background] ✅ Kategorie zapisane!`);
+              } catch (e) {
+                console.error(`[File ${i + 1}] [Background] Error updating categories:`, e);
+              }
+            }
+          })
+          .catch((err) => {
+            console.error(`[File ${i + 1}] [Background] Category error:`, err);
+          });
+
+        results.push({
+          file: file.name,
+          success: true,
+          receipt_id: currentReceiptId,
+          data: {
+            merchant: finalMerchant,
+            total: finalTotal,
+            currency,
+            date: finalDate,
+            time,
+            items_count: items.length,
+          },
+        });
+
+        console.log(`[File ${i + 1}] ✅ SUCCESS!\n`);
+
+      } catch (fileError) {
+        console.error(`[File ${i + 1}] ❌ ERROR:`, fileError);
+        results.push({
+          file: file.name,
+          success: false,
+          error: fileError instanceof Error ? fileError.message : 'Unknown error',
+        });
+      }
+    }
+
+    // Zwróć wyniki dla wszystkich plików
+    const successCount = results.filter(r => r.success).length;
+    const hasErrors = results.some(r => !r.success);
+
     return json({
-      success: true,
-      receipt_id: receiptId,
-      provider: 'azure_document_intelligence',
-      data: {
-        merchant: finalMerchant,
-        total: finalTotal,
-        currency,
-        date: finalDate,
-        time,
-        items_count: items.length,
-      },
-    });
+      success: successCount > 0,
+      files_processed: results.length,
+      files_succeeded: successCount,
+      files_failed: results.length - successCount,
+      results: results,
+      receipt_id: receiptId, // Pierwszy receipt_id dla kompatybilności
+    }, hasErrors && successCount === 0 ? 400 : 200);
 
   } catch (error) {
     console.error('\n========================================');

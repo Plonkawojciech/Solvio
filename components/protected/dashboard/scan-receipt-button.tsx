@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Camera } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { ScanReceiptSheet } from './scan-receipt-sheet'
+import { t } from '@/lib/i18n'
 
 export function ScanReceiptButton({ onAction }: { onAction?: () => void }) {
   const [isSheetOpen, setIsSheetOpen] = React.useState(false)
@@ -28,8 +29,8 @@ export function ScanReceiptButton({ onAction }: { onAction?: () => void }) {
     <>
       <Button onClick={() => setIsSheetOpen(true)} size="sm" className="text-xs sm:text-sm">
         <Camera className="mr-1 sm:mr-2 h-4 w-4" /> 
-        <span className="hidden sm:inline">Scan Receipt</span>
-        <span className="sm:hidden">Scan</span>
+        <span className="hidden sm:inline">{t('receipts.scan')}</span>
+        <span className="sm:hidden">{t('receipts.scan')}</span>
       </Button>
 
       <ScanReceiptSheet

@@ -23,12 +23,12 @@ export default async function ProtectedLayout({
         <Header />
         <div className="flex flex-1 overflow-hidden">
           <AppSidebar />
-          <main className="flex-1 overflow-auto p-6 md:p-10">
-            <div className="md:hidden mb-4">
+          <main className="flex-1 overflow-auto p-3 sm:p-4 md:p-6 lg:p-10">
+            <div className="md:hidden mb-2 sm:mb-4">
               <SidebarTrigger />
             </div>
             {children}
-            <Toaster position="top-right" richColors />
+            <Toaster position="top-center sm:top-right" richColors />
           </main>
         </div>
       </div>

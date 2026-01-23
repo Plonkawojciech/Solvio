@@ -5,6 +5,7 @@ import { UploadCloud, X, Loader2, AlertCircle, FileText } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { t, getLanguage } from '@/lib/i18n';
 
 import {
   Sheet,
@@ -19,7 +20,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
 type OcrResult = {
-  receipt_id: string;
+  receipt_id?: string;
   ocrText?: string;
   parsed?: {
     vendor?: string | null;
@@ -29,6 +30,18 @@ type OcrResult = {
   };
   provider?: string;
   warnings?: string[];
+  // Nowy format dla wielu plików
+  files_processed?: number;
+  files_succeeded?: number;
+  files_failed?: number;
+  results?: Array<{
+    file: string;
+    success: boolean;
+    receipt_id?: string;
+    error?: string;
+    message?: string;
+    data?: any;
+  }>;
 };
 
 interface ScanReceiptSheetProps {
@@ -77,7 +90,7 @@ export function ScanReceiptSheet({
     setErrorMsg(null);
 
     if (files.length === 0) {
-      setErrorMsg('Dodaj przynajmniej jeden plik.');
+      setErrorMsg(getLanguage() === 'pl' ? 'Dodaj przynajmniej jeden plik.' : 'Add at least one file.');
       return;
     }
 
@@ -86,7 +99,7 @@ export function ScanReceiptSheet({
       if (process.env.NODE_ENV === 'development') {
         console.error('[ScanReceipt] auth error:', userErr);
       }
-      setErrorMsg('Musisz być zalogowany.');
+      setErrorMsg(getLanguage() === 'pl' ? 'Musisz być zalogowany.' : 'You must be logged in.');
       return;
     }
     const user = userData.user;
@@ -270,9 +283,46 @@ export function ScanReceiptSheet({
         }
       }
 
-      toast.success('Zakończono skanowanie', {
-        description: 'Dane z paragonu zostały odczytane.',
-      });
+      // Obsługa wielu plików
+      if (parsed.results && Array.isArray(parsed.results)) {
+        const successCount = parsed.files_succeeded || 0;
+        const totalCount = parsed.files_processed || parsed.results.length;
+        const duplicateCount = parsed.results.filter(r => r.error === 'duplicate').length;
+        
+        if (successCount === totalCount) {
+          toast.success(`Zakończono skanowanie`, {
+            description: `Przetworzono ${successCount} paragon${successCount > 1 ? 'ów' : ''}.`,
+          });
+        } else if (successCount > 0) {
+          const isPl = getLanguage() === 'pl'
+          let desc = isPl 
+            ? `Przetworzono ${successCount}/${totalCount} paragonów.`
+            : `Processed ${successCount}/${totalCount} receipts.`;
+          if (duplicateCount > 0) {
+            desc += isPl
+              ? ` ${duplicateCount} duplikat${duplicateCount > 1 ? 'ów' : ''} pominięto.`
+              : ` ${duplicateCount} duplicate${duplicateCount > 1 ? 's' : ''} skipped.`;
+          }
+          toast.warning(t('receipts.partialSuccess'), {
+            description: desc,
+          });
+        } else {
+          // Wszystkie błędy - sprawdź czy to duplikaty
+          if (duplicateCount === totalCount) {
+            toast.warning(t('receipts.duplicate'), {
+              description: t('receipts.allDuplicates'),
+            });
+          } else {
+            toast.error(t('receipts.error'), {
+              description: getLanguage() === 'pl' ? 'Nie udało się przetworzyć żadnego paragonu.' : 'Failed to process any receipts.',
+            });
+          }
+        }
+      } else {
+        toast.success(t('receipts.completed'), {
+          description: t('receipts.completedDesc'),
+        });
+      }
 
       onParsed?.(parsed ?? { receipt_id: receiptId });
       resetState();
@@ -297,10 +347,10 @@ export function ScanReceiptSheet({
       <SheetContent className="flex flex-col gap-0 p-0 sm:max-w-2xl">
         <SheetHeader className="p-6 border-b">
           <SheetTitle className="text-xl font-semibold">
-            Nowy skan paragonu
+            {getLanguage() === 'pl' ? 'Nowy skan paragonu' : 'New Receipt Scan'}
           </SheetTitle>
           <SheetDescription>
-            Dodaj zdjęcia paragonu. System odczyta dane przez OCR.
+            {getLanguage() === 'pl' ? 'Dodaj zdjęcia paragonu. System odczyta dane przez OCR.' : 'Add receipt images. The system will read data via OCR.'}
           </SheetDescription>
         </SheetHeader>
 
@@ -311,7 +361,7 @@ export function ScanReceiptSheet({
             className="space-y-6"
           >
             <div className="space-y-2">
-              <Label htmlFor="file-upload">Załącz pliki</Label>
+              <Label htmlFor="file-upload">{t('receipts.addFile')}</Label>
               <label
                 htmlFor="file-upload"
                 className={cn(
@@ -321,8 +371,18 @@ export function ScanReceiptSheet({
               >
                 <UploadCloud className="h-8 w-8 text-muted-foreground" />
                 <p className="mt-1 text-sm text-muted-foreground">
-                  <span className="font-semibold text-primary">Wgraj</span> lub
-                  przeciągnij pliki
+                  {getLanguage() === 'pl' ? (
+                    <>
+                      <span className="font-semibold text-primary">Wgraj</span> lub przeciągnij pliki
+                    </>
+                  ) : (
+                    <>
+                      <span className="font-semibold text-primary">Upload</span> or drag files
+                    </>
+                  )}
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {t('receipts.selectFiles')} ({t('receipts.maxSize')})
                 </p>
                 <Input
                   id="file-upload"
@@ -372,7 +432,7 @@ export function ScanReceiptSheet({
             {progress && (
               <div className="space-y-2">
                 <div className="flex items-center justify-between text-sm text-muted-foreground">
-                  <span>Wgrywanie plików...</span>
+                  <span>{t('receipts.uploading')}</span>
                   <span>{progress.uploaded} / {progress.total}</span>
                 </div>
                 <div className="h-2 w-full bg-muted rounded-full overflow-hidden">
@@ -393,15 +453,15 @@ export function ScanReceiptSheet({
             onClick={handleClose}
             disabled={isBusy}
           >
-            Anuluj
+            {t('common.cancel')}
           </Button>
           <Button type="submit" form="scan-receipt-form" disabled={isBusy}>
             {isBusy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             {isUploading
-              ? 'Wgrywanie…'
+              ? t('receipts.uploading')
               : isProcessing
-              ? 'Przetwarzanie OCR…'
-              : 'Skanuj'}
+              ? t('receipts.processing')
+              : t('receipts.scan')}
           </Button>
         </SheetFooter>
       </SheetContent>

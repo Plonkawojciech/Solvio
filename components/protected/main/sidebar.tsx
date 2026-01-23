@@ -1,3 +1,6 @@
+'use client'
+
+import { useEffect, useState } from 'react'
 import {
   Sidebar,
   SidebarContent,
@@ -17,15 +20,64 @@ import {
   Settings,
 } from "lucide-react"
 import Footer from "@/components/footer"
+import { createClient } from '@/lib/supabase/client'
+import { getLanguage, t } from '@/lib/i18n'
 
 const items = [
-  { label: "Dashboard", href: "/dashboard", icon: Home },
-  { label: "Expenses", href: "/expenses", icon: DollarSign },
-  { label: "Reports", href: "/reports", icon: FileText },
-  { label: "Settings", href: "/settings", icon: Settings },
+  { key: 'dashboard', href: "/dashboard", icon: Home },
+  { key: 'expenses', href: "/expenses", icon: DollarSign },
+  { key: 'reports', href: "/reports", icon: FileText },
+  { key: 'settings', href: "/settings", icon: Settings },
 ]
 
 export function AppSidebar() {
+  const [lang, setLang] = useState<'pl' | 'en'>('en')
+  
+  useEffect(() => {
+    // Pobierz język z localStorage lub bazy
+    const fetchLanguage = async () => {
+      const stored = localStorage.getItem('language') as 'pl' | 'en'
+      if (stored && (stored === 'pl' || stored === 'en')) {
+        setLang(stored)
+        return
+      }
+      
+      // Jeśli nie ma w localStorage, sprawdź bazę
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        const { data: settings } = await supabase
+          .from('user_settings')
+          .select('language_id')
+          .eq('user_id', user.id)
+          .maybeSingle()
+        
+        if (settings?.language_id) {
+          const dbLang = settings.language_id.toLowerCase() as 'pl' | 'en'
+          if (dbLang === 'pl' || dbLang === 'en') {
+            setLang(dbLang)
+            localStorage.setItem('language', dbLang)
+          }
+        }
+      }
+    }
+    
+    fetchLanguage()
+    
+    // Nasłuchuj zmian języka
+    const handleStorageChange = () => {
+      const stored = localStorage.getItem('language') as 'pl' | 'en'
+      if (stored && (stored === 'pl' || stored === 'en')) {
+        setLang(stored)
+      }
+    }
+    
+    window.addEventListener('storage', handleStorageChange)
+    return () => window.removeEventListener('storage', handleStorageChange)
+  }, [])
+  
+  const currentLang = getLanguage()
+  
   return (
     <Sidebar>
       <SidebarHeader className="border-b p-4">
@@ -39,7 +91,7 @@ export function AppSidebar() {
       
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel>Navigation</SidebarGroupLabel>
+          <SidebarGroupLabel>{currentLang === 'pl' ? 'Nawigacja' : 'Navigation'}</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               {items.map((item) => (
@@ -47,7 +99,7 @@ export function AppSidebar() {
                   <SidebarMenuButton asChild>
                     <a href={item.href}>
                       <item.icon className="mr-2 h-4 w-4" />
-                      <span>{item.label}</span>
+                      <span>{t(`nav.${item.key}`)}</span>
                     </a>
                   </SidebarMenuButton>
                 </SidebarMenuItem>

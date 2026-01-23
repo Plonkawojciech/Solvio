@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { getLanguage, t } from '@/lib/i18n'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -60,6 +61,7 @@ export default function ExpensesPage() {
   const [expenses, setExpenses] = useState<Expense[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const isPolish = getLanguage() === 'pl'
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const [selectedExpense, setSelectedExpense] = useState<Expense | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
@@ -403,28 +405,30 @@ export default function ExpensesPage() {
   }
 
   return (
-    <main className="min-h-screen w-full p-4 sm:p-6 md:p-10">
-      <div className="flex flex-col h-full space-y-12">
+    <main className="min-h-screen w-full p-2 sm:p-4 md:p-6 lg:p-10">
+      <div className="flex flex-col h-full space-y-4 sm:space-y-6 md:space-y-12">
         {/* Nagłówek */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 sm:gap-6">
-          <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold tracking-tight">Expenses</h1>
-          <div className="flex items-center gap-2">
+          <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold tracking-tight">{t('expenses.title')}</h1>
+          <div className="flex items-center gap-1 sm:gap-2 flex-wrap">
             {selectedExpenseIds.size > 0 && (
               <Button
                 variant="destructive"
                 size="sm"
                 onClick={bulkDeleteExpenses}
                 disabled={isBulkDeleting}
+                className="text-xs sm:text-sm"
               >
                 {isBulkDeleting ? (
                   <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Deleting...
+                    <Loader2 className="mr-1 sm:mr-2 h-3 w-3 sm:h-4 sm:w-4 animate-spin" />
+                    <span className="hidden sm:inline">{t('expenses.deleting')}</span>
                   </>
                 ) : (
                   <>
-                    <Trash2 className="mr-2 h-4 w-4" />
-                    Delete {selectedExpenseIds.size}
+                    <Trash2 className="mr-1 sm:mr-2 h-3 w-3 sm:h-4 sm:w-4" />
+                    <span className="hidden sm:inline">{t('expenses.delete')} </span>
+                    {selectedExpenseIds.size}
                   </>
                 )}
               </Button>
@@ -443,15 +447,15 @@ export default function ExpensesPage() {
           ) : error ? (
             <div className="flex flex-col items-center justify-center py-32">
               <p className="text-center text-destructive text-lg mb-4">{error}</p>
-              <Button onClick={fetchExpenses} variant="outline">Retry</Button>
+              <Button onClick={fetchExpenses} variant="outline">{t('expenses.retry')}</Button>
             </div>
           ) : expenses.length === 0 ? (
             <p className="text-center text-muted-foreground text-lg py-32">
-              No expenses found. Add your first one!
+              {t('expenses.noExpenses')}
             </p>
           ) : (
-            <div className="overflow-y-auto max-h-[60vh]">
-              <Table className="w-full text-sm sm:text-base">
+            <div className="overflow-x-auto overflow-y-auto max-h-[60vh]">
+              <Table className="w-full text-sm sm:text-base min-w-[600px]">
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-12">
@@ -460,11 +464,11 @@ export default function ExpensesPage() {
                         onCheckedChange={toggleExpenseSelectAll}
                       />
                     </TableHead>
-                    <TableHead>Title</TableHead>
-                    <TableHead className="hidden sm:table-cell">Vendor</TableHead>
-                    <TableHead>Amount</TableHead>
-                    <TableHead className="hidden md:table-cell">Date</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
+                    <TableHead>{t('expenses.titleCol')}</TableHead>
+                    <TableHead className="hidden sm:table-cell">{t('expenses.vendor')}</TableHead>
+                    <TableHead>{t('expenses.amount')}</TableHead>
+                    <TableHead className="hidden md:table-cell">{t('expenses.date')}</TableHead>
+                    <TableHead className="text-right">{t('expenses.actions')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -583,17 +587,18 @@ export default function ExpensesPage() {
           {selectedExpense && selectedExpense.receipt_id ? (
             <Card className="border p-4 sm:p-6">
               <CardHeader className="flex flex-row items-center justify-between">
-                <CardTitle className="text-2xl font-semibold">
-                  Receipt Items - {selectedExpense.title}
+                <CardTitle className="text-lg sm:text-2xl font-semibold">
+                  {t('expenses.receiptItems')} - {selectedExpense.title}
                 </CardTitle>
                 {selectedItemIndices.size > 0 && (
                   <Button
                     variant="destructive"
                     size="sm"
                     onClick={bulkDeleteItems}
+                    className="text-xs sm:text-sm"
                   >
                     <Trash2 className="mr-2 h-4 w-4" />
-                    Delete {selectedItemIndices.size}
+                    {t('expenses.delete')} {selectedItemIndices.size}
                   </Button>
                 )}
               </CardHeader>
@@ -603,8 +608,9 @@ export default function ExpensesPage() {
                     <Loader2 className="animate-spin h-6 w-6 text-muted-foreground" />
                   </div>
                 ) : receiptItems.length > 0 ? (
-                  <Table>
-                    <TableHeader>
+                  <div className="overflow-x-auto">
+                    <Table className="min-w-[500px]">
+                      <TableHeader>
                       <TableRow>
                         <TableHead className="w-12">
                           <Checkbox
@@ -612,18 +618,18 @@ export default function ExpensesPage() {
                             onCheckedChange={toggleItemSelectAll}
                           />
                         </TableHead>
-                        <TableHead>Item</TableHead>
-                        <TableHead>Category</TableHead>
-                        <TableHead className="text-right">Qty</TableHead>
-                        <TableHead className="text-right">Price</TableHead>
-                        <TableHead className="text-right">Actions</TableHead>
+                        <TableHead>{isPolish ? 'Produkt' : 'Item'}</TableHead>
+                        <TableHead>{t('expenses.category')}</TableHead>
+                        <TableHead className="text-right">{t('expenses.qty')}</TableHead>
+                        <TableHead className="text-right">{t('expenses.price')}</TableHead>
+                        <TableHead className="text-right">{t('expenses.actions')}</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {receiptItems.map((item, index) => {
                         const quantity = item.quantity ?? 1
                         const totalPrice = item.price ?? 0
-                        const categoryName = item.category_id ? categories.get(item.category_id) || 'No category' : 'No category'
+                        const categoryName = item.category_id ? categories.get(item.category_id) || t('expenses.noCategory') : t('expenses.noCategory')
                         
                         return (
                           <TableRow key={index}>
@@ -714,8 +720,9 @@ export default function ExpensesPage() {
                       })}
                     </TableBody>
                   </Table>
+                  </div>
                 ) : (
-                  <p className="text-muted-foreground py-8 text-center">No items found</p>
+                  <p className="text-muted-foreground py-8 text-center">{t('expenses.noItems')}</p>
                 )}
               </CardContent>
             </Card>
@@ -763,15 +770,14 @@ export default function ExpensesPage() {
       <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Delete Expense</DialogTitle>
+            <DialogTitle>{t('expenses.delete')} {t('expenses.title')}</DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete "{selectedExpense?.title}"? This
-              action cannot be undone.
+              {t('expenses.deleteConfirm')}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => setIsDeleteDialogOpen(false)}>
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button
               variant="destructive"
@@ -781,10 +787,10 @@ export default function ExpensesPage() {
               {isDeleting ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Deleting...
+                  {t('expenses.deleting')}
                 </>
               ) : (
-                'Delete'
+                t('expenses.delete')
               )}
             </Button>
           </DialogFooter>

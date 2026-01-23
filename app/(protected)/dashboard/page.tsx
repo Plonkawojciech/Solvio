@@ -20,6 +20,7 @@ import { ScanReceiptButton } from '@/components/protected/dashboard/scan-receipt
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import Link from 'next/link';
+import { getLanguage, t } from '@/lib/i18n';
 
 export default function ProtectedPage() {
   const router = useRouter();
@@ -143,6 +144,8 @@ export default function ProtectedPage() {
   const currency = (settings?.currency_id || 'PLN').toUpperCase();
   const lang = (settings?.language_id || 'EN').toUpperCase();
   const locale = lang === 'PL' ? 'pl-PL' : 'en-US';
+  const currentLang = getLanguage();
+  const isPolish = currentLang === 'pl';
 
   // mapy pomocnicze
   const catById = new Map<
@@ -320,8 +323,10 @@ export default function ProtectedPage() {
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
             <div>
-              <CardTitle className="text-2xl sm:text-3xl font-bold">This Month</CardTitle>
-              <CardDescription className="hidden sm:block">Your spending overview for the last 30 days</CardDescription>
+              <CardTitle className="text-2xl sm:text-3xl font-bold">{t('dashboard.thisMonth')}</CardTitle>
+              <CardDescription className="hidden sm:block">
+                {t('dashboard.spendingOverview')}
+              </CardDescription>
             </div>
             <Wallet className="h-6 w-6 sm:h-8 sm:w-8 text-muted-foreground" />
           </div>
@@ -329,13 +334,13 @@ export default function ProtectedPage() {
         <CardContent className="space-y-4 sm:space-y-6">
           {/* Total Spent */}
           <div>
-            <p className="text-sm text-muted-foreground mb-1">Total Spent</p>
+            <p className="text-sm text-muted-foreground mb-1">{t('dashboard.totalSpent')}</p>
             <div className="flex items-baseline gap-2 sm:gap-3">
               <span className="text-3xl sm:text-4xl font-bold">{totalSpent.toFixed(2)}</span>
               <span className="text-xl sm:text-2xl text-muted-foreground">{currency}</span>
             </div>
             <p className="text-xs text-muted-foreground mt-1">
-              {totalTransactions} transactions · {avgDaily.toFixed(2)} {currency}/day
+              {totalTransactions} {t('dashboard.transactions')} · {avgDaily.toFixed(2)} {currency}/{isPolish ? 'dzień' : 'day'}
             </p>
           </div>
 
@@ -343,12 +348,12 @@ export default function ProtectedPage() {
           {totalBudget > 0 && (
             <div className="space-y-2">
               <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">Budget Progress</span>
+                <span className="text-muted-foreground">{t('dashboard.budgetProgress')}</span>
                 <span className="font-medium">
                   {budgetRemaining >= 0 ? (
-                    <span className="text-green-600">{budgetRemaining.toFixed(2)} {currency} left</span>
+                    <span className="text-green-600">{budgetRemaining.toFixed(2)} {currency} {t('dashboard.left')}</span>
                   ) : (
-                    <span className="text-red-600">{Math.abs(budgetRemaining).toFixed(2)} {currency} over</span>
+                    <span className="text-red-600">{Math.abs(budgetRemaining).toFixed(2)} {currency} {t('dashboard.over')}</span>
                   )}
                 </span>
               </div>
@@ -357,7 +362,7 @@ export default function ProtectedPage() {
                 className={budgetProgress > 100 ? 'bg-red-100' : ''}
               />
               <p className="text-xs text-muted-foreground">
-                {budgetProgress.toFixed(1)}% of {totalBudget.toFixed(2)} {currency} budget used
+                {budgetProgress.toFixed(1)}% {isPolish ? 'z' : 'of'} {totalBudget.toFixed(2)} {currency} {t('dashboard.budget')} {t('dashboard.used')}
               </p>
             </div>
           )}
@@ -367,8 +372,8 @@ export default function ProtectedPage() {
             <ScanReceiptButton onAction={fetchData} />
             <AddExpenseTrigger onAction={fetchData} />
             <Link href="/expenses" className="w-full sm:w-auto">
-              <Button variant="outline" size="default" className="w-full sm:w-auto">
-                View All Expenses
+              <Button variant="outline" size="default" className="w-full sm:w-auto text-xs sm:text-sm">
+                {t('dashboard.viewAllExpenses')}
                 <ArrowUpRight className="ml-2 h-4 w-4" />
               </Button>
             </Link>
@@ -381,13 +386,13 @@ export default function ProtectedPage() {
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              Receipts Scanned
+              {t('dashboard.receiptsScanned')}
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{receiptsScanned}</div>
             <p className="text-xs text-muted-foreground mt-1">
-              AI-processed this month
+              {t('dashboard.aiProcessed')}
             </p>
           </CardContent>
         </Card>
@@ -395,7 +400,7 @@ export default function ProtectedPage() {
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              Biggest Purchase
+              {t('dashboard.biggestPurchase')}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -403,7 +408,7 @@ export default function ProtectedPage() {
               {mostExpensive.toFixed(2)} {currency}
             </div>
             <p className="text-xs text-muted-foreground mt-1">
-              Largest single transaction
+              {t('dashboard.largestTransaction')}
             </p>
           </CardContent>
         </Card>
@@ -411,7 +416,7 @@ export default function ProtectedPage() {
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              Avg Transaction
+              {t('dashboard.avgTransaction')}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -419,7 +424,7 @@ export default function ProtectedPage() {
               {avgTransaction.toFixed(2)} {currency}
             </div>
             <p className="text-xs text-muted-foreground mt-1">
-              Average per transaction
+              {t('dashboard.averagePerTransaction')}
             </p>
           </CardContent>
         </Card>
@@ -427,13 +432,13 @@ export default function ProtectedPage() {
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              Top Category
+              {t('dashboard.topCategory')}
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold truncate">{topCategory}</div>
             <p className="text-xs text-muted-foreground mt-1">
-              Highest spending
+              {t('dashboard.highestSpending')}
             </p>
           </CardContent>
         </Card>
@@ -446,15 +451,14 @@ export default function ProtectedPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Activity className="h-5 w-5" />
-              Recent Activity
+              {t('dashboard.recentActivity')}
             </CardTitle>
-            <CardDescription>Your latest expenses and receipts</CardDescription>
+            <CardDescription>{t('dashboard.latestTransactions')}</CardDescription>
           </CardHeader>
           <CardContent>
             {recentExpenses.length === 0 ? (
               <div className="text-center py-12">
-                <p className="text-muted-foreground text-sm">No expenses yet.</p>
-                <p className="text-xs text-muted-foreground mt-2">Start by scanning a receipt or adding an expense manually.</p>
+                <p className="text-muted-foreground text-sm">{t('dashboard.noExpensesYet')}</p>
               </div>
             ) : (
               <RecentExpensesTable
@@ -476,13 +480,13 @@ export default function ProtectedPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Target className="h-5 w-5" />
-              Top Categories
+              {t('dashboard.topCategories')}
             </CardTitle>
-            <CardDescription>Where your money goes</CardDescription>
+            <CardDescription>{t('dashboard.whereMoneyGoes')}</CardDescription>
           </CardHeader>
           <CardContent>
             {categorySpendingData.length === 0 ? (
-              <p className="text-muted-foreground text-sm text-center py-8">No category data yet.</p>
+              <p className="text-muted-foreground text-sm text-center py-8">{isPolish ? 'Brak danych kategorii jeszcze.' : 'No category data yet.'}</p>
             ) : (
               <div className="space-y-4">
                 <SpendingByCategoryChart
@@ -509,10 +513,10 @@ export default function ProtectedPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Target className="h-5 w-5" />
-              Category Budgets
+              {t('dashboard.categoryBudgets')}
             </CardTitle>
             <CardDescription>
-              Track your spending against monthly budgets for each category
+              {t('dashboard.trackSpending')}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -526,10 +530,10 @@ export default function ProtectedPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <TrendingUp className="h-5 w-5" />
-            Last 30 Days - Spending by Category
+            {t('dashboard.monthlySpending')}
           </CardTitle>
           <CardDescription>
-            Daily expenses breakdown showing spending across all categories
+            {t('dashboard.dailyExpenses')}
           </CardDescription>
         </CardHeader>
         <CardContent className="pl-2">

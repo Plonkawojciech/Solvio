@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { t, getLanguage } from '@/lib/i18n'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -13,7 +14,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { Plus, Trash2, Edit2, Check, X } from 'lucide-react'
+import { Plus, Trash2, Edit2, Check, X, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
 import {
   AlertDialog,
@@ -44,10 +45,59 @@ export function CategoriesManager({
   const [editName, setEditName] = useState('')
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [seeding, setSeeding] = useState(false)
+
+  const seedCategories = async () => {
+    setSeeding(true)
+    try {
+      const response = await fetch('/api/v1/seed-categories', {
+        method: 'POST',
+      })
+      
+      const data = await response.json()
+      
+      if (!response.ok) {
+        toast.error('Failed to seed categories', {
+          description: data.error || 'Unknown error',
+        })
+        return
+      }
+      
+      toast.success('Categories updated!', {
+        description: data.message || 'Categories have been updated.',
+      })
+      
+      // Odśwież listę kategorii
+      const { data: updatedCategories } = await supabase
+        .from('categories')
+        .select('id, name, icon')
+        .order('name')
+      
+      if (updatedCategories) {
+        setCategories(updatedCategories.map(c => ({
+          id: c.id as string,
+          name: c.name as string,
+          icon: c.icon as string | null,
+        })))
+      }
+      
+      // Odśwież stronę po 1s
+      setTimeout(() => {
+        window.location.reload()
+      }, 1000)
+      
+    } catch (error) {
+      toast.error('Failed to seed categories', {
+        description: error instanceof Error ? error.message : 'Unknown error',
+      })
+    } finally {
+      setSeeding(false)
+    }
+  }
 
   const addCategory = async () => {
     if (!newCategoryName.trim()) {
-      toast.error('Category name is required')
+      toast.error(t('settings.categoryName') + ' ' + (getLanguage() === 'pl' ? 'jest wymagane' : 'is required'))
       return
     }
 
@@ -59,12 +109,12 @@ export function CategoriesManager({
       .single()
 
     if (error) {
-      toast.error('Failed to add category')
+      toast.error(getLanguage() === 'pl' ? 'Nie udało się dodać kategorii' : 'Failed to add category')
       console.error(error)
     } else {
       setCategories([...categories, data])
       setNewCategoryName('')
-      toast.success('Category added successfully')
+      toast.success(getLanguage() === 'pl' ? 'Kategoria dodana pomyślnie' : 'Category added successfully')
     }
     setLoading(false)
   }
@@ -126,13 +176,32 @@ export function CategoriesManager({
 
   return (
     <div className="space-y-4">
+      {/* Seed Default Categories Button */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 border rounded-lg bg-muted/50">
+        <div>
+          <p className="font-medium text-sm">{t('settings.defaultCategories')}</p>
+          <p className="text-xs text-muted-foreground">
+            {t('settings.defaultCategoriesDesc')}
+          </p>
+        </div>
+        <Button 
+          onClick={seedCategories} 
+          disabled={seeding}
+          variant="outline"
+          size="sm"
+        >
+          <RefreshCw className={`h-4 w-4 mr-2 ${seeding ? 'animate-spin' : ''}`} />
+          {seeding ? t('settings.loadingDefaults') : t('settings.loadDefaults')}
+        </Button>
+      </div>
+
       {/* Add New Category */}
       <div className="flex gap-2">
         <div className="flex-1">
-          <Label htmlFor="new-category" className="sr-only">New Category</Label>
+          <Label htmlFor="new-category" className="sr-only">{t('settings.categoryName')}</Label>
           <Input
             id="new-category"
-            placeholder="Category name (e.g., Electronics, Food, Transport)"
+            placeholder={getLanguage() === 'pl' ? 'Nazwa kategorii (np. Elektronika, Jedzenie, Transport)' : 'Category name (e.g., Electronics, Food, Transport)'}
             value={newCategoryName}
             onChange={(e) => setNewCategoryName(e.target.value)}
             onKeyDown={(e) => {
@@ -143,7 +212,7 @@ export function CategoriesManager({
         </div>
         <Button onClick={addCategory} disabled={loading || !newCategoryName.trim()}>
           <Plus className="h-4 w-4 mr-2" />
-          Add
+          {t('common.add')}
         </Button>
       </div>
 
@@ -152,15 +221,15 @@ export function CategoriesManager({
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Category Name</TableHead>
-              <TableHead className="w-32 text-right">Actions</TableHead>
+              <TableHead>{t('settings.categoryName')}</TableHead>
+              <TableHead className="w-32 text-right">{t('expenses.actions')}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {categories.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={2} className="text-center text-muted-foreground py-8">
-                  No categories yet. Add your first category above.
+                  {t('settings.noCategories')}
                 </TableCell>
               </TableRow>
             ) : (
@@ -234,15 +303,15 @@ export function CategoriesManager({
       <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Category?</AlertDialogTitle>
+            <AlertDialogTitle>{t('settings.deleteCategory')}</AlertDialogTitle>
             <AlertDialogDescription>
-              This will remove the category. Existing expenses with this category will keep it, but you won't be able to assign it to new expenses.
+              {t('settings.deleteCategoryDesc')}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
             <AlertDialogAction onClick={deleteCategory} className="bg-red-600 hover:bg-red-700">
-              Delete
+              {t('common.delete')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
