@@ -42,7 +42,22 @@ async function processAzureOCR(buffer: Buffer, mimeType: string) {
 
   if (!postResponse.ok) {
     const errorText = await postResponse.text();
-    console.error('[Azure] POST Error:', errorText);
+    console.error('[Azure] POST Error:', postResponse.status, errorText);
+    console.error('[Azure] MIME type used:', mimeType);
+    console.error('[Azure] Buffer size:', buffer.length);
+    
+    // Check for specific error types
+    if (postResponse.status === 400) {
+      try {
+        const errorJson = JSON.parse(errorText);
+        if (errorJson.error?.message?.includes('invalid') || errorJson.error?.message?.includes('type')) {
+          throw new Error(`Invalid file type or format. Azure rejected the file. MIME type: ${mimeType}, Error: ${errorJson.error.message}`);
+        }
+      } catch {
+        // Not JSON, use raw text
+      }
+    }
+    
     throw new Error(`Azure POST failed: ${postResponse.status} - ${errorText}`);
   }
 
@@ -253,8 +268,24 @@ export async function POST(req: NextRequest) {
     userId = form.get('userId') as string;
     const files = form.getAll('files') as File[];
 
+    console.log('[OCR] Form data received:');
+    console.log('  receiptId:', receiptId);
+    console.log('  userId:', userId);
+    console.log('  files count:', files.length);
+    
+    if (files.length > 0) {
+      files.forEach((f, i) => {
+        console.log(`  file[${i}]: name=${f.name}, type=${f.type}, size=${f.size} bytes`);
+      });
+    }
+
     if (!receiptId || !userId || !files.length) {
-      return json({ error: 'Missing required fields' }, 400);
+      const missing = [];
+      if (!receiptId) missing.push('receiptId');
+      if (!userId) missing.push('userId');
+      if (!files.length) missing.push('files');
+      console.error('[OCR] Missing required fields:', missing);
+      return json({ error: 'Missing required fields', missing }, 400);
     }
 
     console.log(`📄 Receipt ID: ${receiptId}`);
@@ -301,8 +332,88 @@ export async function POST(req: NextRequest) {
       }
 
       try {
+        // Validate file size first
+        if (file.size === 0) {
+          console.error(`[File ${i + 1}] File is empty: ${file.name}`);
+          results.push({ 
+            file: file.name, 
+            success: false, 
+            error: 'empty_file', 
+            message: 'File is empty (0 bytes)' 
+          });
+          continue;
+        }
+        
+        if (file.size > 10 * 1024 * 1024) { // 10MB hard limit
+          console.error(`[File ${i + 1}] File too large: ${file.name}, size: ${(file.size / 1024 / 1024).toFixed(2)}MB`);
+          results.push({ 
+            file: file.name, 
+            success: false, 
+            error: 'file_too_large', 
+            message: `File is too large: ${(file.size / 1024 / 1024).toFixed(2)}MB. Maximum is 10MB.` 
+          });
+          continue;
+        }
+        
         const buffer = Buffer.from(await file.arrayBuffer());
-        const mimeType = file.type || 'image/jpeg';
+        
+        if (buffer.length === 0) {
+          console.error(`[File ${i + 1}] Buffer is empty after conversion: ${file.name}`);
+          results.push({ 
+            file: file.name, 
+            success: false, 
+            error: 'empty_buffer', 
+            message: 'File buffer is empty' 
+          });
+          continue;
+        }
+        
+        // Validate and normalize MIME type
+        let mimeType = file.type || 'image/jpeg';
+        const fileName = file.name.toLowerCase();
+        
+        // If type is missing or invalid, infer from filename
+        if (!mimeType || mimeType === 'application/octet-stream') {
+          if (fileName.match(/\.(jpg|jpeg)$/)) {
+            mimeType = 'image/jpeg';
+          } else if (fileName.match(/\.png$/)) {
+            mimeType = 'image/png';
+          } else if (fileName.match(/\.webp$/)) {
+            mimeType = 'image/webp';
+          } else if (fileName.match(/\.pdf$/)) {
+            mimeType = 'application/pdf';
+          } else {
+            mimeType = 'image/jpeg'; // default
+          }
+        }
+        
+        // Validate that it's a supported type
+        const supportedTypes = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
+        if (!supportedTypes.includes(mimeType)) {
+          console.error(`[File ${i + 1}] Unsupported file type: ${mimeType} for file ${file.name}`);
+          results.push({ 
+            file: file.name, 
+            success: false, 
+            error: 'invalid_type', 
+            message: `Unsupported file type: ${mimeType}. Supported: JPEG, PNG, WebP, PDF.` 
+          });
+          continue;
+        }
+
+        console.log(`[File ${i + 1}] File type: ${mimeType}, size: ${(buffer.length / 1024).toFixed(1)}KB`);
+        
+        // Validate buffer is valid image data (basic check - first few bytes)
+        if (mimeType.startsWith('image/')) {
+          const header = buffer.slice(0, 4);
+          const isValidImage = 
+            (header[0] === 0xFF && header[1] === 0xD8) || // JPEG
+            (header[0] === 0x89 && header[1] === 0x50 && header[2] === 0x4E && header[3] === 0x47) || // PNG
+            (header[0] === 0x52 && header[1] === 0x49 && header[2] === 0x46 && header[3] === 0x46); // WebP (RIFF)
+          
+          if (!isValidImage) {
+            console.warn(`[File ${i + 1}] Warning: File header doesn't match declared type ${mimeType}, but continuing...`);
+          }
+        }
 
         // 4. Azure OCR
         const azureResult = await processAzureOCR(buffer, mimeType);
@@ -470,10 +581,31 @@ export async function POST(req: NextRequest) {
 
       } catch (fileError) {
         console.error(`[File ${i + 1}] ❌ ERROR:`, fileError);
+        
+        let errorMessage = 'Unknown error';
+        let errorType = 'unknown';
+        
+        if (fileError instanceof Error) {
+          errorMessage = fileError.message;
+          
+          // Check for specific error types
+          if (errorMessage.includes('Azure POST failed: 400')) {
+            errorType = 'azure_invalid_format';
+            errorMessage = 'Azure rejected the file format. The image may be corrupted or in an unsupported format.';
+          } else if (errorMessage.includes('Invalid file type')) {
+            errorType = 'invalid_type';
+          } else if (errorMessage.includes('empty')) {
+            errorType = 'empty_file';
+          } else if (errorMessage.includes('too large')) {
+            errorType = 'file_too_large';
+          }
+        }
+        
         results.push({
           file: file.name,
           success: false,
-          error: fileError instanceof Error ? fileError.message : 'Unknown error',
+          error: errorType,
+          message: errorMessage,
         });
       }
     }
@@ -482,6 +614,16 @@ export async function POST(req: NextRequest) {
     const successCount = results.filter(r => r.success).length;
     const hasErrors = results.some(r => !r.success);
 
+    // Always return 200, but include error info in response
+    // Only return 400 if ALL files failed AND it's a critical error
+    const allFailed = successCount === 0 && results.length > 0;
+    const criticalError = allFailed && results.some(r => 
+      r.error === 'empty_file' || 
+      r.error === 'file_too_large' || 
+      r.error === 'invalid_type' ||
+      r.error === 'azure_invalid_format'
+    );
+
     return json({
       success: successCount > 0,
       files_processed: results.length,
@@ -489,7 +631,7 @@ export async function POST(req: NextRequest) {
       files_failed: results.length - successCount,
       results: results,
       receipt_id: receiptId, // Pierwszy receipt_id dla kompatybilności
-    }, hasErrors && successCount === 0 ? 400 : 200);
+    }, criticalError ? 400 : 200);
 
   } catch (error) {
     console.error('\n========================================');

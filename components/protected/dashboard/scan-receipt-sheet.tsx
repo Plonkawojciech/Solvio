@@ -91,9 +91,25 @@ async function compressImageToTarget(
   // If already small enough, keep as-is (but still normalize HEIC earlier).
   if (file.size <= targetBytes) return file;
 
-  // Decode
-  const img = await createImageBitmap(file);
-  const maxDim = options?.maxDim ?? 2000;
+  try {
+    // Decode - use URL.createObjectURL as fallback if createImageBitmap fails
+    let img: ImageBitmap;
+    try {
+      img = await createImageBitmap(file);
+    } catch (e) {
+      // Fallback: use img element for browsers that don't support createImageBitmap well
+      const url = URL.createObjectURL(file);
+      const imgEl = new Image();
+      await new Promise((resolve, reject) => {
+        imgEl.onload = () => resolve(null);
+        imgEl.onerror = reject;
+        imgEl.src = url;
+      });
+      img = await createImageBitmap(imgEl);
+      URL.revokeObjectURL(url);
+    }
+    
+    const maxDim = options?.maxDim ?? 2000;
 
   const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
   let w = Math.max(1, Math.round(img.width * scale));
@@ -139,9 +155,30 @@ async function compressImageToTarget(
     bestBlob = blob;
   }
 
-  if (!bestBlob) return file;
-  const outName = file.name.replace(/\.(png|webp|jpe?g|heic|heif)$/i, '.jpg');
-  return new File([bestBlob], outName, { type: 'image/jpeg' });
+    if (!bestBlob || bestBlob.size === 0) {
+      console.warn('[compressImageToTarget] Failed to create valid blob, using original');
+      return file;
+    }
+    
+    // Validate blob is actually JPEG
+    if (bestBlob.type && bestBlob.type !== 'image/jpeg') {
+      console.warn('[compressImageToTarget] Blob type is not JPEG:', bestBlob.type);
+    }
+    
+    const outName = file.name.replace(/\.(png|webp|jpe?g|heic|heif)$/i, '.jpg');
+    const compressedFile = new File([bestBlob], outName, { type: 'image/jpeg' });
+    
+    // Final validation
+    if (compressedFile.size === 0) {
+      console.warn('[compressImageToTarget] Compressed file is empty, using original');
+      return file;
+    }
+    
+    return compressedFile;
+  } catch (error) {
+    console.warn('[compressImageToTarget] Failed to compress image, using original:', error);
+    return file;
+  }
 }
 
 export function ScanReceiptSheet({
@@ -232,8 +269,17 @@ export function ScanReceiptSheet({
         }
 
         let f = original;
+        
+        // Log original file info for debugging
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`[ScanReceipt] Processing: ${original.name}, type: ${original.type}, size: ${(original.size / 1024).toFixed(0)}KB`);
+        }
+        
         if (isHeicFile(f)) {
           f = await convertHeicToJpegFile(f);
+          if (process.env.NODE_ENV === 'development') {
+            console.log(`[ScanReceipt] Converted HEIC: ${f.name}, type: ${f.type}`);
+          }
         }
 
         // If still too big, compress (resize+jpeg).
@@ -241,8 +287,22 @@ export function ScanReceiptSheet({
           f = await compressImageToTarget(f, perFileTarget, { maxDim: 2000 });
         }
 
+        // Ensure MIME type is set correctly (some browsers don't set it on File constructor)
+        if (!f.type || f.type === 'application/octet-stream') {
+          const ext = f.name.toLowerCase();
+          if (ext.match(/\.(jpg|jpeg)$/)) {
+            f = new File([f], f.name, { type: 'image/jpeg' });
+          } else if (ext.match(/\.png$/)) {
+            f = new File([f], f.name, { type: 'image/png' });
+          } else if (ext.match(/\.webp$/)) {
+            f = new File([f], f.name, { type: 'image/webp' });
+          } else {
+            f = new File([f], f.name, { type: 'image/jpeg' }); // default to JPEG
+          }
+        }
+
         if (process.env.NODE_ENV === 'development') {
-          console.log(`[ScanReceipt] OCR file: ${original.name} -> ${f.name} ${(original.size / 1024).toFixed(0)}KB -> ${(f.size / 1024).toFixed(0)}KB`);
+          console.log(`[ScanReceipt] OCR file: ${original.name} -> ${f.name} ${(original.size / 1024).toFixed(0)}KB -> ${(f.size / 1024).toFixed(0)}KB, type: ${f.type}`);
         }
 
         optimizedForOcr.push(f);
