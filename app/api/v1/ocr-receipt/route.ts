@@ -4,7 +4,15 @@ import { createClient } from '@/lib/supabase/server';
 import OpenAI from 'openai';
 
 export const runtime = 'nodejs';
-export const maxDuration = 60;
+export const maxDuration = 60; // Vercel Hobby plan limit
+
+// Helper do logowania (mniej verbose w produkcji)
+const isProduction = process.env.NODE_ENV === 'production';
+const log = (message: string, ...args: any[]) => {
+  if (!isProduction || message.includes('✅') || message.includes('❌') || message.includes('ERROR')) {
+    console.log(message, ...args);
+  }
+};
 
 const AZURE_ENDPOINT = process.env.AZURE_OCR_ENDPOINT;
 const AZURE_KEY = process.env.AZURE_OCR_KEY;
@@ -69,13 +77,16 @@ async function processAzureOCR(buffer: Buffer, mimeType: string) {
 
   console.log('[Azure] Operation-Location:', operationLocation);
 
-  // Krok 2: Polling - Czekaj na wynik (max 30 prób, co 1 sek)
+  // Krok 2: Polling - Czekaj na wynik (max 50 prób, co 1 sek = max 50 sek)
+  // Vercel ma timeout 60s, więc zostawiamy margines
   let attempts = 0;
-  const maxAttempts = 30;
+  const maxAttempts = 50;
   
   while (attempts < maxAttempts) {
     attempts++;
-    console.log(`[Azure] Polling attempt ${attempts}/${maxAttempts}...`);
+    if (attempts % 5 === 0 || attempts <= 3) {
+      console.log(`[Azure] Polling attempt ${attempts}/${maxAttempts}...`);
+    }
     
     await new Promise(resolve => setTimeout(resolve, 1000)); // Czekaj 1 sek
     
@@ -532,7 +543,7 @@ async function categorizeAllItems(
   }
   
   if (!categories.length) {
-    console.warn('[GPT] No categories available');
+    console.warn('[GPT] ⚠️ No categories available - cannot categorize items');
     return items.map(item => ({ ...item, category_id: null }));
   }
   
@@ -542,13 +553,38 @@ async function categorizeAllItems(
   }
 
   try {
-    console.log(`[GPT] Kategoryzacja ${items.length} produktów (batch)...`);
+    console.log(`[GPT] 🎯 Kategoryzacja ${items.length} produktów (batch)...`);
     console.log(`[GPT] Available categories: ${categories.length}`);
+    console.log(`[GPT] Categories: ${categories.map(c => c.name).join(', ')}`);
     console.log(`[GPT] OpenAI client initialized: ${!!openai}`);
+    console.log(`[GPT] OPENAI_API_KEY present: ${!!process.env.OPENAI_API_KEY}`);
     
-    const categoryMap = categories.map(c => `${c.name}: ${c.id}`).join('\n');
+    if (!openai) {
+      console.error('[GPT] ❌ OpenAI client is null!');
+      console.error('[GPT] Check if OPENAI_API_KEY is set in Vercel environment variables');
+      return items.map(item => ({ ...item, category_id: null }));
+    }
+    
+    // Walidacja kategorii - sprawdź czy mają poprawne UUID
+    const validCategories = categories.filter(c => c.id && c.name);
+    if (validCategories.length !== categories.length) {
+      console.warn(`[GPT] ⚠️ Some categories are invalid. Valid: ${validCategories.length}/${categories.length}`);
+    }
+    
+    if (validCategories.length === 0) {
+      console.error('[GPT] ❌ No valid categories available!');
+      return items.map(item => ({ ...item, category_id: null }));
+    }
+    
+    // Użyj tylko poprawnych kategorii
+    const categoriesToUse = validCategories.length > 0 ? validCategories : categories;
+    
+    const categoryMap = categoriesToUse.map(c => `${c.name}: ${c.id}`).join('\n');
     const itemsList = items.map((item, idx) => `${idx + 1}. ${item.name}`).join('\n');
     
+    console.log(`[GPT] Sending request to OpenAI (model: gpt-4o, items: ${items.length}, categories: ${categoriesToUse.length})...`);
+    
+    const startTime = Date.now();
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o', // Lepszy model dla dokładniejszej kategoryzacji
       temperature: 0,
@@ -677,27 +713,35 @@ Zwróć TYLKO tablicę JSON: ["uuid1", "uuid2", null, "uuid3", ...]`
       ],
     });
 
+    const duration = Date.now() - startTime;
+    console.log(`[GPT] ✅ OpenAI response received in ${duration}ms`);
+    
     const result = completion.choices[0]?.message?.content?.trim() ?? null;
     if (!result) {
-      console.warn('[GPT] No response from OpenAI');
+      console.error('[GPT] ❌ No response from OpenAI');
+      console.error('[GPT] Completion object:', JSON.stringify(completion, null, 2));
       return items.map(item => ({ ...item, category_id: null }));
     }
     
-    console.log(`[GPT] Raw response: ${result.substring(0, 200)}...`);
+    console.log(`[GPT] Raw response length: ${result.length} chars`);
+    console.log(`[GPT] Raw response (first 500 chars): ${result.substring(0, 500)}`);
     
     // Try to extract JSON from response (GPT sometimes adds markdown or extra text)
     let jsonStr = result;
     
     // Remove markdown code blocks if present
     if (jsonStr.includes('```')) {
+      console.log('[GPT] Found markdown code blocks, extracting JSON...');
       const match = jsonStr.match(/```(?:json)?\s*(\[.*?\])\s*```/s);
       if (match) {
         jsonStr = match[1];
+        console.log('[GPT] Extracted JSON from markdown code block');
       } else {
         // Try to find JSON array in the text
         const arrayMatch = jsonStr.match(/\[.*?\]/s);
         if (arrayMatch) {
           jsonStr = arrayMatch[0];
+          console.log('[GPT] Extracted JSON array from text');
         }
       }
     }
@@ -705,39 +749,104 @@ Zwróć TYLKO tablicę JSON: ["uuid1", "uuid2", null, "uuid3", ...]`
     let categoryIds: (string | null)[] = [];
     try {
       categoryIds = JSON.parse(jsonStr) as (string | null)[];
-      console.log(`[GPT] Parsed ${categoryIds.length} category IDs`);
+      console.log(`[GPT] ✅ Parsed ${categoryIds.length} category IDs`);
+      
+      // Walidacja - sprawdź czy są poprawne UUID
+      const validCategoryIds = categoryIds.filter(id => 
+        id === null || (typeof id === 'string' && categoriesToUse.some(c => c.id === id))
+      );
+      
+      if (validCategoryIds.length !== categoryIds.length) {
+        console.warn(`[GPT] ⚠️ Some category IDs are invalid. Valid: ${validCategoryIds.length}/${categoryIds.length}`);
+        // Zastąp nieprawidłowe ID null
+        categoryIds = categoryIds.map(id => 
+          (id === null || (typeof id === 'string' && categoriesToUse.some(c => c.id === id))) ? id : null
+        );
+      }
     } catch (parseError) {
-      console.error('[GPT] JSON parse error:', parseError);
-      console.error('[GPT] Failed to parse:', jsonStr);
-      return items.map(item => ({ ...item, category_id: null }));
+      console.error('[GPT] ❌ JSON parse error:', parseError);
+      console.error('[GPT] Failed to parse JSON string:', jsonStr);
+      console.error('[GPT] Full response:', result);
+      
+      // Spróbuj jeszcze raz z bardziej agresywnym ekstraktowaniem
+      try {
+        // Szukaj pierwszej tablicy JSON w tekście
+        const arrayMatch = result.match(/\[[\s\S]*?\]/);
+        if (arrayMatch) {
+          categoryIds = JSON.parse(arrayMatch[0]) as (string | null)[];
+          console.log('[GPT] ✅ Recovered JSON using fallback extraction');
+        } else {
+          throw new Error('No JSON array found in response');
+        }
+      } catch (fallbackError) {
+        console.error('[GPT] ❌ Fallback extraction also failed:', fallbackError);
+        return items.map(item => ({ ...item, category_id: null }));
+      }
     }
     
     // Validate length
     if (categoryIds.length !== items.length) {
-      console.warn(`[GPT] Category count mismatch: expected ${items.length}, got ${categoryIds.length}`);
+      console.warn(`[GPT] ⚠️ Category count mismatch: expected ${items.length}, got ${categoryIds.length}`);
       // Pad with nulls if too short, truncate if too long
       while (categoryIds.length < items.length) {
         categoryIds.push(null);
       }
       categoryIds = categoryIds.slice(0, items.length);
+      console.log(`[GPT] Fixed array length to ${categoryIds.length}`);
     }
     
-    const categorized = items.map((item, idx) => ({
-      ...item,
-      category_id: categoryIds[idx] || null,
-    }));
+    const categorized = items.map((item, idx) => {
+      const catId = categoryIds[idx] || null;
+      // Walidacja - sprawdź czy category_id istnieje w dostępnych kategoriach
+      const validCatId = catId && categoriesToUse.some(c => c.id === catId) ? catId : null;
+      return {
+        ...item,
+        category_id: validCatId,
+      };
+    });
     
     const assignedCount = categorized.filter(c => c.category_id !== null).length;
-    console.log(`[GPT] ✅ Assigned categories to ${assignedCount}/${items.length} items`);
+    const validCount = categorized.filter(c => {
+      if (!c.category_id) return false;
+      return categoriesToUse.some(cat => cat.id === c.category_id);
+    }).length;
+    
+    console.log(`[GPT] ✅ Assigned categories to ${assignedCount}/${items.length} items (${validCount} valid)`);
+    
+    if (assignedCount === 0) {
+      console.warn('[GPT] ⚠️ WARNING: No categories were assigned! This might indicate a problem with GPT response or category matching.');
+      console.warn('[GPT] Categories available:', categoriesToUse.map(c => `${c.name} (${c.id})`).join(', '));
+      console.warn('[GPT] Items to categorize:', items.map(i => i.name).join(', '));
+      console.warn('[GPT] Category IDs from GPT:', categoryIds);
+    }
     
     return categorized;
     
   } catch (error) {
-    console.error('[GPT] Batch categorization error:', error);
+    console.error('[GPT] ❌ Batch categorization error:', error);
+    
     if (error instanceof Error) {
+      console.error('[GPT] Error name:', error.name);
       console.error('[GPT] Error message:', error.message);
-      console.error('[GPT] Error stack:', error.stack);
+      
+      // Sprawdź specyficzne błędy OpenAI
+      if (error.message.includes('rate limit') || error.message.includes('RateLimitError')) {
+        console.error('[GPT] ⚠️ Rate limit exceeded - OpenAI API rate limit reached');
+      } else if (error.message.includes('timeout') || error.message.includes('Timeout')) {
+        console.error('[GPT] ⚠️ Timeout - OpenAI API request timed out');
+      } else if (error.message.includes('401') || error.message.includes('Unauthorized')) {
+        console.error('[GPT] ⚠️ Unauthorized - Check OPENAI_API_KEY in Vercel environment variables');
+      } else if (error.message.includes('429')) {
+        console.error('[GPT] ⚠️ Too many requests - OpenAI API quota exceeded');
+      }
+      
+      if (process.env.NODE_ENV === 'development') {
+        console.error('[GPT] Error stack:', error.stack);
+      }
+    } else {
+      console.error('[GPT] Unknown error type:', typeof error, error);
     }
+    
     return items.map(item => ({ ...item, category_id: null }));
   }
 }
@@ -747,6 +856,30 @@ export async function POST(req: NextRequest) {
   console.log('\n========================================');
   console.log('🧾 AZURE DOCUMENT INTELLIGENCE OCR');
   console.log('========================================\n');
+
+  // WERYFIKACJA ZMIENNYCH ŚRODOWISKOWYCH (ważne dla Vercel!)
+  const missingEnvVars: string[] = [];
+  if (!process.env.AZURE_OCR_ENDPOINT) missingEnvVars.push('AZURE_OCR_ENDPOINT');
+  if (!process.env.AZURE_OCR_KEY) missingEnvVars.push('AZURE_OCR_KEY');
+  if (!process.env.OPENAI_API_KEY) missingEnvVars.push('OPENAI_API_KEY');
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL) missingEnvVars.push('NEXT_PUBLIC_SUPABASE_URL');
+  if (!process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY) missingEnvVars.push('NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY');
+  
+  if (missingEnvVars.length > 0) {
+    console.error('[OCR] ❌ Missing environment variables:', missingEnvVars);
+    return json({ 
+      error: 'Server configuration error', 
+      message: `Missing environment variables: ${missingEnvVars.join(', ')}. Please configure them in Vercel dashboard.`,
+      missing: missingEnvVars 
+    }, 500);
+  }
+
+  console.log('[OCR] ✅ Environment variables verified');
+  console.log(`[OCR] Azure endpoint: ${AZURE_ENDPOINT ? '✅ Set' : '❌ Missing'}`);
+  console.log(`[OCR] Azure key: ${AZURE_KEY ? '✅ Set' : '❌ Missing'}`);
+  console.log(`[OCR] OpenAI: ${openai ? '✅ Initialized' : '❌ Missing'}`);
+  console.log(`[OCR] Supabase URL: ${process.env.NEXT_PUBLIC_SUPABASE_URL ? '✅ Set' : '❌ Missing'}`);
+  console.log(`[OCR] Supabase Key: ${process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ? '✅ Set' : '❌ Missing'}`);
 
   let receiptId: string | null = null;
   let userId: string | null = null;
@@ -785,10 +918,22 @@ export async function POST(req: NextRequest) {
     const supabase = await createClient();
 
     // 2. Pobierz kategorie
-    const { data: categories } = await supabase
+    const { data: categories, error: categoriesError } = await supabase
       .from('categories')
       .select('id, name')
       .order('name');
+    
+    if (categoriesError) {
+      console.error('[OCR] ❌ Failed to fetch categories:', categoriesError);
+      return json({ error: 'Failed to fetch categories', details: categoriesError.message }, 500);
+    }
+    
+    console.log(`[OCR] ✅ Loaded ${categories?.length || 0} categories`);
+    if (categories && categories.length > 0) {
+      console.log(`[OCR] Categories: ${categories.map(c => c.name).join(', ')}`);
+    } else {
+      console.warn('[OCR] ⚠️ No categories found in database!');
+    }
 
     // 3. PRZETWÓRZ WSZYSTKIE PLIKI PO KOLEI
     const results = [];
@@ -1023,7 +1168,14 @@ export async function POST(req: NextRequest) {
         console.log(`[File ${i + 1}] ✅ Expense created`);
 
         // 10. KATEGORIE W TLE (nie czekamy!)
-        categorizeAllItems(items, categories || [])
+        const categoriesForCategorization = categories || [];
+        console.log(`[File ${i + 1}] [Background] Starting categorization for ${items.length} items with ${categoriesForCategorization.length} categories...`);
+        
+        if (categoriesForCategorization.length === 0) {
+          console.warn(`[File ${i + 1}] [Background] ⚠️ No categories available - skipping categorization`);
+        }
+        
+        categorizeAllItems(items, categoriesForCategorization)
           .then(async (categorizedItems) => {
             console.log(`[File ${i + 1}] [Background] Kategorie gotowe - aktualizacja...`);
             
@@ -1050,7 +1202,14 @@ export async function POST(req: NextRequest) {
             }
           })
           .catch((err) => {
-            console.error(`[File ${i + 1}] [Background] Category error:`, err);
+            console.error(`[File ${i + 1}] [Background] ❌ Category error:`, err);
+            if (err instanceof Error) {
+              console.error(`[File ${i + 1}] [Background] Error message:`, err.message);
+              console.error(`[File ${i + 1}] [Background] Error name:`, err.name);
+              if (err.message.includes('401') || err.message.includes('Unauthorized')) {
+                console.error(`[File ${i + 1}] [Background] ⚠️ OpenAI API unauthorized - check OPENAI_API_KEY in Vercel`);
+              }
+            }
           });
 
         results.push({
