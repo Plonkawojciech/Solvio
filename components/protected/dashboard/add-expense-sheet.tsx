@@ -208,7 +208,7 @@ export function AddExpenseSheet({
         setIsUploading(true)
 
         // First create expense via API, then attach files via OCR
-        const expRes = await fetch('/api/data/expense', {
+        const expRes = await fetch('/api/data/expenses', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -228,7 +228,7 @@ export function AddExpenseSheet({
         setIsUploading(false)
       } else {
         // No files — just create expense
-        const expRes = await fetch('/api/data/expense', {
+        const expRes = await fetch('/api/data/expenses', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

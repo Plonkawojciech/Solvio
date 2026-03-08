@@ -1,7 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef, useCallback } from "react"
-import Link from "next/link"
+import { useState, useRef, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import { motion, AnimatePresence } from "framer-motion"
 import { useSignIn, useSignUp } from "@clerk/nextjs/legacy"
@@ -12,17 +11,11 @@ import {
   Loader2,
   Wallet,
   Zap,
-  FlaskConical,
-  ChevronDown,
   Mail,
   ArrowLeft,
   RotateCcw,
 } from "lucide-react"
 import { useTranslation } from "@/lib/i18n"
-
-const DEV_MAGIC_ENABLED =
-  process.env.NEXT_PUBLIC_DEV_MAGIC_LOGIN === "true" ||
-  process.env.NODE_ENV === "development"
 
 type Step = "email" | "signin-otp" | "signup-otp"
 
@@ -43,12 +36,6 @@ export function LoginForm() {
 
   const isLoaded = signInLoaded && signUpLoaded
 
-  // Dev magic-login state
-  const [devOpen, setDevOpen] = useState(false)
-  const [devEmail, setDevEmail] = useState("")
-  const [devLoading, setDevLoading] = useState(false)
-  const [devError, setDevError] = useState<string | null>(null)
-
   // Cooldown timer
   const cooldownRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
@@ -65,35 +52,6 @@ export function LoginForm() {
       })
     }, 1000)
   }, [])
-
-  useEffect(() => {
-    return () => {
-      if (cooldownRef.current) clearInterval(cooldownRef.current)
-    }
-  }, [])
-
-  async function handleMagicLogin(e: React.FormEvent) {
-    e.preventDefault()
-    setDevLoading(true)
-    setDevError(null)
-    try {
-      const res = await fetch("/api/auth/magic-login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: devEmail.trim() }),
-      })
-      const data = await res.json()
-      if (!res.ok) {
-        setDevError(data.error ?? "Magic login failed")
-        return
-      }
-      window.location.href = data.url
-    } catch {
-      setDevError("Network error — is the dev server running?")
-    } finally {
-      setDevLoading(false)
-    }
-  }
 
   async function sendCode(resend = false) {
     if (!signIn || !signUp) {
@@ -262,13 +220,7 @@ export function LoginForm() {
                 {pl ? "Zaloguj się" : "Welcome back"}
               </h1>
               <p className="text-sm text-muted-foreground">
-                {pl ? "Nie masz konta? " : "No account yet? "}
-                <Link
-                  href="/sign-up"
-                  className="text-primary hover:underline underline-offset-4 font-medium"
-                >
-                  {pl ? "Zarejestruj się" : "Sign up free"}
-                </Link>
+                {pl ? "Wpisz e-mail żeby zacząć" : "Enter your email to get started"}
               </p>
             </div>
 
@@ -345,14 +297,6 @@ export function LoginForm() {
                   </span>
                 </Button>
               </a>
-
-              {DEV_MAGIC_ENABLED && (
-                <p className="text-xs text-center text-muted-foreground">
-                  {pl
-                    ? "Potrzebujesz szybkiego dostępu? Użyj panelu magic login poniżej."
-                    : "Need quick access? Use the magic login panel below."}
-                </p>
-              )}
             </form>
           </motion.div>
         )}
@@ -457,73 +401,6 @@ export function LoginForm() {
           </motion.div>
         )}
       </AnimatePresence>
-
-      {/* ── Dev-only: email-only magic login bypass ── */}
-      {DEV_MAGIC_ENABLED && step === "email" && (
-        <div className="mt-6 rounded-lg border border-dashed border-amber-400/40 bg-amber-400/5">
-          <button
-            type="button"
-            onClick={() => setDevOpen((v) => !v)}
-            className="flex w-full items-center justify-between px-3 py-2.5 text-xs font-medium text-amber-600 dark:text-amber-400 hover:bg-amber-400/10 rounded-lg transition-colors"
-          >
-            <span className="flex items-center gap-1.5">
-              <FlaskConical className="h-3.5 w-3.5" />
-              Dev: Quick magic login
-            </span>
-            <ChevronDown
-              className={`h-3.5 w-3.5 transition-transform duration-200 ${devOpen ? "rotate-180" : ""}`}
-            />
-          </button>
-
-          <AnimatePresence initial={false}>
-            {devOpen && (
-              <motion.form
-                key="dev-form"
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: "auto", opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                transition={{ duration: 0.2, ease: "easeInOut" }}
-                style={{ overflow: "hidden" }}
-                onSubmit={handleMagicLogin}
-                className="px-3 pb-3 space-y-2"
-              >
-                <Input
-                  type="email"
-                  placeholder="user@example.com"
-                  required
-                  value={devEmail}
-                  onChange={(e) => setDevEmail(e.target.value)}
-                  className="h-9 text-sm"
-                />
-                {devError && (
-                  <p className="text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded px-2 py-1">
-                    {devError}
-                  </p>
-                )}
-                <Button
-                  type="submit"
-                  size="sm"
-                  variant="outline"
-                  className="w-full border-amber-400/40 text-amber-600 dark:text-amber-400 hover:bg-amber-400/10"
-                  disabled={devLoading}
-                >
-                  {devLoading ? (
-                    <>
-                      <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
-                      Generating token…
-                    </>
-                  ) : (
-                    <>
-                      <Zap className="h-3.5 w-3.5 mr-1.5" />
-                      Magic login (no password)
-                    </>
-                  )}
-                </Button>
-              </motion.form>
-            )}
-          </AnimatePresence>
-        </div>
-      )}
     </motion.div>
   )
 }

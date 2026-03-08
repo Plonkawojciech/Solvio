@@ -34,13 +34,13 @@ async function processAzureOCR(buffer: Buffer, mimeType: string) {
     throw new Error('AZURE_OCR_ENDPOINT or AZURE_OCR_KEY not configured');
   }
 
-  console.log(`[Azure] Starting OCR, buffer size: ${(buffer.length / 1024).toFixed(1)}KB`);
+  log(`[Azure] Starting OCR, buffer size: ${(buffer.length / 1024).toFixed(1)}KB`);
   const startTime = Date.now();
 
   // Krok 1: POST - Wyślij dokument do analizy
   const analyzeUrl = `${AZURE_ENDPOINT}formrecognizer/documentModels/prebuilt-receipt:analyze?api-version=2023-07-31`;
 
-  console.log('[Azure] POST:', analyzeUrl);
+  log('[Azure] POST:', analyzeUrl);
 
   const postResponse = await fetch(analyzeUrl, {
     method: 'POST',
@@ -78,7 +78,7 @@ async function processAzureOCR(buffer: Buffer, mimeType: string) {
     throw new Error('Azure did not return Operation-Location header');
   }
 
-  console.log('[Azure] Operation-Location:', operationLocation);
+  log('[Azure] Operation-Location:', operationLocation);
 
   // Krok 2: Polling - Czekaj na wynik (max 50 prób, co 1 sek = max 50 sek)
   // Vercel ma timeout 60s, więc zostawiamy margines
@@ -88,7 +88,7 @@ async function processAzureOCR(buffer: Buffer, mimeType: string) {
   while (attempts < maxAttempts) {
     attempts++;
     if (attempts % 5 === 0 || attempts <= 3) {
-      console.log(`[Azure] Polling attempt ${attempts}/${maxAttempts}...`);
+      log(`[Azure] Polling attempt ${attempts}/${maxAttempts}...`);
     }
 
     await new Promise(resolve => setTimeout(resolve, 1000)); // Czekaj 1 sek
@@ -109,11 +109,11 @@ async function processAzureOCR(buffer: Buffer, mimeType: string) {
     const result = await getResponse.json();
     const status = result.status;
 
-    console.log(`[Azure] Status: ${status}`);
+    log(`[Azure] Status: ${status}`);
 
     if (status === 'succeeded') {
       const duration = Date.now() - startTime;
-      console.log(`[Azure] ✅ OCR succeeded in ${duration}ms (${attempts} attempts)`);
+      log(`[Azure] ✅ OCR succeeded in ${duration}ms (${attempts} attempts)`);
       return result;
     }
 
@@ -188,7 +188,7 @@ async function extractStoreNameWithGPT(rawText: string): Promise<string | null> 
   }
 
   try {
-    console.log('[GPT Store Extraction] Próbuję wyciągnąć nazwę sklepu z tekstu...');
+    log('[GPT Store Extraction] Próbuję wyciągnąć nazwę sklepu z tekstu...');
 
     const textSample = rawText.substring(0, 1000).trim();
 
@@ -239,11 +239,11 @@ Nazwa sklepu:`,
     const response = completion.choices[0]?.message?.content?.trim() || null;
 
     if (response && response.toLowerCase() !== 'null' && response.length > 1 && response.length < 100) {
-      console.log(`[GPT Store Extraction] ✅ Znaleziono nazwę sklepu: "${response}"`);
+      log(`[GPT Store Extraction] ✅ Znaleziono nazwę sklepu: "${response}"`);
       return response;
     }
 
-    console.log(`[GPT Store Extraction] ❌ Nie znaleziono nazwy sklepu (odpowiedź: "${response}")`);
+    log(`[GPT Store Extraction] ❌ Nie znaleziono nazwy sklepu (odpowiedź: "${response}")`);
     return null;
   } catch (error) {
     console.error('[GPT Store Extraction] Błąd:', error);
@@ -264,13 +264,13 @@ async function extractReceiptData(azureResult: any) {
 
   if (fields.Total?.valueNumber !== undefined && fields.Total?.valueNumber !== null) {
     total = fields.Total.valueNumber;
-    console.log(`[Total Extraction] Użyto Total (kwota finalna): ${total}`);
+    log(`[Total Extraction] Użyto Total (kwota finalna): ${total}`);
   } else if (fields.Total?.valueString && typeof fields.Total.valueString === 'string') {
     try {
       const totalStr = fields.Total.valueString.replace(/[^\d.,-]/g, '').replace(',', '.');
       total = parseFloat(totalStr) || null;
       if (total !== null) {
-        console.log(`[Total Extraction] Użyto Total (kwota finalna) z stringa: ${total}`);
+        log(`[Total Extraction] Użyto Total (kwota finalna) z stringa: ${total}`);
       }
     } catch {
       total = null;
@@ -283,10 +283,10 @@ async function extractReceiptData(azureResult: any) {
 
     if (subtotal !== null && totalTax !== null) {
       total = subtotal + totalTax;
-      console.log(`[Total Extraction] Użyto Subtotal (${subtotal}) + TotalTax (${totalTax}) = ${total}`);
+      log(`[Total Extraction] Użyto Subtotal (${subtotal}) + TotalTax (${totalTax}) = ${total}`);
     } else if (subtotal !== null) {
       total = subtotal;
-      console.log(`[Total Extraction] Użyto Subtotal jako kwota finalna: ${total}`);
+      log(`[Total Extraction] Użyto Subtotal jako kwota finalna: ${total}`);
     }
   }
 
@@ -294,7 +294,7 @@ async function extractReceiptData(azureResult: any) {
     const amountDue = fields.AmountDue?.valueNumber ?? null;
     if (amountDue !== null) {
       total = amountDue;
-      console.log(`[Total Extraction] Użyto AmountDue: ${total}`);
+      log(`[Total Extraction] Użyto AmountDue: ${total}`);
     }
   }
 
@@ -339,7 +339,7 @@ async function extractReceiptData(azureResult: any) {
   const currency = fields.Total?.valueCurrency?.currencyCode ?? 'PLN';
 
   let extractedMerchant = merchant;
-  console.log(`[Store Extraction] Oryginalna nazwa z Azure: "${extractedMerchant}"`);
+  log(`[Store Extraction] Oryginalna nazwa z Azure: "${extractedMerchant}"`);
 
   if (extractedMerchant) {
     extractedMerchant = extractedMerchant
@@ -349,36 +349,36 @@ async function extractReceiptData(azureResult: any) {
   }
 
   if (azureResult.analyzeResult?.content) {
-    console.log(`[Store Extraction] 🔍 Wysyłam do GPT do weryfikacji nazwy sklepu...`);
+    log(`[Store Extraction] 🔍 Wysyłam do GPT do weryfikacji nazwy sklepu...`);
     const gptStoreName = await extractStoreNameWithGPT(azureResult.analyzeResult.content);
 
     if (gptStoreName && gptStoreName !== 'Unknown Store' && gptStoreName.toLowerCase() !== 'null') {
       merchant = gptStoreName;
-      console.log(`[Store Extraction] ✅ GPT zweryfikował i poprawił nazwę sklepu: "${merchant}"`);
+      log(`[Store Extraction] ✅ GPT zweryfikował i poprawił nazwę sklepu: "${merchant}"`);
     } else if (extractedMerchant && extractedMerchant.length >= 2) {
       merchant = normalizeStoreName(extractedMerchant);
-      console.log(`[Store Extraction] GPT nie znalazło, używam znormalizowanej nazwy z Azure: "${merchant}"`);
+      log(`[Store Extraction] GPT nie znalazło, używam znormalizowanej nazwy z Azure: "${merchant}"`);
     } else {
       merchant = 'Unknown Store';
-      console.log(`[Store Extraction] ❌ Nie znaleziono nazwy sklepu`);
+      log(`[Store Extraction] ❌ Nie znaleziono nazwy sklepu`);
     }
   } else if (extractedMerchant && extractedMerchant.length >= 2) {
     merchant = normalizeStoreName(extractedMerchant);
-    console.log(`[Store Extraction] Brak rawText, używam znormalizowanej nazwy: "${merchant}"`);
+    log(`[Store Extraction] Brak rawText, używam znormalizowanej nazwy: "${merchant}"`);
   } else {
     merchant = 'Unknown Store';
-    console.log(`[Store Extraction] ❌ Brak danych do ekstrakcji nazwy sklepu`);
+    log(`[Store Extraction] ❌ Brak danych do ekstrakcji nazwy sklepu`);
   }
 
   if (merchant && merchant !== 'Unknown Store') {
     const finalNormalized = normalizeStoreName(merchant);
     if (finalNormalized !== merchant && finalNormalized !== 'Unknown Store') {
       merchant = finalNormalized;
-      console.log(`[Store Normalization] ✅ Finalna normalizacja: "${merchant}"`);
+      log(`[Store Normalization] ✅ Finalna normalizacja: "${merchant}"`);
     }
   }
 
-  console.log(`[Store Extraction] ✅ Finalna nazwa sklepu: "${merchant}"`);
+  log(`[Store Extraction] ✅ Finalna nazwa sklepu: "${merchant}"`);
 
   const items: Array<{
     name: string;
