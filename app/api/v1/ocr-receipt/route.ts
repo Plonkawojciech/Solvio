@@ -884,13 +884,13 @@ export async function POST(req: NextRequest) {
             });
             continue;
           } else {
-            console.log(`[File ${i + 1}] [Duplicate Check] ⚠️ Receipt exists but was deleted - allowing re-upload`);
+            log(`[File ${i + 1}] [Duplicate Check] ⚠️ Receipt exists but was deleted - allowing re-upload`);
           }
         }
 
-        console.log(`[File ${i + 1}] [Duplicate Check] ✅ No active duplicates found`);
+        log(`[File ${i + 1}] [Duplicate Check] ✅ No active duplicates found`);
 
-        console.log(`\n[File ${i + 1}] 💾 Saving to database...\n`);
+        log(`[File ${i + 1}] 💾 Saving to database...`);
 
         // 8. Update receipt record
         await db.update(receipts)
@@ -905,7 +905,7 @@ export async function POST(req: NextRequest) {
           })
           .where(and(eq(receipts.id, currentReceiptId), eq(receipts.userId, userId)));
 
-        console.log(`[File ${i + 1}] ✅ Receipt updated`);
+        log(`[File ${i + 1}] ✅ Receipt updated`);
 
         // 9. Delete old expenses for this receipt
         await db.delete(expenses).where(
@@ -926,21 +926,21 @@ export async function POST(req: NextRequest) {
           categoryId: null,
         });
 
-        console.log(`[File ${i + 1}] ✅ Expense created`);
+        log(`[File ${i + 1}] ✅ Expense created`);
 
         // 11. KATEGORIE W TLE (nie czekamy!)
         const categoriesForCategorization = cats || [];
-        console.log(`[File ${i + 1}] [Background] Starting categorization for ${items.length} items with ${categoriesForCategorization.length} categories...`);
+        log(`[File ${i + 1}] [Background] Starting categorization for ${items.length} items...`);
 
         categorizeAllItems(items, categoriesForCategorization.map(c => ({ id: c.id, name: c.name })))
           .then(async (categorizedItems) => {
-            console.log(`[File ${i + 1}] [Background] Kategorie gotowe - aktualizacja...`);
+            log(`[File ${i + 1}] [Background] ✅ Kategorie gotowe - aktualizacja...`);
 
             await db.update(receipts)
               .set({ items: categorizedItems as any })
               .where(eq(receipts.id, currentReceiptId));
 
-            console.log(`[File ${i + 1}] [Background] ✅ Kategorie zapisane!`);
+            log(`[File ${i + 1}] [Background] ✅ Kategorie zapisane!`);
           })
           .catch((err) => {
             console.error(`[File ${i + 1}] [Background] ❌ Category error:`, err);
@@ -986,7 +986,7 @@ export async function POST(req: NextRequest) {
           },
         });
 
-        console.log(`[File ${i + 1}] ✅ SUCCESS!\n`);
+        log(`[File ${i + 1}] ✅ SUCCESS!`);
 
       } catch (fileError) {
         console.error(`[File ${i + 1}] ❌ ERROR:`, fileError);
@@ -1039,10 +1039,7 @@ export async function POST(req: NextRequest) {
     }, criticalError ? 400 : 200);
 
   } catch (error) {
-    console.error('\n========================================');
-    console.error('❌ ERROR');
-    console.error('========================================\n');
-    console.error('Error:', error);
+    console.error('[OCR] ❌ Unhandled error:', error);
 
     // Mark receipt as failed
     if (receiptId && userId) {

@@ -23,13 +23,11 @@ async function convertHeicToJpeg(buffer: Buffer): Promise<Buffer> {
   const heicConvert = await loadHeicConvert();
   if (heicConvert) {
     try {
-      console.log('[ConvertHEIC] Using heic-convert for HEIC conversion...');
       const outputBuffer = await heicConvert({
         buffer: buffer,
         format: 'JPEG',
         quality: 0.9,
       });
-      console.log('[ConvertHEIC] Successfully converted HEIC to JPEG using heic-convert');
       return Buffer.isBuffer(outputBuffer) 
         ? outputBuffer 
         : Buffer.from(outputBuffer);
@@ -41,11 +39,9 @@ async function convertHeicToJpeg(buffer: Buffer): Promise<Buffer> {
 
   // Fallback: spróbuj użyć sharp (może nie działać dla HEIC)
   try {
-    console.log('[ConvertHEIC] Attempting HEIC conversion with sharp...');
     const converted = await sharp(buffer)
       .jpeg({ quality: 90 })
       .toBuffer();
-    console.log('[ConvertHEIC] Successfully converted HEIC to JPEG using sharp');
     return converted;
   } catch (error) {
     console.error('[ConvertHEIC] Sharp HEIC conversion error:', error);
