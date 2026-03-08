@@ -1,6 +1,6 @@
 import { AppSidebar } from '@/components/protected/main/sidebar'
 import { SidebarProvider } from '@/components/ui/sidebar'
-import { auth } from '@clerk/nextjs/server'
+import { getSession } from '@/lib/session'
 import { redirect } from 'next/navigation'
 import { Toaster } from 'sonner'
 import { ensureUserSeeded } from '@/lib/db/seed-user'
@@ -8,7 +8,8 @@ import { AppMobileHeader } from '@/components/protected/main/app-mobile-header'
 import { KeyboardShortcuts } from '@/components/protected/main/keyboard-shortcuts'
 
 export default async function ProtectedLayout({ children }: { children: React.ReactNode }) {
-  const { userId } = await auth()
+  const session = await getSession()
+  const userId = session?.userId
   if (!userId) redirect('/login')
 
   // Seed default categories if first login

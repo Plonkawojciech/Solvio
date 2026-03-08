@@ -1,4 +1,4 @@
-import { auth } from '@clerk/nextjs/server'
+import { auth } from '@/lib/auth-compat'
 import { NextResponse } from 'next/server'
 import { db, categories, userSettings, categoryBudgets } from '@/lib/db'
 import { eq } from 'drizzle-orm'

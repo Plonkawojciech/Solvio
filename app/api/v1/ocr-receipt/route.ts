@@ -1,6 +1,6 @@
 // app/api/v1/ocr-receipt/route.ts - Azure Document Intelligence
 import { NextRequest } from 'next/server';
-import { auth } from '@clerk/nextjs/server';
+import { auth } from '@/lib/auth-compat';
 import { db, receipts, expenses, categories } from '@/lib/db';
 import { eq, and } from 'drizzle-orm';
 import { put } from '@vercel/blob';

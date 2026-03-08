@@ -1,9 +1,9 @@
-import { clerkClient } from '@clerk/nextjs/server'
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
+import { SESSION_COOKIE } from '@/lib/session'
 
-// Dev-only magic login: creates a one-use Clerk sign-in token for any existing user by email.
+// Dev-only magic login: sets a session cookie for any email directly.
 // Only enabled when NEXT_PUBLIC_DEV_MAGIC_LOGIN=true OR NODE_ENV=development.
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
   const isDev =
     process.env.NEXT_PUBLIC_DEV_MAGIC_LOGIN === 'true' ||
     process.env.NODE_ENV === 'development'
@@ -13,25 +13,18 @@ export async function POST(req: Request) {
   }
 
   const { email } = await req.json()
-  if (!email || typeof email !== 'string') {
-    return NextResponse.json({ error: 'Email required' }, { status: 400 })
+  if (!email || typeof email !== 'string' || !email.includes('@')) {
+    return NextResponse.json({ error: 'Valid email required' }, { status: 400 })
   }
 
-  const client = await clerkClient()
-
-  const users = await client.users.getUserList({ emailAddress: [email.trim()] })
-  if (!users.data.length) {
-    return NextResponse.json({ error: 'No user found with that email' }, { status: 404 })
-  }
-
-  const user = users.data[0]
-
-  // One-use token, valid for 10 minutes
-  const signInToken = await client.signInTokens.createSignInToken({
-    userId: user.id,
-    expiresInSeconds: 600,
+  const payload = Buffer.from(JSON.stringify({ email: email.trim().toLowerCase() })).toString('base64')
+  const res = NextResponse.json({ ok: true })
+  res.cookies.set(SESSION_COOKIE, payload, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    maxAge: 60 * 60 * 24 * 30,
+    path: '/',
   })
-
-  // signInToken.url is the ready-to-use Clerk redirect URL that includes the ticket param
-  return NextResponse.json({ url: signInToken.url })
+  return res
 }

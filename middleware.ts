@@ -1,24 +1,19 @@
-import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server'
+import { NextRequest, NextResponse } from 'next/server'
 
-const isProtectedRoute = createRouteMatcher([
-  '/dashboard(.*)',
-  '/expenses(.*)',
-  '/analysis(.*)',
-  '/audit(.*)',
-  '/reports(.*)',
-  '/settings(.*)',
-  '/groups(.*)',
-  '/prices(.*)',
-])
+const PROTECTED = ['/dashboard', '/expenses', '/analysis', '/audit', '/reports', '/settings', '/groups', '/prices']
+const SESSION_COOKIE = 'solvio_session'
 
-export default clerkMiddleware(async (auth, req) => {
-  if (isProtectedRoute(req)) {
-    await auth.protect()
+export function middleware(req: NextRequest) {
+  const { pathname } = req.nextUrl
+  const isProtected = PROTECTED.some(p => pathname === p || pathname.startsWith(p + '/'))
+  if (!isProtected) return NextResponse.next()
+  const session = req.cookies.get(SESSION_COOKIE)?.value
+  if (!session) {
+    return NextResponse.redirect(new URL('/login', req.url))
   }
-})
+  return NextResponse.next()
+}
 
 export const config = {
-  matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|api/clerk-proxy|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
-  ],
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|api|receipt|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)'],
 }

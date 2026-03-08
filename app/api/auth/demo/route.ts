@@ -1,33 +1,18 @@
-import { clerkClient } from '@clerk/nextjs/server'
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
+import { SESSION_COOKIE } from '@/lib/session'
 
 const DEMO_EMAIL = 'demo@solvio.app'
 
-// Demo login: looks up demo@solvio.app in Clerk, creates a one-use sign-in token,
-// and redirects the user directly to the Clerk token URL — no 2FA required.
-export async function GET(request: Request) {
-  try {
-    const client = await clerkClient()
-
-    const users = await client.users.getUserList({ emailAddress: [DEMO_EMAIL] })
-
-    if (!users.data.length) {
-      // Demo account not found — fall back to login with an error param
-      return NextResponse.redirect(new URL('/login?error=demo_unavailable', request.url))
-    }
-
-    const user = users.data[0]
-
-    // One-use token valid for 10 minutes
-    const signInToken = await client.signInTokens.createSignInToken({
-      userId: user.id,
-      expiresInSeconds: 600,
-    })
-
-    // signInToken.url is the Clerk-hosted URL that exchanges the ticket for a session
-    return NextResponse.redirect(signInToken.url)
-  } catch (err) {
-    console.error('[demo-login] error:', err)
-    return NextResponse.redirect(new URL('/login?error=demo_unavailable', request.url))
-  }
+// Demo login: sets a session cookie for the demo account directly, no verification needed.
+export async function GET(request: NextRequest) {
+  const payload = Buffer.from(JSON.stringify({ email: DEMO_EMAIL })).toString('base64')
+  const res = NextResponse.redirect(new URL('/dashboard', request.url))
+  res.cookies.set(SESSION_COOKIE, payload, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    maxAge: 60 * 60 * 24 * 30,
+    path: '/',
+  })
+  return res
 }

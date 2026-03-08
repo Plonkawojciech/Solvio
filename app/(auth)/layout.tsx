@@ -1,5 +1,5 @@
 import type { Metadata } from "next"
-import { auth } from "@clerk/nextjs/server"
+import { getSession } from "@/lib/session"
 import { redirect } from "next/navigation"
 
 export const metadata: Metadata = {
@@ -7,8 +7,8 @@ export const metadata: Metadata = {
 }
 
 export default async function AuthLayout({ children }: { children: React.ReactNode }) {
-  const { userId } = await auth()
-  if (userId) redirect("/dashboard")
+  const session = await getSession()
+  if (session?.userId) redirect("/dashboard")
 
   return (
     <div className="min-h-svh bg-background text-foreground">

@@ -1,8 +1,8 @@
 'use client'
 
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useUser, useClerk } from '@clerk/nextjs'
 import {
   Sidebar,
   SidebarContent,
@@ -46,13 +46,21 @@ const items = [
 export function AppSidebar() {
   const { t, lang, mounted } = useTranslation()
   const pathname = usePathname()
-  const { user } = useUser()
-  const { signOut } = useClerk()
+  const [userEmail, setUserEmail] = useState('')
 
-  const displayName = user?.fullName || user?.firstName || user?.emailAddresses?.[0]?.emailAddress?.split('@')[0] || 'User'
-  const email = user?.emailAddresses?.[0]?.emailAddress || ''
-  const avatarUrl = user?.imageUrl || ''
+  useEffect(() => {
+    setUserEmail(localStorage.getItem('solvio_email') || '')
+  }, [])
+
+  const displayName = userEmail.split('@')[0] || 'User'
+  const email = userEmail
   const initials = displayName.slice(0, 2).toUpperCase()
+
+  const handleSignOut = async () => {
+    await fetch('/api/auth/session', { method: 'DELETE' })
+    localStorage.removeItem('solvio_email')
+    window.location.href = '/login'
+  }
 
   return (
     <Sidebar>
@@ -94,12 +102,7 @@ export function AppSidebar() {
         {/* User info */}
         <div className="flex items-center gap-2.5 px-1 py-1 rounded-lg hover:bg-muted/50 transition-colors">
           <div className="h-8 w-8 shrink-0 rounded-full overflow-hidden bg-primary/10 flex items-center justify-center">
-            {avatarUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={avatarUrl} alt={displayName} className="h-full w-full object-cover" />
-            ) : (
-              <span className="text-xs font-semibold text-primary">{initials}</span>
-            )}
+            <span className="text-xs font-semibold text-primary">{initials}</span>
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium truncate leading-tight">{displayName}</p>
@@ -125,7 +128,7 @@ export function AppSidebar() {
           variant="ghost"
           size="sm"
           className="w-full justify-start text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
-          onClick={() => signOut({ redirectUrl: '/login' })}
+          onClick={handleSignOut}
         >
           <LogOut className="h-4 w-4 mr-2" />
           <span suppressHydrationWarning>{t('nav.signOut')}</span>

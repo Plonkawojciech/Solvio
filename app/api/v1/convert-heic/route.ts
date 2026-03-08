@@ -1,6 +1,6 @@
 // app/api/v1/convert-heic/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@clerk/nextjs/server';
+import { auth } from '@/lib/auth-compat';
 import sharp from 'sharp';
 
 export const runtime = 'nodejs';
