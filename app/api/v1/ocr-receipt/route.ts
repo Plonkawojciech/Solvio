@@ -464,15 +464,10 @@ async function extractReceiptData(azureResult: any) {
   }
 
   if (items.length === 0 && azureResult.analyzeResult?.content) {
-    console.log('[Azure] No items found in structured data, trying to extract from raw text...');
+    log('[Azure] No items found in structured data, trying to extract from raw text...');
   }
 
-  console.log('[Azure] Extracted data:');
-  console.log(`  Merchant: ${merchant}`);
-  console.log(`  Total: ${total} ${currency}`);
-  console.log(`  Date: ${date}`);
-  console.log(`  Time: ${time}`);
-  console.log(`  Items: ${items.length} produktów`);
+  log(`[Azure] Extracted data: Merchant="${merchant}", Total=${total} ${currency}, Date=${date}, Items=${items.length}`);
 
   return { total, merchant, date, time, currency, items };
 }
@@ -493,12 +488,12 @@ async function categorizeAllItems(
   }
 
   if (items.length === 0) {
-    console.log('[GPT] No items to categorize');
+    log('[GPT] No items to categorize');
     return items.map(item => ({ ...item, category_id: null }));
   }
 
   try {
-    console.log(`[GPT] 🎯 Kategoryzacja ${items.length} produktów (batch)...`);
+    log(`[GPT] 🎯 Kategoryzacja ${items.length} produktów (batch)...`);
 
     const validCategories = cats.filter(c => c.id && c.name);
     if (validCategories.length === 0) {
@@ -511,7 +506,7 @@ async function categorizeAllItems(
     const categoryMap = categoriesToUse.map(c => `${c.name}: ${c.id}`).join('\n');
     const itemsList = items.map((item, idx) => `${idx + 1}. ${item.name}`).join('\n');
 
-    console.log(`[GPT] Sending request to OpenAI (model: gpt-4o, items: ${items.length}, categories: ${categoriesToUse.length})...`);
+    log(`[GPT] Sending request to OpenAI (model: gpt-4o, items: ${items.length}, categories: ${categoriesToUse.length})...`);
 
     const startTime = Date.now();
     const completion = await openai.chat.completions.create({
@@ -573,7 +568,7 @@ Zwróć TYLKO tablicę JSON: ["uuid1", "uuid2", null, "uuid3", ...]`
     });
 
     const duration = Date.now() - startTime;
-    console.log(`[GPT] ✅ OpenAI response received in ${duration}ms`);
+    log(`[GPT] ✅ OpenAI response received in ${duration}ms`);
 
     const result = completion.choices[0]?.message?.content?.trim() ?? null;
     if (!result) {
@@ -598,7 +593,7 @@ Zwróć TYLKO tablicę JSON: ["uuid1", "uuid2", null, "uuid3", ...]`
     let categoryIds: (string | null)[] = [];
     try {
       categoryIds = JSON.parse(jsonStr) as (string | null)[];
-      console.log(`[GPT] ✅ Parsed ${categoryIds.length} category IDs`);
+      log(`[GPT] ✅ Parsed ${categoryIds.length} category IDs`);
 
       const validCategoryIds = categoryIds.filter(id =>
         id === null || (typeof id === 'string' && categoriesToUse.some(c => c.id === id))
@@ -617,7 +612,7 @@ Zwróć TYLKO tablicę JSON: ["uuid1", "uuid2", null, "uuid3", ...]`
         const arrayMatch = result.match(/\[[\s\S]*?\]/);
         if (arrayMatch) {
           categoryIds = JSON.parse(arrayMatch[0]) as (string | null)[];
-          console.log('[GPT] ✅ Recovered JSON using fallback extraction');
+          log('[GPT] ✅ Recovered JSON using fallback extraction');
         } else {
           throw new Error('No JSON array found in response');
         }
@@ -645,7 +640,7 @@ Zwróć TYLKO tablicę JSON: ["uuid1", "uuid2", null, "uuid3", ...]`
     });
 
     const assignedCount = categorized.filter(c => c.category_id !== null).length;
-    console.log(`[GPT] ✅ Assigned categories to ${assignedCount}/${items.length} items`);
+    log(`[GPT] ✅ Assigned categories to ${assignedCount}/${items.length} items`);
 
     return categorized;
 
@@ -657,9 +652,7 @@ Zwróć TYLKO tablicę JSON: ["uuid1", "uuid2", null, "uuid3", ...]`
 
 // --- GŁÓWNY ENDPOINT ---
 export async function POST(req: NextRequest) {
-  console.log('\n========================================');
-  console.log('🧾 AZURE DOCUMENT INTELLIGENCE OCR');
-  console.log('========================================\n');
+  log('\n[OCR] 🧾 AZURE DOCUMENT INTELLIGENCE OCR - request received');
 
   // AUTH CHECK
   const { userId: authUserId } = await auth();
@@ -683,7 +676,7 @@ export async function POST(req: NextRequest) {
     }, 500);
   }
 
-  console.log('[OCR] ✅ Environment variables verified');
+  log('[OCR] ✅ Environment variables verified');
 
   let receiptId: string | null = null;
   let userId: string | null = authUserId;
@@ -694,10 +687,7 @@ export async function POST(req: NextRequest) {
     receiptId = form.get('receiptId') as string;
     const files = form.getAll('files') as File[];
 
-    console.log('[OCR] Form data received:');
-    console.log('  receiptId:', receiptId);
-    console.log('  userId:', userId);
-    console.log('  files count:', files.length);
+    log(`[OCR] Form data received: receiptId=${receiptId}, files=${files.length}`);
 
     if (!files.length) {
       console.error('[OCR] Missing required field: files');
@@ -714,20 +704,16 @@ export async function POST(req: NextRequest) {
         return json({ error: 'Failed to create receipt record' }, 500);
       }
       receiptId = newReceipt.id;
-      console.log(`[OCR] Auto-created receipt ID: ${receiptId}`);
+      log(`[OCR] Auto-created receipt ID: ${receiptId}`);
     }
 
-    console.log(`📄 Receipt ID: ${receiptId}`);
-    console.log(`👤 User ID: ${userId}`);
-    console.log(`📎 Files: ${files.length}\n`);
+    log(`[OCR] Processing ${files.length} file(s) for receipt ${receiptId}`);
 
     // 2. Pobierz kategorie
     const cats = await db.select().from(categories).where(eq(categories.userId, userId));
 
-    console.log(`[OCR] ✅ Loaded ${cats?.length || 0} categories`);
-    if (cats && cats.length > 0) {
-      console.log(`[OCR] Categories: ${cats.map(c => c.name).join(', ')}`);
-    } else {
+    log(`[OCR] ✅ Loaded ${cats?.length || 0} categories`);
+    if (!cats || cats.length === 0) {
       console.warn('[OCR] ⚠️ No categories found in database!');
     }
 
@@ -737,9 +723,7 @@ export async function POST(req: NextRequest) {
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
-      console.log(`\n========================================`);
-      console.log(`📦 Processing file ${i + 1}/${files.length}: ${file.name}`);
-      console.log(`========================================\n`);
+      log(`[OCR] 📦 Processing file ${i + 1}/${files.length}: ${file.name}`);
 
       // Dla kolejnych plików, utwórz nowy receipt
       if (i > 0) {
@@ -755,7 +739,7 @@ export async function POST(req: NextRequest) {
         }
 
         currentReceiptId = newReceipt.id;
-        console.log(`[File ${i + 1}] Created new receipt ID: ${currentReceiptId}`);
+        log(`[File ${i + 1}] Created new receipt ID: ${currentReceiptId}`);
       }
 
       try {
@@ -825,7 +809,7 @@ export async function POST(req: NextRequest) {
           continue;
         }
 
-        console.log(`[File ${i + 1}] File type: ${mimeType}, size: ${(buffer.length / 1024).toFixed(1)}KB`);
+        log(`[File ${i + 1}] File type: ${mimeType}, size: ${(buffer.length / 1024).toFixed(1)}KB`);
 
         // Basic image header validation
         if (mimeType.startsWith('image/')) {
@@ -848,7 +832,7 @@ export async function POST(req: NextRequest) {
             contentType: mimeType,
           });
           imageUrl = blobResult.url;
-          console.log(`[File ${i + 1}] ✅ Uploaded to Blob: ${imageUrl}`);
+          log(`[File ${i + 1}] ✅ Uploaded to Blob: ${imageUrl}`);
         } catch (blobErr) {
           console.warn(`[File ${i + 1}] ⚠️ Blob upload failed (non-fatal):`, blobErr);
         }
@@ -863,7 +847,7 @@ export async function POST(req: NextRequest) {
         const finalMerchant = merchant || 'Unknown Store';
 
         // 7. WYKRYWANIE DUPLIKATÓW
-        console.log(`[File ${i + 1}] [Duplicate Check] Checking for duplicates...`);
+        log(`[File ${i + 1}] [Duplicate Check] Checking for duplicates...`);
 
         const existingReceipts = await db.select().from(receipts)
           .where(and(
@@ -887,7 +871,7 @@ export async function POST(req: NextRequest) {
             .limit(1);
 
           if (existingExpenses.length > 0) {
-            console.log(`[File ${i + 1}] [Duplicate Check] ❌ DUPLICATE FOUND!`);
+            log(`[File ${i + 1}] [Duplicate Check] ❌ DUPLICATE FOUND!`);
 
             // Delete current receipt (duplicate)
             await db.delete(receipts).where(eq(receipts.id, currentReceiptId));
