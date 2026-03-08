@@ -135,7 +135,7 @@ export function SplitExpenseSheet({
       return
     }
 
-    const splits = members.map((m, idx) => ({
+    const splits = members.map((m) => ({
       memberId: m.id,
       amount:
         splitMethod === 'equal'

@@ -317,7 +317,7 @@ export default function GroupDetailPage() {
       >
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-base">{t('groups.addMembers')}</CardTitle>
+            <CardTitle className="text-base">{t('groups.membersTitle')}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="flex flex-wrap gap-3">
