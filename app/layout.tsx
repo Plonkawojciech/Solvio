@@ -1,27 +1,35 @@
-import type { Metadata } from "next";
-import { Geist } from "next/font/google";
-import { ThemeProvider } from "next-themes";
-import "./globals.css";
+import type { Metadata } from "next"
+import { Geist } from "next/font/google"
+import { ThemeProvider } from "next-themes"
+import { ClerkProvider } from "@clerk/nextjs"
+import "./globals.css"
 
-const defaultUrl = process.env.NEXT_PUBLIC_APP_URL || 
-  (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
+const defaultUrl = process.env.NEXT_PUBLIC_APP_URL ||
+  (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000")
 
 export const metadata: Metadata = {
   metadataBase: new URL(defaultUrl),
-  title: "Solvio",
-  description: "The fastest way to build apps with Next.js and Supabase",
-};
+  title: "Solvio — Smart finance for humans",
+  description: "AI-powered expense tracking with receipt scanning",
+}
 
-const geistSans = Geist({ variable: "--font-geist-sans", display: "swap", subsets: ["latin"] });
+const geistSans = Geist({ variable: "--font-geist-sans", display: "swap", subsets: ["latin"] })
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" suppressHydrationWarning>
-      <body className={`${geistSans.className} antialiased`}>
-        <ThemeProvider attribute="class" defaultTheme="light" enableSystem disableTransitionOnChange>
-          {children}
-        </ThemeProvider>
-      </body>
-    </html>
-  );
+    <ClerkProvider
+      signInUrl="/login"
+      signUpUrl="/sign-up"
+      signInForceRedirectUrl="/dashboard"
+      signUpForceRedirectUrl="/dashboard"
+    >
+      <html lang="en" suppressHydrationWarning>
+        <body className={`${geistSans.className} antialiased`}>
+          <ThemeProvider attribute="class" defaultTheme="light" enableSystem disableTransitionOnChange>
+            {children}
+          </ThemeProvider>
+        </body>
+      </html>
+    </ClerkProvider>
+  )
 }

@@ -1,38 +1,15 @@
-import { createClient } from "@/lib/supabase/server";
-import { type EmailOtpType } from "@supabase/supabase-js";
-import { redirect } from "next/navigation";
-import { type NextRequest } from "next/server";
+import { redirect } from 'next/navigation'
+import { type NextRequest } from 'next/server'
 
+// Clerk handles email verification automatically via its SDK.
+// This route handles legacy/fallback redirect for any email links.
 export async function GET(request: NextRequest) {
-  const { searchParams } = new URL(request.url);
-  const token_hash = searchParams.get("token_hash");
-  const type = searchParams.get("type") as EmailOtpType | null;
-  const next = searchParams.get("next") ?? "/";
+  const { searchParams } = new URL(request.url)
+  const type = searchParams.get('type')
 
-  if (token_hash && type) {
-    const supabase = await createClient();
-
-    const { error } = await supabase.auth.verifyOtp({
-      type,
-      token_hash,
-    });
-    if (!error) {
-      // For signup confirmation, redirect to login or welcome
-      if (type === 'signup') {
-        redirect('/login?message=Email confirmed. Please sign in.');
-      }
-      // For recovery, redirect to update-password
-      if (type === 'recovery') {
-        redirect('/update-password');
-      }
-      // For other types, redirect to specified URL or root
-      redirect(next);
-    } else {
-      // redirect the user to an error page with some instructions
-      redirect(`/error?error=${encodeURIComponent(error?.message || 'Verification failed')}`);
-    }
+  if (type === 'recovery') {
+    redirect('/forgot-password')
   }
 
-  // redirect the user to an error page with some instructions
-  redirect(`/error?error=${encodeURIComponent('No token hash or type')}`);
+  redirect('/login?message=Email+confirmed')
 }

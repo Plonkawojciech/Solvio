@@ -1,150 +1,71 @@
-'use client'
+"use client"
 
-import { cn } from '@/lib/utils'
-import { createClient } from '@/lib/supabase/client'
-import { Button } from '@/components/ui/button'
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import Link from 'next/link'
-import { useRouter } from 'next/navigation'
-import { useState } from 'react'
+import { useEffect } from "react"
+import Link from "next/link"
+import { useRouter } from "next/navigation"
+import { motion } from "framer-motion"
+import { Button } from "@/components/ui/button"
+import { Wallet, Mail } from "lucide-react"
+import { useTranslation } from "@/lib/i18n"
 
-type SignUpFormProps = React.ComponentPropsWithoutRef<'div'> & {
-  initialEmail?: string
-}
-
-export function SignUpForm({
-  className,
-  initialEmail = '',
-  ...props
-}: SignUpFormProps) {
-  const [email, setEmail] = useState(initialEmail)
-  const [password, setPassword] = useState('')
-  const [repeatPassword, setRepeatPassword] = useState('')
-  const [error, setError] = useState<string | null>(null)
-  const [isLoading, setIsLoading] = useState(false)
+// Sign-up and sign-in use the same email OTP flow on the login page.
+// This component redirects immediately so existing /sign-up links still work.
+export function SignUpForm() {
   const router = useRouter()
+  const { lang } = useTranslation()
+  const pl = lang === "pl"
 
-  const handleSignUp = async (e: React.FormEvent) => {
-    e.preventDefault()
-    const supabase = createClient()
-    setIsLoading(true)
-    setError(null)
-
-    // Validate password match
-    if (password !== repeatPassword) {
-      setError('Passwords do not match')
-      setIsLoading(false)
-      return
-    }
-
-    // Validate password strength
-    if (password.length < 6) {
-      setError('Password must be at least 6 characters long')
-      setIsLoading(false)
-      return
-    }
-
-    try {
-      const origin = typeof window !== 'undefined' ? window.location.origin : ''
-      const { data, error } = await supabase.auth.signUp({
-        email: email.trim(),
-        password,
-        options: {
-          emailRedirectTo: `${origin}/confirm?type=signup&next=/login`,
-        },
-      })
-      
-      if (error) {
-        throw error
-      }
-
-      // Check if email confirmation is required
-      if (data.user && !data.session) {
-        // Email confirmation required
-        router.push('/sign-up-success')
-      } else if (data.session) {
-        // Auto-confirmed, redirect to dashboard
-        router.refresh()
-        router.push('/dashboard')
-      } else {
-        // Fallback
-        router.push('/sign-up-success')
-      }
-    } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 'An error occurred'
-      setError(errorMessage)
-    } finally {
-      setIsLoading(false)
-    }
-  }
+  useEffect(() => {
+    // Small delay so the animation plays before redirect
+    const t = setTimeout(() => router.replace("/login"), 1800)
+    return () => clearTimeout(t)
+  }, [router])
 
   return (
-    <div className={cn('flex flex-col gap-6', className)} {...props}>
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-2xl">Sign up</CardTitle>
-          <CardDescription>Create a new account</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSignUp}>
-            <div className="flex flex-col gap-6">
-              <div className="grid gap-2">
-                <Label htmlFor="email">Email</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="m@example.com"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                />
-              </div>
-              <div className="grid gap-2">
-                <div className="flex items-center">
-                  <Label htmlFor="password">Password</Label>
-                </div>
-                <Input
-                  id="password"
-                  type="password"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                />
-              </div>
-              <div className="grid gap-2">
-                <div className="flex items-center">
-                  <Label htmlFor="repeat-password">Repeat Password</Label>
-                </div>
-                <Input
-                  id="repeat-password"
-                  type="password"
-                  required
-                  value={repeatPassword}
-                  onChange={(e) => setRepeatPassword(e.target.value)}
-                />
-              </div>
-              {error && <p className="text-sm text-red-500">{error}</p>}
-              <Button type="submit" className="w-full" disabled={isLoading}>
-                {isLoading ? 'Creating an account...' : 'Sign up'}
-              </Button>
-            </div>
-            <div className="mt-4 text-center text-sm">
-              Already have an account?{' '}
-              <Link href="/login" className="underline underline-offset-4">
-                Login
-              </Link>
-            </div>
-          </form>
-        </CardContent>
-      </Card>
-    </div>
+    <motion.div
+      initial={{ opacity: 0, y: 24 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -16 }}
+      transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
+      className="w-full text-center"
+    >
+      {/* Logo */}
+      <div className="flex items-center justify-center gap-2.5 mb-10">
+        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-lg shadow-primary/30">
+          <Wallet className="h-4.5 w-4.5" />
+        </div>
+        <span className="text-xl font-bold">Solvio</span>
+      </div>
+
+      <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 mx-auto mb-6">
+        <Mail className="h-7 w-7 text-primary" />
+      </div>
+
+      <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight mb-3">
+        {pl ? "Utwórz konto" : "Create your account"}
+      </h1>
+
+      <p className="text-sm text-muted-foreground mb-2">
+        {pl
+          ? "Rejestracja odbywa się przez e-mail — bez hasła."
+          : "Sign-up is handled via email — no password needed."}
+      </p>
+
+      <p className="text-sm text-muted-foreground mb-8">
+        {pl ? "Przekierowujemy Cię do strony logowania…" : "Redirecting you to the login page…"}
+      </p>
+
+      <Button asChild className="w-full h-11 font-semibold">
+        <Link href="/login">
+          {pl ? "Przejdź do logowania" : "Go to login"}
+        </Link>
+      </Button>
+
+      <p className="text-xs text-muted-foreground mt-6">
+        {pl
+          ? "Jeśli masz już konto, po prostu wpisz swój e-mail — system rozpozna Cię automatycznie."
+          : "If you already have an account, just enter your email — the system will recognise you automatically."}
+      </p>
+    </motion.div>
   )
 }

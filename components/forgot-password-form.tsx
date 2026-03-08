@@ -1,106 +1,59 @@
-"use client";
+"use client"
 
-import { cn } from "@/lib/utils";
-import { createClient } from "@/lib/supabase/client";
-import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import Link from "next/link";
-import { useState } from "react";
+import Link from "next/link"
+import { motion } from "framer-motion"
+import { Button } from "@/components/ui/button"
+import { Wallet, Mail, ArrowLeft } from "lucide-react"
+import { useTranslation } from "@/lib/i18n"
 
-export function ForgotPasswordForm({
-  className,
-  ...props
-}: React.ComponentPropsWithoutRef<"div">) {
-  const [email, setEmail] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-
-  const handleForgotPassword = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const supabase = createClient();
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      // The url which will be included in the email. This URL needs to be configured in your redirect URLs in the Supabase dashboard at https://supabase.com/dashboard/project/_/auth/url-configuration
-      const origin = typeof window !== 'undefined' ? window.location.origin : ''
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${origin}/update-password`,
-      });
-      if (error) throw error;
-      setSuccess(true);
-    } catch (error: unknown) {
-      setError(error instanceof Error ? error.message : "An error occurred");
-    } finally {
-      setIsLoading(false);
-    }
-  };
+// Forgot password is no longer relevant — there are no passwords.
+// Users authenticate with email OTP from the login page.
+export function ForgotPasswordForm() {
+  const { lang } = useTranslation()
+  const pl = lang === "pl"
 
   return (
-    <div className={cn("flex flex-col gap-6", className)} {...props}>
-      {success ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-2xl">Check Your Email</CardTitle>
-            <CardDescription>Password reset instructions sent</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground">
-              If you registered using your email and password, you will receive
-              a password reset email.
-            </p>
-          </CardContent>
-        </Card>
-      ) : (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-2xl">Reset Your Password</CardTitle>
-            <CardDescription>
-              Type in your email and we&apos;ll send you a link to reset your
-              password
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleForgotPassword}>
-              <div className="flex flex-col gap-6">
-                <div className="grid gap-2">
-                  <Label htmlFor="email">Email</Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    placeholder="m@example.com"
-                    required
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                  />
-                </div>
-                {error && <p className="text-sm text-red-500">{error}</p>}
-                <Button type="submit" className="w-full" disabled={isLoading}>
-                  {isLoading ? "Sending..." : "Send reset email"}
-                </Button>
-              </div>
-              <div className="mt-4 text-center text-sm">
-                Already have an account?{" "}
-                <Link
-                  href="/login"
-                  className="underline underline-offset-4"
-                >
-                  Login
-                </Link>
-              </div>
-            </form>
-          </CardContent>
-        </Card>
-      )}
-    </div>
-  );
+    <motion.div
+      initial={{ opacity: 0, y: 24 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
+      className="w-full"
+    >
+      {/* Logo */}
+      <div className="flex items-center gap-2.5 mb-10">
+        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-lg shadow-primary/30">
+          <Wallet className="h-4.5 w-4.5" />
+        </div>
+        <span className="text-xl font-bold">Solvio</span>
+      </div>
+
+      <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 mb-6">
+        <Mail className="h-7 w-7 text-primary" />
+      </div>
+
+      <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight mb-3">
+        {pl ? "Brak hasła" : "No password needed"}
+      </h1>
+
+      <p className="text-sm text-muted-foreground mb-4 leading-relaxed">
+        {pl
+          ? "Solvio używa jednorazowych kodów e-mail zamiast haseł. Aby uzyskać dostęp do swojego konta, wróć do strony logowania i wpisz swój adres e-mail — wyślemy Ci 6-cyfrowy kod."
+          : "Solvio uses one-time email codes instead of passwords. To access your account, go back to the login page and enter your email address — we will send you a 6-digit code."}
+      </p>
+
+      <Button asChild className="w-full h-11 font-semibold mb-4">
+        <Link href="/login">
+          {pl ? "Wróć do logowania" : "Back to login"}
+        </Link>
+      </Button>
+
+      <Link
+        href="/login"
+        className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors w-fit"
+      >
+        <ArrowLeft className="h-3.5 w-3.5" />
+        {pl ? "Wróć" : "Back"}
+      </Link>
+    </motion.div>
+  )
 }

@@ -1,23 +1,23 @@
-import { LoginForm } from "@/components/login-form";
+import { Suspense } from 'react'
+import { LoginForm } from "@/components/login-form"
+import { AuthLayout } from "@/components/auth-layout"
 
 export default async function Page({
   searchParams,
 }: {
-  searchParams: Promise<{ message?: string }>;
+  searchParams: Promise<{ message?: string }>
 }) {
-  const params = await searchParams;
-  const message = params?.message;
-
+  const { message } = await searchParams
   return (
-    <div className="flex min-h-svh w-full items-center justify-center p-6 md:p-10">
-      <div className="w-full max-w-sm">
-        {message && (
-          <div className="mb-4 rounded-md bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 p-3 text-sm text-green-800 dark:text-green-200">
-            {message}
-          </div>
-        )}
+    <AuthLayout>
+      {message && (
+        <div className="mb-5 rounded-lg bg-emerald-500/10 border border-emerald-500/25 p-3 text-sm text-emerald-700 dark:text-emerald-300">
+          {message}
+        </div>
+      )}
+      <Suspense>
         <LoginForm />
-      </div>
-    </div>
-  );
+      </Suspense>
+    </AuthLayout>
+  )
 }

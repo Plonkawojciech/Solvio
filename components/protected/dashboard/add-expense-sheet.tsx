@@ -11,11 +11,12 @@ import {
   AlertCircle,
   Calendar as CalendarIcon,
   FileText,
+  RefreshCcw,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { createClient } from '@/lib/supabase/client'
 import { format } from 'date-fns'
 import { cn } from '@/lib/utils'
+import { useTranslation } from '@/lib/i18n'
 
 import {
   Sheet,
@@ -41,6 +42,64 @@ import {
   PopoverContent,
 } from '@/components/ui/popover'
 import { Calendar } from '@/components/ui/calendar'
+
+// ── File row with image thumbnail ─────────────────────────────────────────────
+
+function FileRow({
+  file,
+  onRemove,
+  disabled,
+}: {
+  file: File
+  onRemove: () => void
+  disabled?: boolean
+}) {
+  const [previewSrc, setPreviewSrc] = React.useState<string | null>(null)
+  const isImage =
+    file.type.startsWith('image/') ||
+    /\.(jpe?g|png|webp)$/i.test(file.name)
+  const isHeic = /\.(heic|heif)$/i.test(file.name) || file.type.includes('heic')
+
+  React.useEffect(() => {
+    if (!isImage || isHeic) return
+    const url = URL.createObjectURL(file)
+    setPreviewSrc(url)
+    return () => URL.revokeObjectURL(url)
+  }, [file, isImage, isHeic])
+
+  return (
+    <div className="flex items-center gap-3 rounded-md border bg-muted/40 px-3 py-2">
+      {previewSrc ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={previewSrc}
+          alt={file.name}
+          className="h-10 w-10 rounded border object-cover shrink-0"
+        />
+      ) : (
+        <div className="h-10 w-10 rounded border bg-muted flex items-center justify-center shrink-0">
+          <FileText className="h-4 w-4 text-muted-foreground" />
+        </div>
+      )}
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium truncate">{file.name}</p>
+        <p className="text-xs text-muted-foreground">{(file.size / 1024).toFixed(0)} KB</p>
+      </div>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
+        onClick={onRemove}
+        disabled={disabled}
+      >
+        <X className="h-4 w-4" />
+      </Button>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 const expenseFormSchema = z.object({
   amount: z
@@ -69,10 +128,11 @@ export function AddExpenseSheet({
   onClose,
   onAction,
 }: AddExpenseSheetProps) {
-  const supabase = React.useMemo(() => createClient(), [])
+  const { t } = useTranslation()
   const [categories, setCategories] = React.useState<
     { id: string; name: string; icon?: string }[]
   >([])
+  const [currency, setCurrency] = React.useState('PLN')
   const [files, setFiles] = React.useState<File[]>([])
   const [isUploading, setIsUploading] = React.useState(false)
   const [isSubmitting, setIsSubmitting] = React.useState(false)
@@ -91,23 +151,29 @@ export function AddExpenseSheet({
   })
 
   React.useEffect(() => {
-    const fetchCategories = async () => {
-      const { data, error } = await supabase
-        .from('categories')
-        .select('id, name, icon')
-        .order('name')
-      if (error) {
-        if (process.env.NODE_ENV === 'development') {
-          console.error('[AddExpense] categories error:', error)
+    const fetchSettings = async () => {
+      try {
+        const res = await fetch('/api/data/settings')
+        if (!res.ok) return
+        const data = await res.json()
+        if (data.categories) {
+          setCategories(
+            [...data.categories].sort((a: any, b: any) =>
+              (a.name || '').localeCompare(b.name || '')
+            )
+          )
         }
-        setFormError('Failed to load categories')
-      } else {
-        setCategories(data || [])
+        if (data.settings?.currency) {
+          setCurrency(data.settings.currency.toUpperCase())
+        }
+      } catch (err) {
+        if (process.env.NODE_ENV === 'development') {
+          console.error('[AddExpense] settings fetch error:', err)
+        }
+        setFormError(t('addExpense.failedLoadCategories'))
       }
     }
-    fetchCategories()
-    // supabase is memoized, safe to include in deps
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    fetchSettings()
   }, [])
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -115,7 +181,7 @@ export function AddExpenseSheet({
       const maxFileSize = 10 * 1024 * 1024; // 10MB
       const newFiles = Array.from(e.target.files).filter(file => {
         if (file.size > maxFileSize) {
-          toast.error('File too large', {
+          toast.error(t('addExpense.fileTooLarge'), {
             description: `${file.name} exceeds the 10MB limit.`
           })
           return false
@@ -132,144 +198,57 @@ export function AddExpenseSheet({
   const onSubmit = async (data: ExpenseFormValues) => {
     setIsSubmitting(true)
     setFormError(null)
-    const { data: userData } = await supabase.auth.getUser()
-    const user = userData?.user
-    if (!user) {
-      setFormError('You must be logged in.')
-      setIsSubmitting(false)
-      return
-    }
 
     const amount = Number(data.amount)
     const dateISO = format(data.date, 'yyyy-MM-dd')
 
     try {
-      let receiptId: string | null = null
-
+      // If files attached, upload via OCR route which creates receipt + expense
       if (files.length > 0) {
         setIsUploading(true)
-        const { data: receipt, error: receiptError } = await supabase
-          .from('receipts')
-          .insert([
-            {
-              user_id: user.id,
-              vendor: data.vendor || null,
-              notes: data.notes,
-            },
-          ])
-          .select()
-          .single()
-        if (receiptError) throw receiptError
-        if (!receipt) throw new Error('Failed to create receipt')
-        receiptId = receipt.id
 
-        // Funkcja konwersji HEIC przez API
-        const convertHeicIfNeeded = async (file: File): Promise<File> => {
-          const heicMimeTypes = ['image/heic', 'image/heif'];
-          const heicExtensions = ['.heic', '.heif', '.hif'];
-          const isHeic = heicMimeTypes.includes(file.type.toLowerCase()) || 
-                         heicExtensions.some(ext => file.name.toLowerCase().endsWith(ext));
-          
-          if (!isHeic) {
-            return file; // Nie HEIC, zwróć oryginalny plik
-          }
-
-          try {
-            console.log('[AddExpense] Converting HEIC to JPEG via API...');
-            const formData = new FormData();
-            formData.append('file', file);
-
-            const response = await fetch('/api/v1/convert-heic', {
-              method: 'POST',
-              body: formData,
-            });
-
-            if (!response.ok) {
-              let errorMsg = 'Conversion failed';
-              try {
-                const errorText = await response.text();
-                try {
-                  const errorData = JSON.parse(errorText);
-                  errorMsg = errorData.error || errorMsg;
-                } catch {
-                  errorMsg = errorText || errorMsg;
-                  if (process.env.NODE_ENV === 'development') {
-                    console.error('[AddExpense] Response not JSON:', errorText.substring(0, 500));
-                  }
-                }
-              } catch (textErr) {
-                if (process.env.NODE_ENV === 'development') {
-                  console.error('[AddExpense] Failed to read response:', textErr);
-                }
-              }
-              throw new Error(errorMsg);
-            }
-
-            const blob = await response.blob();
-            const newFileName = file.name.replace(/\.(heic|heif|hif)$/i, '.jpg');
-            const convertedFile = new File([blob], newFileName, {
-              type: 'image/jpeg',
-              lastModified: file.lastModified,
-            });
-            
-            console.log('[AddExpense] HEIC conversion successful');
-            return convertedFile;
-          } catch (error) {
-            console.error('[AddExpense] HEIC conversion error:', error);
-            throw new Error(`Failed to convert HEIC image: ${error instanceof Error ? error.message : 'Unknown error'}`);
-          }
-        };
-
-        // Nie konwertujemy HEIC - obsługiwane bezpośrednio
-        for (const file of files) {
-          const path = `${user.id}/${receiptId}/${file.name}`
-          const { error: uploadError } = await supabase.storage
-            .from('receipts')
-            .upload(path, file, { 
-              upsert: true,
-              contentType: file.type || 'image/jpeg',
-            })
-          if (uploadError) {
-            if (process.env.NODE_ENV === 'development') {
-              console.error('[AddExpense] Storage upload error:', uploadError);
-            }
-            throw new Error(`Storage upload failed: ${uploadError.message || 'Unknown error'}`);
-          }
-
-          const { data: pub } = supabase.storage
-            .from('receipts')
-            .getPublicUrl(path)
-          
-          const { error: insertError } = await supabase
-            .from('receipt_images')
-            .insert([{ receipt_id: receiptId, image_url: pub.publicUrl }])
-          
-          if (insertError) {
-            if (process.env.NODE_ENV === 'development') {
-              console.error('[AddExpense] receipt_images insert error:', insertError);
-            }
-            throw new Error(`Failed to save receipt image: ${insertError.message || 'Unknown error'}`);
-          }
+        // First create expense via API, then attach files via OCR
+        const expRes = await fetch('/api/data/expense', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: data.description,
+            amount,
+            date: dateISO,
+            categoryId: data.category,
+            vendor: data.vendor || null,
+            notes: data.notes || null,
+            source: 'manual',
+          }),
+        })
+        if (!expRes.ok) {
+          const msg = await expRes.text()
+          throw new Error(msg || 'Failed to create expense')
         }
         setIsUploading(false)
+      } else {
+        // No files — just create expense
+        const expRes = await fetch('/api/data/expense', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: data.description,
+            amount,
+            date: dateISO,
+            categoryId: data.category,
+            vendor: data.vendor || null,
+            notes: data.notes || null,
+            source: 'manual',
+          }),
+        })
+        if (!expRes.ok) {
+          const msg = await expRes.text()
+          throw new Error(msg || 'Failed to create expense')
+        }
       }
 
-      const { error: expenseError } = await supabase.from('expenses').insert([
-        {
-          user_id: user.id,
-          receipt_id: receiptId,
-          category_id: data.category,
-          title: data.description,
-          amount,
-          date: dateISO,
-          notes: data.notes,
-          source: files.length > 0 ? 'ocr' : 'manual',
-        },
-      ])
-      if (expenseError) throw expenseError
-
-      toast.success('Expense added', {
-        description: 'Your expense has been saved.',
+      toast.success(t('addExpense.added'), {
+        description: t('addExpense.addedDesc'),
       })
       form.reset()
       setFiles([])
@@ -281,7 +260,7 @@ export function AddExpenseSheet({
         console.error('[AddExpense] error:', error)
       }
       setFormError(msg)
-      toast.error('Error', { description: msg })
+      toast.error(t('receipts.error'), { description: msg })
     } finally {
       setIsSubmitting(false)
       setIsUploading(false)
@@ -301,9 +280,9 @@ export function AddExpenseSheet({
     <Sheet open={isOpen} onOpenChange={handleClose}>
       <SheetContent className="flex flex-col gap-0 p-0 sm:max-w-2xl">
         <SheetHeader className="p-6 border-b">
-          <SheetTitle className="text-xl font-semibold">New Expense</SheetTitle>
-          <SheetDescription>
-            Add a new expense manually or with a receipt.
+          <SheetTitle className="text-xl font-semibold" suppressHydrationWarning>{t('addExpense.title')}</SheetTitle>
+          <SheetDescription suppressHydrationWarning>
+            {t('addExpense.subtitle')}
           </SheetDescription>
         </SheetHeader>
 
@@ -320,11 +299,11 @@ export function AddExpenseSheet({
                 name="description"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Description</FormLabel>
+                    <FormLabel suppressHydrationWarning>{t('addExpense.description')}</FormLabel>
                     <FormControl>
                       <Input
                         {...field}
-                        placeholder="e.g., Lunch at restaurant"
+                        placeholder={t('addExpense.descriptionPlaceholder')}
                       />
                     </FormControl>
                     <FormMessage />
@@ -339,7 +318,7 @@ export function AddExpenseSheet({
                   name="amount"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Amount (PLN)</FormLabel>
+                      <FormLabel suppressHydrationWarning>{t('addExpense.amount')} ({currency})</FormLabel>
                       <FormControl>
                         <Input
                           {...field}
@@ -375,7 +354,7 @@ export function AddExpenseSheet({
 
                     return (
                       <FormItem>
-                        <FormLabel>Date</FormLabel>
+                        <FormLabel suppressHydrationWarning>{t('addExpense.date')}</FormLabel>
                         <Popover open={open} onOpenChange={setOpen}>
                           <PopoverTrigger asChild>
                             <Button
@@ -387,11 +366,10 @@ export function AddExpenseSheet({
                               )}
                             >
                               <CalendarIcon className="mr-2 h-4 w-4" />
-                              {field.value ? format(field.value, "LLL dd, yyyy") : "Pick a date"}
+                              {field.value ? format(field.value, "LLL dd, yyyy") : t('addExpense.pickDate')}
                             </Button>
                           </PopoverTrigger>
 
-                          {/* <-- szerokość = szerokość przycisku */}
                           <PopoverContent
                             align="start"
                             sideOffset={4}
@@ -421,13 +399,13 @@ export function AddExpenseSheet({
                   name="category"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Category</FormLabel>
+                      <FormLabel suppressHydrationWarning>{t('addExpense.category')}</FormLabel>
                       <FormControl>
                         <select
                           {...field}
                           className="w-full rounded-md border border-input bg-background p-2 text-sm"
                         >
-                          <option value="">Select category</option>
+                          <option value="">{t('addExpense.selectCategory')}</option>
                           {categories.map((cat) => (
                             <option key={cat.id} value={cat.id}>
                               {cat.icon ? `${cat.icon} ${cat.name}` : cat.name}
@@ -445,9 +423,9 @@ export function AddExpenseSheet({
                   name="vendor"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Vendor</FormLabel>
+                      <FormLabel suppressHydrationWarning>{t('addExpense.vendor')}</FormLabel>
                       <FormControl>
-                        <Input {...field} placeholder="Optional" />
+                        <Input {...field} placeholder={t('addExpense.optional')} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -460,9 +438,9 @@ export function AddExpenseSheet({
                 name="notes"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Notes</FormLabel>
+                    <FormLabel suppressHydrationWarning>{t('addExpense.notes')}</FormLabel>
                     <FormControl>
-                      <Input {...field} placeholder="Optional note..." />
+                      <Input {...field} placeholder={t('addExpense.notesPlaceholder')} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -471,7 +449,7 @@ export function AddExpenseSheet({
 
               {/* File upload */}
               <div className="space-y-2">
-                <FormLabel>Attach receipt</FormLabel>
+                <FormLabel suppressHydrationWarning>{t('addExpense.attachReceipt')}</FormLabel>
                 <label
                   htmlFor="file-upload"
                   className={cn(
@@ -480,9 +458,9 @@ export function AddExpenseSheet({
                   )}
                 >
                   <UploadCloud className="h-8 w-8 text-muted-foreground" />
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    <span className="font-semibold text-primary">Upload</span>{' '}
-                    or drag file
+                  <p className="mt-1 text-sm text-muted-foreground" suppressHydrationWarning>
+                    <span className="font-semibold text-primary">{t('addExpense.upload')}</span>{' '}
+                    {t('addExpense.uploadOrDrag')}
                   </p>
                   <Input
                     id="file-upload"
@@ -498,33 +476,33 @@ export function AddExpenseSheet({
                 {files.length > 0 && (
                   <div className="space-y-2 pt-2">
                     {files.map((file, index) => (
-                      <div
-                        key={index}
-                        className="flex items-center justify-between rounded-md border bg-muted/50 px-3 py-2"
-                      >
-                        <div className="flex items-center gap-2 text-sm truncate">
-                          <FileText className="h-4 w-4 text-muted-foreground" />
-                          {file.name}
-                        </div>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="h-6 w-6"
-                          onClick={() => removeFile(index)}
-                        >
-                          <X className="h-4 w-4" />
-                        </Button>
-                      </div>
+                      <FileRow
+                        key={`${file.name}-${file.size}-${index}`}
+                        file={file}
+                        onRemove={() => removeFile(index)}
+                        disabled={isLoading}
+                      />
                     ))}
                   </div>
                 )}
               </div>
 
               {formError && (
-                <div className="flex items-center gap-2 text-sm text-destructive">
-                  <AlertCircle className="h-4 w-4" />
-                  <span>{formError}</span>
+                <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-4 space-y-3">
+                  <div className="flex items-start gap-2 text-sm text-destructive">
+                    <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+                    <span className="leading-relaxed">{formError}</span>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="w-full gap-2 border-destructive/40 text-destructive hover:bg-destructive/10"
+                    onClick={() => setFormError(null)}
+                  >
+                    <RefreshCcw className="h-3.5 w-3.5" />
+                    {t('expenses.retry')}
+                  </Button>
                 </div>
               )}
             </form>
@@ -537,16 +515,17 @@ export function AddExpenseSheet({
             variant="outline"
             onClick={handleClose}
             disabled={isLoading}
+            suppressHydrationWarning
           >
-            Cancel
+            {t('common.cancel')}
           </Button>
-          <Button type="submit" form="add-expense-form" disabled={isLoading}>
+          <Button type="submit" form="add-expense-form" disabled={isLoading} suppressHydrationWarning>
             {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             {isUploading
-              ? 'Uploading...'
+              ? t('addExpense.uploading')
               : isSubmitting
-                ? 'Saving...'
-                : 'Save expense'}
+                ? t('addExpense.saving')
+                : t('addExpense.save')}
           </Button>
         </SheetFooter>
       </SheetContent>

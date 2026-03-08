@@ -1,69 +1,112 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
 import { useTranslation } from '@/lib/i18n'
 import { Button } from '@/components/ui/button'
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog'
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table'
-import { Loader2, Trash2, Edit2, Check, X, Image as ImageIcon } from 'lucide-react'
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select'
+import {
+  Loader2, Trash2, Edit2, Check, X, Image as ImageIcon,
+  ReceiptText, AlertCircle, RefreshCw, Search, FilterX,
+  ChevronUp, ChevronDown, ChevronsUpDown, Download,
+  ChevronLeft, ChevronRight, Share2, QrCode, Copy, CheckCheck,
+} from 'lucide-react'
 import { AddExpenseTrigger } from '@/components/protected/dashboard/add-expense-trigger'
 import { ScanReceiptButton } from '@/components/protected/dashboard/scan-receipt-button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+import { Skeleton } from '@/components/ui/skeleton'
 
 interface Expense {
   id: string
   title: string
-  amount: number
+  amount: number | string
   date: string
   vendor: string | null
   notes: string | null
-  category_id: string | null
-  receipt_id: string | null
+  categoryId: string | null
+  receiptId: string | null
 }
 
 interface ReceiptItem {
   name: string
   quantity?: number | null
   price?: number | null
-  category_id?: string | null
+  categoryId?: string | null
 }
 
-interface ReceiptData {
-  items?: ReceiptItem[]
+type SortField = 'title' | 'vendor' | 'amount' | 'date'
+type SortDir = 'asc' | 'desc'
+
+const PAGE_SIZE = 20
+
+// ─── Skeleton row ─────────────────────────────────────────────────────────────
+function TableRowSkeleton() {
+  return (
+    <TableRow>
+      <TableCell><Skeleton className="h-4 w-4 rounded" /></TableCell>
+      <TableCell><Skeleton className="h-4 w-40 rounded" /></TableCell>
+      <TableCell className="hidden sm:table-cell"><Skeleton className="h-4 w-28 rounded" /></TableCell>
+      <TableCell><Skeleton className="h-4 w-20 rounded" /></TableCell>
+      <TableCell className="hidden md:table-cell"><Skeleton className="h-4 w-24 rounded" /></TableCell>
+      <TableCell className="text-right"><Skeleton className="h-7 w-20 ml-auto rounded" /></TableCell>
+    </TableRow>
+  )
 }
 
+function MobileCardSkeleton() {
+  return (
+    <div className="border rounded-lg p-3 bg-card space-y-2">
+      <div className="flex items-center gap-2">
+        <Skeleton className="h-4 w-4 rounded" />
+        <Skeleton className="h-4 w-40 rounded" />
+      </div>
+      <div className="flex items-center justify-between">
+        <Skeleton className="h-3 w-24 rounded" />
+        <Skeleton className="h-3 w-16 rounded" />
+      </div>
+      <Skeleton className="h-3 w-20 rounded" />
+    </div>
+  )
+}
+
+// ─── Amount formatter ──────────────────────────────────────────────────────────
+function formatAmount(amount: number | string, currency: string): string {
+  const num = typeof amount === 'string' ? parseFloat(amount) : amount
+  if (isNaN(num)) return `0.00 ${currency}`
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: 'currency',
+      currency,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(num)
+  } catch {
+    return `${num.toFixed(2)} ${currency}`
+  }
+}
+
+// ─── Sort icon helper ─────────────────────────────────────────────────────────
+function SortIcon({ field, sortField, sortDir }: { field: SortField; sortField: SortField; sortDir: SortDir }) {
+  if (sortField !== field) return <ChevronsUpDown className="ml-1 h-3.5 w-3.5 text-muted-foreground/50 inline" />
+  return sortDir === 'asc'
+    ? <ChevronUp className="ml-1 h-3.5 w-3.5 text-foreground inline" />
+    : <ChevronDown className="ml-1 h-3.5 w-3.5 text-foreground inline" />
+}
+
+// ─── Main component ────────────────────────────────────────────────────────────
 export default function ExpensesPage() {
-  const router = useRouter()
-  const supabase = createClient()
   const { t, lang, mounted } = useTranslation()
-  const isPolish = lang === 'pl'
-  
-  // Funkcja do tłumaczenia nazw kategorii
+
   const translateCategoryName = (categoryName: string): string => {
     const categoryMap: Record<string, string> = {
       'Food': t('categories.food'),
@@ -79,10 +122,12 @@ export default function ExpensesPage() {
     }
     return categoryMap[categoryName] || categoryName
   }
+
   const [expenses, setExpenses] = useState<Expense[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
+  const [isBulkDeleteDialogOpen, setIsBulkDeleteDialogOpen] = useState(false)
   const [selectedExpense, setSelectedExpense] = useState<Expense | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
   const [receiptItems, setReceiptItems] = useState<ReceiptItem[]>([])
@@ -90,277 +135,365 @@ export default function ExpensesPage() {
   const [categories, setCategories] = useState<Map<string, string>>(new Map())
   const [categoriesList, setCategoriesList] = useState<Array<{ id: string; name: string }>>([])
   const [currency, setCurrency] = useState<string>('PLN')
-  
-  // Bulk selection dla expenses
+
   const [selectedExpenseIds, setSelectedExpenseIds] = useState<Set<string>>(new Set())
   const [isBulkDeleting, setIsBulkDeleting] = useState(false)
-  
-  // Bulk selection dla items
   const [selectedItemIndices, setSelectedItemIndices] = useState<Set<number>>(new Set())
-  
-  // Inline editing dla expenses
+
+  // Inline edit — expense
   const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null)
   const [editExpenseTitle, setEditExpenseTitle] = useState('')
   const [editExpenseAmount, setEditExpenseAmount] = useState('')
+  const [editExpenseTitleError, setEditExpenseTitleError] = useState<string | null>(null)
+  const [editExpenseAmountError, setEditExpenseAmountError] = useState<string | null>(null)
   const [isSavingExpense, setIsSavingExpense] = useState(false)
-  
-  // Inline editing dla items
+
+  // Inline edit — receipt item
   const [editingItemIndex, setEditingItemIndex] = useState<number | null>(null)
   const [editItemName, setEditItemName] = useState('')
   const [editItemPrice, setEditItemPrice] = useState('')
   const [editItemCategory, setEditItemCategory] = useState('')
+  const [editItemNameError, setEditItemNameError] = useState<string | null>(null)
+  const [editItemPriceError, setEditItemPriceError] = useState<string | null>(null)
   const [isSavingItem, setIsSavingItem] = useState(false)
-  
-  // Receipt image preview
+
+  // Receipt image
   const [receiptImageUrl, setReceiptImageUrl] = useState<string | null>(null)
   const [isImageDialogOpen, setIsImageDialogOpen] = useState(false)
   const [loadingImage, setLoadingImage] = useState(false)
+  const [viewingReceiptId, setViewingReceiptId] = useState<string | null>(null)
+  const [shareCopied, setShareCopied] = useState(false)
+  const [showShareQr, setShowShareQr] = useState(false)
 
-  const fetchSettings = async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-    
-    const { data: settings } = await supabase
-      .from('user_settings')
-      .select('currency_id')
-      .eq('user_id', user.id)
-      .maybeSingle()
-    
-    if (settings?.currency_id) {
-      setCurrency(settings.currency_id.toUpperCase())
-    }
+  // Search & filter
+  const [searchQuery, setSearchQuery] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+  const [filterCategoryId, setFilterCategoryId] = useState<string>('all')
+  const [dateFrom, setDateFrom] = useState<string>('')
+  const [dateTo, setDateTo] = useState<string>('')
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Sort
+  const [sortField, setSortField] = useState<SortField>('date')
+  const [sortDir, setSortDir] = useState<SortDir>('desc')
+
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1)
+
+  // Add expense sheet — controlled externally for keyboard shortcut
+  const [isAddExpenseOpen, setIsAddExpenseOpen] = useState(false)
+
+  const handleSearchChange = (value: string) => {
+    setSearchQuery(value)
+    setCurrentPage(1)
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current)
+    searchDebounceRef.current = setTimeout(() => setDebouncedSearch(value), 300)
   }
 
+  const clearFilters = () => {
+    setSearchQuery('')
+    setDebouncedSearch('')
+    setFilterCategoryId('all')
+    setDateFrom('')
+    setDateTo('')
+    setCurrentPage(1)
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current)
+  }
+
+  const hasActiveFilters =
+    debouncedSearch.trim() !== '' ||
+    filterCategoryId !== 'all' ||
+    dateFrom !== '' ||
+    dateTo !== ''
+
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortField(field)
+      setSortDir(field === 'date' ? 'desc' : 'asc')
+    }
+    setCurrentPage(1)
+  }
+
+  // ─── Keyboard shortcut: press "n" to open Add Expense sheet ──────────────
   useEffect(() => {
-    fetchExpenses()
-    fetchCategories()
-    fetchSettings()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore if any input, textarea, select, or contenteditable is focused
+      const tag = (e.target as HTMLElement)?.tagName?.toLowerCase()
+      const isEditable =
+        tag === 'input' ||
+        tag === 'textarea' ||
+        tag === 'select' ||
+        (e.target as HTMLElement)?.isContentEditable
+      if (isEditable) return
+      // Ignore modifier combos
+      if (e.metaKey || e.ctrlKey || e.altKey) return
+      if (e.key === 'n') {
+        e.preventDefault()
+        setIsAddExpenseOpen(true)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
   }, [])
 
-  // Jedno odświeżenie po zakończeniu kategoryzacji (6s)
-  const handleAfterScan = async () => {
-    const initialExpensesCount = expenses.length
+  // ─── Derived filtered + sorted + paginated list ───────────────────────────
+  const filteredExpenses = useMemo(() => {
+    return expenses.filter((e) => {
+      const matchesSearch =
+        debouncedSearch.trim() === '' ||
+        e.title.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
+        (e.vendor ?? '').toLowerCase().includes(debouncedSearch.toLowerCase())
+      const matchesCategory =
+        filterCategoryId === 'all' || e.categoryId === filterCategoryId
+      const expDate = e.date ? e.date.slice(0, 10) : ''
+      const matchesFrom = dateFrom === '' || expDate >= dateFrom
+      const matchesTo = dateTo === '' || expDate <= dateTo
+      return matchesSearch && matchesCategory && matchesFrom && matchesTo
+    })
+  }, [expenses, debouncedSearch, filterCategoryId, dateFrom, dateTo])
+
+  const sortedExpenses = useMemo(() => {
+    return [...filteredExpenses].sort((a, b) => {
+      let cmp = 0
+      if (sortField === 'title') {
+        cmp = a.title.localeCompare(b.title)
+      } else if (sortField === 'vendor') {
+        cmp = (a.vendor ?? '').localeCompare(b.vendor ?? '')
+      } else if (sortField === 'amount') {
+        cmp = parseFloat(String(a.amount)) - parseFloat(String(b.amount))
+      } else if (sortField === 'date') {
+        cmp = a.date.localeCompare(b.date)
+      }
+      return sortDir === 'asc' ? cmp : -cmp
+    })
+  }, [filteredExpenses, sortField, sortDir])
+
+  const totalPages = Math.max(1, Math.ceil(sortedExpenses.length / PAGE_SIZE))
+  const safePage = Math.min(currentPage, totalPages)
+  const pageStart = (safePage - 1) * PAGE_SIZE
+  const pageEnd = pageStart + PAGE_SIZE
+  const pagedExpenses = sortedExpenses.slice(pageStart, pageEnd)
+
+  // ─── CSV Export ───────────────────────────────────────────────────────────
+  const handleExportCsv = () => {
+    const rows = [
+      ['Title', 'Vendor', 'Amount', 'Currency', 'Date', 'Category'],
+      ...sortedExpenses.map(e => [
+        `"${e.title.replace(/"/g, '""')}"`,
+        `"${(e.vendor ?? '').replace(/"/g, '""')}"`,
+        String(parseFloat(String(e.amount)).toFixed(2)),
+        currency,
+        e.date ? e.date.slice(0, 10) : '',
+        `"${translateCategoryName(categories.get(e.categoryId ?? '') || '')}"`,
+      ]),
+    ]
+    const csv = rows.map(r => r.join(',')).join('\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `expenses_${new Date().toISOString().slice(0, 10)}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  // ─── Data fetching ───────────────────────────────────────────────────────────
+  const fetchExpenses = useCallback(async (signal?: AbortSignal): Promise<Expense[] | undefined> => {
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await fetch('/api/data/expenses', { signal })
+      if (!res.ok) { setError('Failed to fetch expenses'); setLoading(false); return }
+      const data = await res.json()
+      const exps: Expense[] = data.expenses || []
+      setExpenses(exps)
+
+      const cats = data.categories || []
+      const catMap = new Map<string, string>()
+      cats.forEach((c: { id: string; name: string }) => catMap.set(c.id, c.name))
+      setCategories(catMap)
+      setCategoriesList(cats)
+
+      const cur = (data.settings?.currency || 'PLN').toUpperCase()
+      setCurrency(cur)
+
+      setLoading(false)
+      return exps
+    } catch (err: any) {
+      if (err.name === 'AbortError') return
+      setError('Failed to fetch expenses')
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    const controller = new AbortController()
+    fetchExpenses(controller.signal)
+    return () => controller.abort()
+  }, [fetchExpenses])
+
+  // ─── After scan ──────────────────────────────────────────────────────────────
+  const handleAfterScan = useCallback(async () => {
+    const initial = expenses.length
     await fetchExpenses()
-    // Wyślij custom event do dashboardu
     window.dispatchEvent(new CustomEvent('expensesUpdated'))
-    
-    console.log('[Auto-refresh] Czekam na kategorie... (6s)')
+
     setTimeout(async () => {
-      console.log('[Auto-refresh] Odświeżam kategorie!')
-      const updatedExpenses = await fetchExpenses()
-      // Wyślij custom event do dashboardu
+      const updated = await fetchExpenses()
       window.dispatchEvent(new CustomEvent('expensesUpdated'))
-      
-      // Automatycznie wybierz najnowszy expense (pierwszy na liście)
-      if (updatedExpenses && updatedExpenses.length > 0) {
-        const newestExpense = updatedExpenses[0]
-        
-        // Jeśli to nowy expense, automatycznie go zaznacz i pokaż items
-        if (updatedExpenses.length > initialExpensesCount || !selectedExpense) {
-          console.log('[Auto-refresh] Automatycznie wybieram najnowszy expense')
-          setSelectedExpense(newestExpense)
-          
-          if (newestExpense.receipt_id) {
-            setLoadingReceiptItems(true)
-            const { data: receiptData } = await supabase
-              .from('receipts')
-              .select('notes')
-              .eq('id', newestExpense.receipt_id)
-              .single()
-            
-            if (receiptData?.notes) {
-              try {
-                const parsed: ReceiptData = JSON.parse(receiptData.notes)
-                console.log('[Auto-refresh] ✅ Receipt items z kategoriami załadowane!')
-                setReceiptItems(parsed.items || [])
-              } catch (e) {
-                console.error('Failed to parse receipt notes:', e)
-              }
+      if (updated && updated.length > 0 && (updated.length > initial || !selectedExpense)) {
+        const newest = updated[0]
+        setSelectedExpense(newest)
+        if (newest.receiptId) {
+          setLoadingReceiptItems(true)
+          try {
+            const res = await fetch(`/api/data/receipts?id=${newest.receiptId}`)
+            if (res.ok) {
+              const receipt = await res.json()
+              setReceiptItems(Array.isArray(receipt.items) ? receipt.items : [])
             }
+          } finally {
             setLoadingReceiptItems(false)
           }
         }
       }
-    }, 6000) // Jedno odświeżenie po 6s
-  }
+    }, 6000)
+  }, [expenses.length, selectedExpense, fetchExpenses])
 
-  const fetchCategories = async () => {
-    const { data, error } = await supabase
-      .from('categories')
-      .select('id, name')
-    
-    if (!error && data) {
-      const catMap = new Map<string, string>()
-      data.forEach(cat => {
-        catMap.set(cat.id, cat.name)
-      })
-      setCategories(catMap)
-      setCategoriesList(data)
-    }
-  }
-
-  const fetchExpenses = async (): Promise<Expense[] | undefined> => {
-    setLoading(true)
-    setError(null)
-    
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) {
-      setError('You must be logged in')
-      setLoading(false)
-      return undefined
-    }
-
-    const { data, error: fetchError } = await supabase
-      .from('expenses')
-      .select('id, title, amount, date, vendor, notes, category_id, receipt_id')
-      .eq('user_id', user.id)
-      .order('date', { ascending: false })
-
-    if (fetchError) {
-      setError('Failed to fetch expenses')
-      setLoading(false)
-      return undefined
-    } else {
-      setExpenses(data || [])
-      setLoading(false)
-      return data || []
-    }
-  }
-
+  // ─── Delete single ───────────────────────────────────────────────────────────
   const deleteExpense = async (id: string) => {
     setIsDeleting(true)
-    const { error: deleteError } = await supabase
-      .from('expenses')
-      .delete()
-      .eq('id', id)
-    
-    if (deleteError) {
-      setError('Failed to delete expense')
-      setIsDeleting(false)
-    } else {
-      setIsDeleteDialogOpen(false)
-      setSelectedExpense(null)
-      setReceiptItems([])
-      await fetchExpenses()
-      // Wyślij custom event do dashboardu
-      window.dispatchEvent(new CustomEvent('expensesUpdated'))
-      setIsDeleting(false)
-    }
+    await fetch('/api/data/expenses', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids: [id] }),
+    })
+    setIsDeleteDialogOpen(false)
+    setSelectedExpense(null)
+    setReceiptItems([])
+    await fetchExpenses()
+    window.dispatchEvent(new CustomEvent('expensesUpdated'))
+    setIsDeleting(false)
   }
 
+  // ─── Bulk delete ─────────────────────────────────────────────────────────────
   const bulkDeleteExpenses = async () => {
     if (selectedExpenseIds.size === 0) return
-    
     setIsBulkDeleting(true)
-    const ids = Array.from(selectedExpenseIds)
-    
-    const { error: deleteError } = await supabase
-      .from('expenses')
-      .delete()
-      .in('id', ids)
-    
-    if (deleteError) {
-      setError('Failed to delete expenses')
-    } else {
-      setSelectedExpenseIds(new Set())
-      setSelectedExpense(null)
-      await fetchExpenses()
-      // Wyślij custom event do dashboardu
-      window.dispatchEvent(new CustomEvent('expensesUpdated'))
-    }
+    await fetch('/api/data/expenses', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids: Array.from(selectedExpenseIds) }),
+    })
+    setSelectedExpenseIds(new Set())
+    setSelectedExpense(null)
+    setReceiptItems([])
+    setIsBulkDeleteDialogOpen(false)
+    await fetchExpenses()
+    window.dispatchEvent(new CustomEvent('expensesUpdated'))
     setIsBulkDeleting(false)
   }
 
+  // ─── Bulk delete items ───────────────────────────────────────────────────────
   const bulkDeleteItems = async () => {
     if (!selectedExpense || selectedItemIndices.size === 0) return
-    
     const updatedItems = receiptItems.filter((_, idx) => !selectedItemIndices.has(idx))
     await saveReceiptItems(updatedItems)
     setSelectedItemIndices(new Set())
-    // Event jest już wysyłany w saveReceiptItems
   }
 
+  // ─── Selection helpers ───────────────────────────────────────────────────────
   const toggleExpenseSelection = (id: string) => {
-    const newSet = new Set(selectedExpenseIds)
-    if (newSet.has(id)) {
-      newSet.delete(id)
-    } else {
-      newSet.add(id)
-    }
-    setSelectedExpenseIds(newSet)
+    const s = new Set(selectedExpenseIds)
+    s.has(id) ? s.delete(id) : s.add(id)
+    setSelectedExpenseIds(s)
   }
 
   const toggleExpenseSelectAll = () => {
-    if (selectedExpenseIds.size === expenses.length) {
-      setSelectedExpenseIds(new Set())
-    } else {
-      setSelectedExpenseIds(new Set(expenses.map(e => e.id)))
-    }
+    setSelectedExpenseIds(
+      selectedExpenseIds.size === pagedExpenses.length
+        ? new Set()
+        : new Set(pagedExpenses.map(e => e.id))
+    )
   }
 
   const toggleItemSelection = (index: number) => {
-    const newSet = new Set(selectedItemIndices)
-    if (newSet.has(index)) {
-      newSet.delete(index)
-    } else {
-      newSet.add(index)
-    }
-    setSelectedItemIndices(newSet)
+    const s = new Set(selectedItemIndices)
+    s.has(index) ? s.delete(index) : s.add(index)
+    setSelectedItemIndices(s)
   }
 
   const toggleItemSelectAll = () => {
-    if (selectedItemIndices.size === receiptItems.length) {
-      setSelectedItemIndices(new Set())
-    } else {
-      setSelectedItemIndices(new Set(receiptItems.map((_, idx) => idx)))
-    }
+    setSelectedItemIndices(
+      selectedItemIndices.size === receiptItems.length
+        ? new Set()
+        : new Set(receiptItems.map((_, idx) => idx))
+    )
   }
 
+  // ─── Expense inline edit ─────────────────────────────────────────────────────
   const startEditingExpense = (expense: Expense) => {
     setEditingExpenseId(expense.id)
     setEditExpenseTitle(expense.title)
-    setEditExpenseAmount(expense.amount.toString())
+    setEditExpenseAmount(String(expense.amount))
+    setEditExpenseTitleError(null)
+    setEditExpenseAmountError(null)
   }
 
   const cancelEditingExpense = () => {
     setEditingExpenseId(null)
     setEditExpenseTitle('')
     setEditExpenseAmount('')
+    setEditExpenseTitleError(null)
+    setEditExpenseAmountError(null)
+  }
+
+  const validateExpense = (): boolean => {
+    let valid = true
+    if (!editExpenseTitle.trim()) {
+      setEditExpenseTitleError(t('expenses.titleRequired'))
+      valid = false
+    } else {
+      setEditExpenseTitleError(null)
+    }
+    const parsedAmount = parseFloat(editExpenseAmount)
+    if (isNaN(parsedAmount) || parsedAmount <= 0) {
+      setEditExpenseAmountError(t('expenses.amountRequired'))
+      valid = false
+    } else {
+      setEditExpenseAmountError(null)
+    }
+    return valid
   }
 
   const saveExpense = async (id: string) => {
+    if (!validateExpense()) return
     setIsSavingExpense(true)
-    
-    const { error: updateError } = await supabase
-      .from('expenses')
-      .update({
-        title: editExpenseTitle,
-        amount: parseFloat(editExpenseAmount) || 0,
-      })
-      .eq('id', id)
-    
-    if (updateError) {
-      setError('Failed to update expense')
-    } else {
-      setEditingExpenseId(null)
-      await fetchExpenses()
-    }
+    await fetch('/api/data/expenses', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, title: editExpenseTitle.trim(), amount: parseFloat(editExpenseAmount) }),
+    })
+    setEditingExpenseId(null)
+    await fetchExpenses()
     setIsSavingExpense(false)
   }
 
   const handleExpenseKeyDown = (e: React.KeyboardEvent, id: string) => {
-    if (e.key === 'Enter') {
-      e.preventDefault()
-      saveExpense(id)
-    }
+    if (e.key === 'Enter') { e.preventDefault(); saveExpense(id) }
+    if (e.key === 'Escape') { e.preventDefault(); cancelEditingExpense() }
   }
 
+  // ─── Receipt item inline edit ────────────────────────────────────────────────
   const startEditingItem = (index: number, item: ReceiptItem) => {
     setEditingItemIndex(index)
     setEditItemName(item.name)
     setEditItemPrice((item.price ?? 0).toString())
-    setEditItemCategory(item.category_id ?? '')
+    setEditItemCategory(item.categoryId ?? '')
+    setEditItemNameError(null)
+    setEditItemPriceError(null)
   }
 
   const cancelEditingItem = () => {
@@ -368,90 +501,76 @@ export default function ExpensesPage() {
     setEditItemName('')
     setEditItemPrice('')
     setEditItemCategory('')
+    setEditItemNameError(null)
+    setEditItemPriceError(null)
+  }
+
+  const validateItem = (): boolean => {
+    let valid = true
+    if (!editItemName.trim()) {
+      setEditItemNameError(t('expenses.itemNameRequired'))
+      valid = false
+    } else {
+      setEditItemNameError(null)
+    }
+    const parsedPrice = parseFloat(editItemPrice)
+    if (isNaN(parsedPrice) || parsedPrice < 0) {
+      setEditItemPriceError(t('expenses.itemPriceRequired'))
+      valid = false
+    } else {
+      setEditItemPriceError(null)
+    }
+    return valid
   }
 
   const saveItem = async (index: number) => {
+    if (!validateItem()) return
     setIsSavingItem(true)
-    
     const updatedItems = [...receiptItems]
     updatedItems[index] = {
       ...updatedItems[index],
-      name: editItemName,
-      price: parseFloat(editItemPrice) || 0,
-      category_id: editItemCategory || null,
+      name: editItemName.trim(),
+      price: parseFloat(editItemPrice),
+      categoryId: editItemCategory || null,
     }
-    
     await saveReceiptItems(updatedItems)
     setEditingItemIndex(null)
     setIsSavingItem(false)
   }
 
   const handleItemKeyDown = (e: React.KeyboardEvent, index: number) => {
-    if (e.key === 'Enter') {
-      e.preventDefault()
-      saveItem(index)
-    }
+    if (e.key === 'Enter') { e.preventDefault(); saveItem(index) }
+    if (e.key === 'Escape') { e.preventDefault(); cancelEditingItem() }
   }
 
   const saveReceiptItems = async (items: ReceiptItem[]) => {
-    if (!selectedExpense?.receipt_id) return
-    
-    const { data: receiptData } = await supabase
-      .from('receipts')
-      .select('notes')
-      .eq('id', selectedExpense.receipt_id)
-      .single()
-    
-    let notesData: ReceiptData = {}
-    if (receiptData?.notes) {
-      try {
-        notesData = JSON.parse(receiptData.notes)
-      } catch (e) {
-        console.error('Failed to parse receipt notes:', e)
-      }
-    }
-    
-    notesData.items = items
-    
-    const { error: updateError } = await supabase
-      .from('receipts')
-      .update({ notes: JSON.stringify(notesData) })
-      .eq('id', selectedExpense.receipt_id)
-    
-    if (updateError) {
-      setError('Failed to update items')
-    } else {
-      setReceiptItems(items)
-      // Wyślij custom event do dashboardu (items się zmieniły, więc kategorie też)
-      window.dispatchEvent(new CustomEvent('expensesUpdated'))
-    }
+    if (!selectedExpense?.receiptId) return
+    await fetch('/api/data/receipts', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: selectedExpense.receiptId, items }),
+    })
+    setReceiptItems(items)
+    window.dispatchEvent(new CustomEvent('expensesUpdated'))
   }
 
+  // ─── Expense click / receipt items ──────────────────────────────────────────
   const handleExpenseClick = async (expense: Expense) => {
     setSelectedExpense(expense)
     setSelectedItemIndices(new Set())
-    
-    if (expense.receipt_id) {
+    cancelEditingItem()
+    if (expense.receiptId) {
       setLoadingReceiptItems(true)
       setReceiptItems([])
-      
-      const { data: receiptData, error: receiptError } = await supabase
-        .from('receipts')
-        .select('notes')
-        .eq('id', expense.receipt_id)
-        .single()
-      
-      if (!receiptError && receiptData?.notes) {
-        try {
-          const parsed: ReceiptData = JSON.parse(receiptData.notes)
-          setReceiptItems(parsed.items || [])
-        } catch (e) {
-          console.error('Failed to parse receipt notes:', e)
-          setReceiptItems([])
+      try {
+        const res = await fetch(`/api/data/receipts?id=${expense.receiptId}`)
+        if (res.ok) {
+          const receipt = await res.json()
+          setReceiptItems(Array.isArray(receipt.items) ? receipt.items : [])
         }
+      } finally {
+        setLoadingReceiptItems(false)
       }
-      
-      setLoadingReceiptItems(false)
     } else {
       setReceiptItems([])
     }
@@ -461,707 +580,1027 @@ export default function ExpensesPage() {
     setLoadingImage(true)
     setIsImageDialogOpen(true)
     setReceiptImageUrl(null)
-    
+    setViewingReceiptId(receiptId)
+    setShareCopied(false)
+    setShowShareQr(false)
     try {
-      // Pobierz URL zdjęcia z tabeli receipt_images
-      const { data: imageData, error: imageError } = await supabase
-        .from('receipt_images')
-        .select('image_url')
-        .eq('receipt_id', receiptId)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle()
-      
-      if (!imageError && imageData?.image_url) {
-        setReceiptImageUrl(imageData.image_url)
-      } else {
-        // Fallback: spróbuj wygenerować URL z Storage
-        const { data: { user } } = await supabase.auth.getUser()
-        if (user) {
-          // Pobierz wszystkie pliki z folderu receipt
-          const { data: files, error: listError } = await supabase.storage
-            .from('receipts')
-            .list(`${user.id}/${receiptId}`)
-          
-          if (!listError && files && files.length > 0) {
-            // Weź pierwszy plik
-            const firstFile = files[0]
-            const { data: urlData } = supabase.storage
-              .from('receipts')
-              .getPublicUrl(`${user.id}/${receiptId}/${firstFile.name}`)
-            
-            if (urlData?.publicUrl) {
-              setReceiptImageUrl(urlData.publicUrl)
-            }
-          }
-        }
+      const res = await fetch(`/api/data/receipts?id=${receiptId}`)
+      if (res.ok) {
+        const receipt = await res.json()
+        setReceiptImageUrl(receipt.imageUrl || null)
       }
-    } catch (error) {
-      console.error('Failed to load receipt image:', error)
     } finally {
       setLoadingImage(false)
     }
   }
 
+  const handleShareReceipt = async () => {
+    if (!viewingReceiptId) return
+    const url = `${window.location.origin}/receipt/${viewingReceiptId}`
+    try {
+      await navigator.clipboard.writeText(url)
+      setShareCopied(true)
+      setTimeout(() => setShareCopied(false), 2000)
+    } catch {
+      // fallback
+      const el = document.createElement('textarea')
+      el.value = url
+      document.body.appendChild(el)
+      el.select()
+      document.execCommand('copy')
+      document.body.removeChild(el)
+      setShareCopied(true)
+      setTimeout(() => setShareCopied(false), 2000)
+    }
+  }
+
+  // ─── Render ──────────────────────────────────────────────────────────────────
   return (
     <main className="min-h-screen w-full p-2 sm:p-4 md:p-6 lg:p-10">
-      <div className="flex flex-col h-full space-y-4 sm:space-y-6 md:space-y-12">
-        {/* Nagłówek */}
+      <div className="flex flex-col h-full space-y-4 sm:space-y-6 md:space-y-10">
+
+        {/* ── Header ── */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 sm:gap-6">
           <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold tracking-tight" suppressHydrationWarning>
             {t('expenses.title')}
           </h1>
           <div className="flex items-center gap-1 sm:gap-2 flex-wrap">
-            {selectedExpenseIds.size > 0 && (
-              <Button
-                variant="destructive"
-                size="sm"
-                onClick={bulkDeleteExpenses}
-                disabled={isBulkDeleting}
-                className="text-xs sm:text-sm"
-              >
-                {isBulkDeleting ? (
-                  <>
-                    <Loader2 className="mr-1 sm:mr-2 h-3 w-3 sm:h-4 sm:w-4 animate-spin" />
-                    <span className="hidden sm:inline" suppressHydrationWarning>{t('expenses.deleting')}</span>
-                  </>
-                ) : (
-                  <>
+            <AnimatePresence>
+              {selectedExpenseIds.size > 0 && (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.9 }}
+                  transition={{ duration: 0.15 }}
+                >
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => setIsBulkDeleteDialogOpen(true)}
+                    className="text-xs sm:text-sm"
+                  >
                     <Trash2 className="mr-1 sm:mr-2 h-3 w-3 sm:h-4 sm:w-4" />
                     <span className="hidden sm:inline" suppressHydrationWarning>{t('expenses.delete')} </span>
                     {selectedExpenseIds.size}
-                  </>
-                )}
+                  </Button>
+                </motion.div>
+              )}
+            </AnimatePresence>
+            {expenses.length > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleExportCsv}
+                className="text-xs sm:text-sm gap-1.5"
+                suppressHydrationWarning
+              >
+                <Download className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">{t('expenses.exportCsv')}</span>
+                <span className="sm:hidden">CSV</span>
               </Button>
             )}
             <ScanReceiptButton onAction={handleAfterScan} />
-            <AddExpenseTrigger onAction={async () => {
-              await fetchExpenses()
-              // Wyślij custom event do dashboardu
-              window.dispatchEvent(new CustomEvent('expensesUpdated'))
-            }} />
+            <AddExpenseTrigger
+              open={isAddExpenseOpen}
+              onOpenChange={setIsAddExpenseOpen}
+              onAction={async () => {
+                await fetchExpenses()
+                window.dispatchEvent(new CustomEvent('expensesUpdated'))
+              }}
+            />
           </div>
         </div>
 
-        {/* TABELA EXPENSES */}
+        {/* ── Expenses Table Section ── */}
         <section className="rounded-xl border p-4 sm:p-6 overflow-hidden flex-1">
           {loading ? (
-            <div className="flex justify-center py-32">
-              <Loader2 className="animate-spin h-8 w-8 text-muted-foreground" />
-            </div>
-          ) : error ? (
-            <div className="flex flex-col items-center justify-center py-32">
-              <p className="text-center text-destructive text-lg mb-4">{error}</p>
-              <Button onClick={fetchExpenses} variant="outline" suppressHydrationWarning>{t('expenses.retry')}</Button>
-            </div>
-          ) : expenses.length === 0 ? (
-            <p className="text-center text-muted-foreground text-lg py-32" suppressHydrationWarning>
-              {t('expenses.noExpenses')}
-            </p>
-          ) : (
+            /* ── Loading skeleton ── */
             <>
-              {/* Mobile: Card view */}
-              <div className="block sm:hidden space-y-3 overflow-y-auto max-h-[60vh]">
-                {expenses.map((expense) => (
-                  <div
-                    key={expense.id}
-                    className={`border rounded-lg p-3 ${
-                      selectedExpense?.id === expense.id
-                        ? 'bg-muted/40 border-primary'
-                        : 'bg-card'
-                    }`}
-                    onClick={() => handleExpenseClick(expense)}
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <Checkbox
-                            checked={selectedExpenseIds.has(expense.id)}
-                            onCheckedChange={() => toggleExpenseSelection(expense.id)}
-                            onClick={(e) => e.stopPropagation()}
-                            className="h-4 w-4"
-                          />
-                          <h3 className="font-semibold text-sm truncate">
-                            {editingExpenseId === expense.id ? (
-                              <Input
-                                value={editExpenseTitle}
-                                onChange={(e) => setEditExpenseTitle(e.target.value)}
-                                onKeyDown={(e) => handleExpenseKeyDown(e, expense.id)}
-                                className="h-7 text-sm"
-                                onClick={(e) => e.stopPropagation()}
-                              />
-                            ) : (
-                              expense.title
-                            )}
-                          </h3>
-                        </div>
-                        <div className="flex items-center justify-between text-xs text-muted-foreground">
-                          <span>{expense.vendor || '—'}</span>
-                          <span className="font-medium text-foreground">
-                            {editingExpenseId === expense.id ? (
-                              <Input
-                                value={editExpenseAmount}
-                                onChange={(e) => setEditExpenseAmount(e.target.value)}
-                                onKeyDown={(e) => handleExpenseKeyDown(e, expense.id)}
-                                type="number"
-                                step="0.01"
-                                className="h-6 w-20 text-xs"
-                                onClick={(e) => e.stopPropagation()}
-                              />
-                            ) : (
-                              `${expense.amount.toFixed(2)} ${currency}`
-                            )}
-                          </span>
-                        </div>
-                        <div className="text-xs text-muted-foreground mt-1">
-                          {new Date(expense.date).toLocaleDateString()}
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-                        {editingExpenseId === expense.id ? (
-                          <>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => saveExpense(expense.id)}
-                              disabled={isSavingExpense}
-                              className="h-7 w-7"
-                            >
-                              <Check className="h-3 w-3 text-green-600" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={cancelEditingExpense}
-                              className="h-7 w-7"
-                            >
-                              <X className="h-3 w-3" />
-                            </Button>
-                          </>
-                        ) : (
-                          <>
-                            {expense.receipt_id && (
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleViewReceiptImage(expense.receipt_id!);
-                                }}
-                                className="h-7 w-7"
-                                title={t('expenses.viewReceipt') || 'View receipt'}
-                              >
-                                <ImageIcon className="h-3 w-3 text-blue-500" />
-                              </Button>
-                            )}
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => {
-                                setSelectedExpense(expense);
-                                setIsDeleteDialogOpen(true);
-                              }}
-                              className="h-7 w-7"
-                            >
-                              <Trash2 className="h-3 w-3 text-red-500" />
-                            </Button>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                ))}
+              {/* Search bar skeleton */}
+              <div className="flex flex-col sm:flex-row gap-2 mb-4">
+                <Skeleton className="h-9 w-full sm:w-64 rounded-md" />
+                <Skeleton className="h-9 w-full sm:w-48 rounded-md" />
+                <Skeleton className="h-9 w-full sm:w-32 rounded-md" />
+                <Skeleton className="h-9 w-full sm:w-32 rounded-md" />
               </div>
-
-              {/* Desktop: Table view */}
-              <div className="hidden sm:block overflow-y-auto max-h-[60vh]">
+              {/* Mobile skeletons */}
+              <div className="block sm:hidden space-y-3">
+                {Array.from({ length: 5 }).map((_, i) => <MobileCardSkeleton key={i} />)}
+              </div>
+              {/* Desktop skeletons */}
+              <div className="hidden sm:block">
                 <Table className="w-full text-sm">
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="w-12">
-                        <Checkbox
-                          checked={selectedExpenseIds.size === expenses.length && expenses.length > 0}
-                          onCheckedChange={toggleExpenseSelectAll}
-                        />
-                      </TableHead>
-                      <TableHead suppressHydrationWarning>{t('expenses.titleCol')}</TableHead>
-                      <TableHead className="hidden sm:table-cell" suppressHydrationWarning>{t('expenses.vendor')}</TableHead>
-                      <TableHead suppressHydrationWarning>{t('expenses.amount')}</TableHead>
-                      <TableHead className="hidden md:table-cell" suppressHydrationWarning>{t('expenses.date')}</TableHead>
-                      <TableHead className="text-right" suppressHydrationWarning>{t('expenses.actions')}</TableHead>
+                      <TableHead className="w-12"><Skeleton className="h-4 w-4 rounded" /></TableHead>
+                      <TableHead><Skeleton className="h-4 w-16 rounded" /></TableHead>
+                      <TableHead className="hidden sm:table-cell"><Skeleton className="h-4 w-16 rounded" /></TableHead>
+                      <TableHead><Skeleton className="h-4 w-16 rounded" /></TableHead>
+                      <TableHead className="hidden md:table-cell"><Skeleton className="h-4 w-16 rounded" /></TableHead>
+                      <TableHead className="text-right"><Skeleton className="h-4 w-16 ml-auto rounded" /></TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {expenses.map((expense) => (
-                    <TableRow
-                      key={expense.id}
-                      className={`${
-                        selectedExpense?.id === expense.id
-                          ? 'bg-muted/40'
-                          : 'hover:bg-muted/20'
-                      }`}
-                    >
-                      <TableCell onClick={(e) => e.stopPropagation()}>
-                        <Checkbox
-                          checked={selectedExpenseIds.has(expense.id)}
-                          onCheckedChange={() => toggleExpenseSelection(expense.id)}
-                        />
-                      </TableCell>
-                      <TableCell 
-                        className="font-medium cursor-pointer"
-                        onClick={() => handleExpenseClick(expense)}
-                      >
-                        {editingExpenseId === expense.id ? (
-                          <Input
-                            value={editExpenseTitle}
-                            onChange={(e) => setEditExpenseTitle(e.target.value)}
-                            onKeyDown={(e) => handleExpenseKeyDown(e, expense.id)}
-                            className="h-8"
-                            onClick={(e) => e.stopPropagation()}
-                          />
-                        ) : (
-                          expense.title
-                        )}
-                      </TableCell>
-                      <TableCell 
-                        className="hidden sm:table-cell cursor-pointer"
-                        onClick={() => handleExpenseClick(expense)}
-                      >
-                        {expense.vendor || '—'}
-                      </TableCell>
-                      <TableCell 
-                        className="font-medium cursor-pointer"
-                        onClick={() => handleExpenseClick(expense)}
-                      >
-                        {editingExpenseId === expense.id ? (
-                          <Input
-                            value={editExpenseAmount}
-                            onChange={(e) => setEditExpenseAmount(e.target.value)}
-                            onKeyDown={(e) => handleExpenseKeyDown(e, expense.id)}
-                            type="number"
-                            step="0.01"
-                            className="h-8 w-24"
-                            onClick={(e) => e.stopPropagation()}
-                          />
-                        ) : (
-                          `${expense.amount.toFixed(2)} PLN`
-                        )}
-                      </TableCell>
-                      <TableCell 
-                        className="hidden md:table-cell cursor-pointer"
-                        onClick={() => handleExpenseClick(expense)}
-                      >
-                        {new Date(expense.date).toLocaleDateString()}
-                      </TableCell>
-                      <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
-                        {editingExpenseId === expense.id ? (
-                          <div className="flex justify-end gap-1">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => saveExpense(expense.id)}
-                              disabled={isSavingExpense}
-                            >
-                              <Check className="h-4 w-4 text-green-600" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={cancelEditingExpense}
-                            >
-                              <X className="h-4 w-4 text-red-500" />
-                            </Button>
-                          </div>
-                        ) : (
-                          <div className="flex justify-end gap-1">
-                            {expense.receipt_id && (
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => handleViewReceiptImage(expense.receipt_id!)}
-                                title={t('expenses.viewReceipt') || 'View receipt'}
-                              >
-                                <ImageIcon className="h-4 w-4 text-blue-500" />
-                              </Button>
-                            )}
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => startEditingExpense(expense)}
-                            >
-                              <Edit2 className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => {
-                                setSelectedExpense(expense)
-                                setIsDeleteDialogOpen(true)
-                              }}
-                            >
-                              <Trash2 className="h-4 w-4 text-red-500" />
-                            </Button>
-                          </div>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                    ))}
+                    {Array.from({ length: 7 }).map((_, i) => <TableRowSkeleton key={i} />)}
                   </TableBody>
                 </Table>
               </div>
             </>
-          )}
-        </section>
-
-        {/* PANEL SZCZEGÓŁÓW - ITEMS */}
-        <section className="w-full">
-          {selectedExpense && selectedExpense.receipt_id ? (
-            <Card className="border p-4 sm:p-6">
-              <CardHeader className="flex flex-row items-center justify-between">
-                <CardTitle className="text-lg sm:text-2xl font-semibold" suppressHydrationWarning>
-                  {t('expenses.receiptItems')} - {selectedExpense.title}
-                </CardTitle>
-                {selectedItemIndices.size > 0 && (
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    onClick={bulkDeleteItems}
-                    className="text-xs sm:text-sm"
-                    suppressHydrationWarning
-                  >
-                    <Trash2 className="mr-2 h-4 w-4" />
-                    {t('expenses.delete')} {selectedItemIndices.size}
-                  </Button>
-                )}
-              </CardHeader>
-              <CardContent>
-                {loadingReceiptItems ? (
-                  <div className="flex justify-center py-8">
-                    <Loader2 className="animate-spin h-6 w-6 text-muted-foreground" />
+          ) : error ? (
+            /* ── Error state ── */
+            <motion.div
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="flex flex-col items-center justify-center py-32 gap-4"
+            >
+              <div className="flex items-center justify-center w-16 h-16 rounded-full bg-destructive/10">
+                <AlertCircle className="h-8 w-8 text-destructive" />
+              </div>
+              <p className="text-center text-destructive text-lg font-medium">{error}</p>
+              <Button
+                onClick={() => fetchExpenses()}
+                variant="outline"
+                className="gap-2"
+                suppressHydrationWarning
+              >
+                <RefreshCw className="h-4 w-4" />
+                {t('expenses.retry')}
+              </Button>
+            </motion.div>
+          ) : expenses.length === 0 ? (
+            /* ── Empty state ── */
+            <motion.div
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3 }}
+              className="flex flex-col items-center justify-center py-32 gap-5 text-center"
+            >
+              <div className="flex items-center justify-center w-20 h-20 rounded-full bg-muted">
+                <ReceiptText className="h-10 w-10 text-muted-foreground" />
+              </div>
+              <div className="space-y-1">
+                <h2 className="text-xl font-semibold" suppressHydrationWarning>
+                  {t('expenses.noExpensesTitle')}
+                </h2>
+                <p className="text-muted-foreground text-sm max-w-xs" suppressHydrationWarning>
+                  {t('expenses.noExpensesDesc')}
+                </p>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap justify-center">
+                <ScanReceiptButton onAction={handleAfterScan} />
+                <AddExpenseTrigger
+                  open={isAddExpenseOpen}
+                  onOpenChange={setIsAddExpenseOpen}
+                  onAction={async () => {
+                    await fetchExpenses()
+                    window.dispatchEvent(new CustomEvent('expensesUpdated'))
+                  }}
+                />
+              </div>
+            </motion.div>
+          ) : (
+            /* ── Expense list ── */
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.2 }}
+            >
+              {/* ── Filter bar ── */}
+              <div className="flex flex-col gap-2 mb-4">
+                <div className="flex flex-col sm:flex-row gap-2">
+                  {/* Search */}
+                  <div className="relative flex-1 max-w-sm">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                    <Input
+                      value={searchQuery}
+                      onChange={(e) => handleSearchChange(e.target.value)}
+                      placeholder={t('expenses.searchPlaceholder')}
+                      className="pl-8 h-9 text-sm"
+                    />
+                    <AnimatePresence>
+                      {searchQuery && (
+                        <motion.button
+                          initial={{ opacity: 0, scale: 0.8 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          exit={{ opacity: 0, scale: 0.8 }}
+                          onClick={() => handleSearchChange('')}
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                          aria-label="Clear search"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </motion.button>
+                      )}
+                    </AnimatePresence>
                   </div>
-                ) : receiptItems.length > 0 ? (
-                  <>
-                    {/* Mobile: Card view */}
-                    <div className="block sm:hidden space-y-2">
-                      <div className="flex items-center gap-2 pb-2 border-b">
-                        <Checkbox
-                          checked={selectedItemIndices.size === receiptItems.length && receiptItems.length > 0}
-                          onCheckedChange={toggleItemSelectAll}
-                        />
-                        <span className="text-sm font-medium" suppressHydrationWarning>{t('expenses.selectAll')}</span>
-                      </div>
-                      {receiptItems.map((item, index) => {
-                        const quantity = item.quantity ?? 1
-                        const totalPrice = item.price ?? 0
-                        const rawCategoryName = item.category_id ? categories.get(item.category_id) || t('expenses.noCategory') : t('expenses.noCategory')
-                        const categoryName = translateCategoryName(rawCategoryName)
-                        
-                        return (
-                          <div
-                            key={index}
-                            className="border rounded-lg p-3 bg-card"
-                          >
-                            <div className="flex items-start justify-between gap-2">
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2 mb-1">
-                                  <Checkbox
-                                    checked={selectedItemIndices.has(index)}
-                                    onCheckedChange={() => toggleItemSelection(index)}
-                                    className="h-4 w-4"
-                                  />
-                                  <h4 className="font-medium text-sm">
-                                    {editingItemIndex === index ? (
-                                      <Input
-                                        value={editItemName}
-                                        onChange={(e) => setEditItemName(e.target.value)}
-                                        onKeyDown={(e) => handleItemKeyDown(e, index)}
-                                        className="h-7 text-sm"
-                                      />
-                                    ) : (
-                                      item.name
+
+                  {/* Category filter */}
+                  <Select value={filterCategoryId} onValueChange={(v) => { setFilterCategoryId(v); setCurrentPage(1) }}>
+                    <SelectTrigger className="h-9 text-sm sm:w-48" suppressHydrationWarning>
+                      <SelectValue placeholder={t('expenses.filterCategory')} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all" suppressHydrationWarning>{t('expenses.allCategories')}</SelectItem>
+                      {categoriesList.map(cat => (
+                        <SelectItem key={cat.id} value={cat.id}>
+                          {translateCategoryName(cat.name)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+
+                  {/* Clear filters */}
+                  <AnimatePresence>
+                    {hasActiveFilters && (
+                      <motion.div
+                        initial={{ opacity: 0, width: 0 }}
+                        animate={{ opacity: 1, width: 'auto' }}
+                        exit={{ opacity: 0, width: 0 }}
+                        className="overflow-hidden"
+                      >
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={clearFilters}
+                          className="h-9 gap-1.5 text-sm whitespace-nowrap"
+                          suppressHydrationWarning
+                        >
+                          <FilterX className="h-3.5 w-3.5" />
+                          {t('expenses.clearFilters')}
+                        </Button>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+
+                {/* Date range row */}
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <div className="flex items-center gap-2 flex-1 max-w-xs">
+                    <label className="text-xs text-muted-foreground whitespace-nowrap" suppressHydrationWarning>
+                      {t('expenses.dateFrom')}
+                    </label>
+                    <Input
+                      type="date"
+                      value={dateFrom}
+                      onChange={(e) => { setDateFrom(e.target.value); setCurrentPage(1) }}
+                      className="h-9 text-sm flex-1"
+                      max={dateTo || undefined}
+                    />
+                  </div>
+                  <div className="flex items-center gap-2 flex-1 max-w-xs">
+                    <label className="text-xs text-muted-foreground whitespace-nowrap" suppressHydrationWarning>
+                      {t('expenses.dateTo')}
+                    </label>
+                    <Input
+                      type="date"
+                      value={dateTo}
+                      onChange={(e) => { setDateTo(e.target.value); setCurrentPage(1) }}
+                      className="h-9 text-sm flex-1"
+                      min={dateFrom || undefined}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* No results after filtering */}
+              {filteredExpenses.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-20 gap-3 text-center">
+                  <Search className="h-10 w-10 text-muted-foreground/50" />
+                  <p className="text-muted-foreground text-sm" suppressHydrationWarning>
+                    {t('expenses.noExpenses')}
+                  </p>
+                  <Button variant="ghost" size="sm" onClick={clearFilters} suppressHydrationWarning>
+                    {t('expenses.clearFilters')}
+                  </Button>
+                </div>
+              ) : (
+                <>
+                  {/* ── Mobile: Card view ── */}
+                  <div className="block sm:hidden space-y-3 overflow-y-auto max-h-[60vh]">
+                    {pagedExpenses.map((expense, idx) => (
+                      <motion.div
+                        key={expense.id}
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: idx * 0.03 }}
+                        className={`border rounded-lg p-3 transition-colors ${
+                          selectedExpense?.id === expense.id
+                            ? 'bg-muted/40 border-primary'
+                            : 'bg-card'
+                        }`}
+                        onClick={() => handleExpenseClick(expense)}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1">
+                              <Checkbox
+                                checked={selectedExpenseIds.has(expense.id)}
+                                onCheckedChange={() => toggleExpenseSelection(expense.id)}
+                                onClick={(e) => e.stopPropagation()}
+                                className="h-4 w-4"
+                              />
+                              <h3 className="font-semibold text-sm truncate">
+                                {editingExpenseId === expense.id ? (
+                                  <div onClick={(e) => e.stopPropagation()} className="space-y-1">
+                                    <Input
+                                      value={editExpenseTitle}
+                                      onChange={(e) => {
+                                        setEditExpenseTitle(e.target.value)
+                                        if (e.target.value.trim()) setEditExpenseTitleError(null)
+                                      }}
+                                      onKeyDown={(e) => handleExpenseKeyDown(e, expense.id)}
+                                      className={`h-7 text-sm ${editExpenseTitleError ? 'border-destructive' : ''}`}
+                                    />
+                                    {editExpenseTitleError && (
+                                      <p className="text-destructive text-xs">{editExpenseTitleError}</p>
                                     )}
-                                  </h4>
-                                </div>
-                                <div className="text-xs text-muted-foreground ml-6">
-                                  {categoryName}
-                                </div>
-                                <div className="flex items-center justify-between text-xs mt-2 ml-6">
-                                  <span suppressHydrationWarning>{t('expenses.qty')}: {quantity}</span>
-                                  <span className="font-medium">{totalPrice.toFixed(2)} {currency}</span>
-                                </div>
-                              </div>
-                              <div className="flex items-center gap-1">
-                                {editingItemIndex === index ? (
-                                  <>
-                                    <Button
-                                      variant="ghost"
-                                      size="icon"
-                                      onClick={() => saveItem(index)}
-                                      disabled={loading}
-                                      className="h-7 w-7"
-                                    >
-                                      <Check className="h-3 w-3 text-green-600" />
-                                    </Button>
-                                    <Button
-                                      variant="ghost"
-                                      size="icon"
-                                      onClick={cancelEditingItem}
-                                      className="h-7 w-7"
-                                    >
-                                      <X className="h-3 w-3" />
-                                    </Button>
-                                  </>
-                                ) : (
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    onClick={() => startEditingItem(index, item)}
-                                    disabled={loading}
-                                    className="h-7 w-7"
-                                  >
-                                    <Edit2 className="h-3 w-3" />
-                                  </Button>
-                                )}
-                              </div>
+                                  </div>
+                                ) : expense.title}
+                              </h3>
+                            </div>
+                            <div className="flex items-center justify-between text-xs text-muted-foreground">
+                              <span>{expense.vendor || '—'}</span>
+                              <span className="font-medium text-foreground">
+                                {editingExpenseId === expense.id ? (
+                                  <div onClick={(e) => e.stopPropagation()} className="space-y-1">
+                                    <Input
+                                      value={editExpenseAmount}
+                                      onChange={(e) => {
+                                        setEditExpenseAmount(e.target.value)
+                                        if (parseFloat(e.target.value) > 0) setEditExpenseAmountError(null)
+                                      }}
+                                      onKeyDown={(e) => handleExpenseKeyDown(e, expense.id)}
+                                      type="number"
+                                      step="0.01"
+                                      min="0.01"
+                                      className={`h-6 w-20 text-xs ${editExpenseAmountError ? 'border-destructive' : ''}`}
+                                    />
+                                    {editExpenseAmountError && (
+                                      <p className="text-destructive text-xs">{editExpenseAmountError}</p>
+                                    )}
+                                  </div>
+                                ) : formatAmount(expense.amount, currency)}
+                              </span>
+                            </div>
+                            <div className="text-xs text-muted-foreground mt-1">
+                              {new Date(expense.date).toLocaleDateString()}
                             </div>
                           </div>
-                        )
-                      })}
-                    </div>
-
-                    {/* Desktop: Table view */}
-                    <div className="hidden sm:block overflow-x-auto">
-                      <Table className="w-full">
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead className="w-12">
-                              <Checkbox
-                                checked={selectedItemIndices.size === receiptItems.length && receiptItems.length > 0}
-                                onCheckedChange={toggleItemSelectAll}
-                              />
-                            </TableHead>
-                            <TableHead suppressHydrationWarning>{isPolish ? 'Produkt' : 'Item'}</TableHead>
-                            <TableHead suppressHydrationWarning>{t('expenses.category')}</TableHead>
-                            <TableHead className="text-right" suppressHydrationWarning>{t('expenses.qty')}</TableHead>
-                            <TableHead className="text-right" suppressHydrationWarning>{t('expenses.price')}</TableHead>
-                            <TableHead className="text-right" suppressHydrationWarning>{t('expenses.actions')}</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {receiptItems.map((item, index) => {
-                        const quantity = item.quantity ?? 1
-                        const totalPrice = item.price ?? 0
-                        const rawCategoryName = item.category_id ? categories.get(item.category_id) || t('expenses.noCategory') : t('expenses.noCategory')
-                        const categoryName = translateCategoryName(rawCategoryName)
-                        
-                        return (
-                          <TableRow key={index}>
-                            <TableCell>
-                              <Checkbox
-                                checked={selectedItemIndices.has(index)}
-                                onCheckedChange={() => toggleItemSelection(index)}
-                              />
-                            </TableCell>
-                            <TableCell className="font-medium">
-                              {editingItemIndex === index ? (
-                                <Input
-                                  value={editItemName}
-                                  onChange={(e) => setEditItemName(e.target.value)}
-                                  onKeyDown={(e) => handleItemKeyDown(e, index)}
-                                  className="h-8"
-                                />
-                              ) : (
-                                item.name
-                              )}
-                            </TableCell>
-                            <TableCell>
-                              {editingItemIndex === index ? (
-                                <Select value={editItemCategory} onValueChange={setEditItemCategory}>
-                                  <SelectTrigger className="h-8 w-32">
-                                    <SelectValue placeholder="Category" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {categoriesList.map(cat => (
-                                      <SelectItem key={cat.id} value={cat.id}>
-                                        {cat.name}
-                                      </SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-                              ) : (
-                                <span className="inline-flex items-center px-2 py-1 rounded-md bg-primary/10 text-primary text-xs font-medium">
-                                  {categoryName}
-                                </span>
-                              )}
-                            </TableCell>
-                            <TableCell className="text-right">{quantity}</TableCell>
-                            <TableCell className="text-right font-medium">
-                              {editingItemIndex === index ? (
-                                <Input
-                                  value={editItemPrice}
-                                  onChange={(e) => setEditItemPrice(e.target.value)}
-                                  onKeyDown={(e) => handleItemKeyDown(e, index)}
-                                  type="number"
-                                  step="0.01"
-                                  className="h-8 w-24"
-                                />
-                              ) : (
-                                `${totalPrice.toFixed(2)} PLN`
-                              )}
-                            </TableCell>
-                            <TableCell className="text-right">
-                              {editingItemIndex === index ? (
-                                <div className="flex justify-end gap-1">
+                          <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                            {editingExpenseId === expense.id ? (
+                              <>
+                                <Button variant="ghost" size="icon" onClick={() => saveExpense(expense.id)} disabled={isSavingExpense} className="h-7 w-7">
+                                  {isSavingExpense ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3 text-green-600" />}
+                                </Button>
+                                <Button variant="ghost" size="icon" onClick={cancelEditingExpense} className="h-7 w-7">
+                                  <X className="h-3 w-3" />
+                                </Button>
+                              </>
+                            ) : (
+                              <>
+                                {expense.receiptId && (
                                   <Button
                                     variant="ghost"
                                     size="icon"
-                                    onClick={() => saveItem(index)}
-                                    disabled={isSavingItem}
+                                    onClick={(e) => { e.stopPropagation(); handleViewReceiptImage(expense.receiptId!) }}
+                                    className="h-7 w-7"
+                                    title={t('expenses.viewReceipt')}
                                   >
-                                    <Check className="h-4 w-4 text-green-600" />
+                                    <ImageIcon className="h-3 w-3 text-blue-500" />
                                   </Button>
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    onClick={cancelEditingItem}
-                                  >
-                                    <X className="h-4 w-4 text-red-500" />
-                                  </Button>
-                                </div>
-                              ) : (
+                                )}
                                 <Button
                                   variant="ghost"
                                   size="icon"
-                                  onClick={() => startEditingItem(index, item)}
+                                  onClick={(e) => { e.stopPropagation(); startEditingExpense(expense) }}
+                                  className="h-7 w-7"
                                 >
-                                  <Edit2 className="h-4 w-4" />
+                                  <Edit2 className="h-3 w-3" />
                                 </Button>
-                              )}
-                            </TableCell>
-                          </TableRow>
-                        )
-                          })}
-                        </TableBody>
-                      </Table>
-                    </div>
-                  </>
-                ) : (
-                  <p className="text-muted-foreground py-8 text-center" suppressHydrationWarning>{t('expenses.noItems')}</p>
-                )}
-              </CardContent>
-            </Card>
-          ) : selectedExpense ? (
-            <Card className="border p-4 sm:p-6">
-              <CardHeader>
-                <CardTitle className="text-2xl font-semibold">
-                  {selectedExpense.title}
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4 text-sm">
-                <div className="grid grid-cols-2 gap-4">
-                  <p>
-                    <span className="font-medium text-muted-foreground">Vendor:</span>{' '}
-                    {selectedExpense.vendor || '—'}
-                  </p>
-                  <p>
-                    <span className="font-medium text-muted-foreground">Amount:</span>{' '}
-                    {selectedExpense.amount.toFixed(2)} PLN
-                  </p>
-                  <p>
-                    <span className="font-medium text-muted-foreground">Date:</span>{' '}
-                    {new Date(selectedExpense.date).toLocaleDateString()}
-                  </p>
-                </div>
-                {selectedExpense.notes && (
-                  <div className="mt-4 pt-4 border-t">
-                    <p>
-                      <span className="font-medium text-muted-foreground">Notes:</span>{' '}
-                      {selectedExpense.notes}
-                    </p>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => { setSelectedExpense(expense); setIsDeleteDialogOpen(true) }}
+                                  className="h-7 w-7"
+                                >
+                                  <Trash2 className="h-3 w-3 text-red-500" />
+                                </Button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </motion.div>
+                    ))}
                   </div>
-                )}
-              </CardContent>
-            </Card>
-          ) : (
-            <div className="h-48 flex items-center justify-center text-muted-foreground border rounded-xl">
-              <p>Select an expense to view details</p>
-            </div>
+
+                  {/* ── Desktop: Table view ── */}
+                  <div className="hidden sm:block overflow-y-auto max-h-[60vh]">
+                    <Table className="w-full text-sm">
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-12">
+                            <Checkbox
+                              checked={
+                                pagedExpenses.length > 0 &&
+                                pagedExpenses.every(e => selectedExpenseIds.has(e.id))
+                              }
+                              onCheckedChange={toggleExpenseSelectAll}
+                            />
+                          </TableHead>
+                          <TableHead
+                            className="cursor-pointer select-none"
+                            onClick={() => handleSort('title')}
+                            suppressHydrationWarning
+                          >
+                            {t('expenses.titleCol')}
+                            <SortIcon field="title" sortField={sortField} sortDir={sortDir} />
+                          </TableHead>
+                          <TableHead
+                            className="hidden sm:table-cell cursor-pointer select-none"
+                            onClick={() => handleSort('vendor')}
+                            suppressHydrationWarning
+                          >
+                            {t('expenses.vendor')}
+                            <SortIcon field="vendor" sortField={sortField} sortDir={sortDir} />
+                          </TableHead>
+                          <TableHead
+                            className="cursor-pointer select-none"
+                            onClick={() => handleSort('amount')}
+                            suppressHydrationWarning
+                          >
+                            {t('expenses.amount')}
+                            <SortIcon field="amount" sortField={sortField} sortDir={sortDir} />
+                          </TableHead>
+                          <TableHead
+                            className="hidden md:table-cell cursor-pointer select-none"
+                            onClick={() => handleSort('date')}
+                            suppressHydrationWarning
+                          >
+                            {t('expenses.date')}
+                            <SortIcon field="date" sortField={sortField} sortDir={sortDir} />
+                          </TableHead>
+                          <TableHead className="text-right" suppressHydrationWarning>{t('expenses.actions')}</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        <AnimatePresence initial={false}>
+                          {pagedExpenses.map((expense) => (
+                            <motion.tr
+                              key={expense.id}
+                              initial={{ opacity: 0 }}
+                              animate={{ opacity: 1 }}
+                              exit={{ opacity: 0 }}
+                              transition={{ duration: 0.15 }}
+                              className={`border-b transition-colors ${
+                                selectedExpense?.id === expense.id
+                                  ? 'bg-muted/40'
+                                  : 'hover:bg-muted/20'
+                              }`}
+                            >
+                              <TableCell onClick={(e) => e.stopPropagation()}>
+                                <Checkbox
+                                  checked={selectedExpenseIds.has(expense.id)}
+                                  onCheckedChange={() => toggleExpenseSelection(expense.id)}
+                                />
+                              </TableCell>
+
+                              {/* Title cell */}
+                              <TableCell className="font-medium cursor-pointer" onClick={() => handleExpenseClick(expense)}>
+                                {editingExpenseId === expense.id ? (
+                                  <div onClick={(e) => e.stopPropagation()} className="space-y-1">
+                                    <Input
+                                      value={editExpenseTitle}
+                                      onChange={(e) => {
+                                        setEditExpenseTitle(e.target.value)
+                                        if (e.target.value.trim()) setEditExpenseTitleError(null)
+                                      }}
+                                      onKeyDown={(e) => handleExpenseKeyDown(e, expense.id)}
+                                      className={`h-8 ${editExpenseTitleError ? 'border-destructive' : ''}`}
+                                    />
+                                    {editExpenseTitleError && (
+                                      <p className="text-destructive text-xs">{editExpenseTitleError}</p>
+                                    )}
+                                  </div>
+                                ) : expense.title}
+                              </TableCell>
+
+                              <TableCell className="hidden sm:table-cell cursor-pointer" onClick={() => handleExpenseClick(expense)}>
+                                {expense.vendor || '—'}
+                              </TableCell>
+
+                              {/* Amount cell */}
+                              <TableCell className="font-medium cursor-pointer" onClick={() => handleExpenseClick(expense)}>
+                                {editingExpenseId === expense.id ? (
+                                  <div onClick={(e) => e.stopPropagation()} className="space-y-1">
+                                    <Input
+                                      value={editExpenseAmount}
+                                      onChange={(e) => {
+                                        setEditExpenseAmount(e.target.value)
+                                        if (parseFloat(e.target.value) > 0) setEditExpenseAmountError(null)
+                                      }}
+                                      onKeyDown={(e) => handleExpenseKeyDown(e, expense.id)}
+                                      type="number"
+                                      step="0.01"
+                                      min="0.01"
+                                      className={`h-8 w-28 ${editExpenseAmountError ? 'border-destructive' : ''}`}
+                                    />
+                                    {editExpenseAmountError && (
+                                      <p className="text-destructive text-xs">{editExpenseAmountError}</p>
+                                    )}
+                                  </div>
+                                ) : formatAmount(expense.amount, currency)}
+                              </TableCell>
+
+                              <TableCell className="hidden md:table-cell cursor-pointer" onClick={() => handleExpenseClick(expense)}>
+                                {new Date(expense.date).toLocaleDateString()}
+                              </TableCell>
+
+                              {/* Actions */}
+                              <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                                {editingExpenseId === expense.id ? (
+                                  <div className="flex justify-end gap-1">
+                                    <Button variant="ghost" size="icon" onClick={() => saveExpense(expense.id)} disabled={isSavingExpense}>
+                                      {isSavingExpense ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4 text-green-600" />}
+                                    </Button>
+                                    <Button variant="ghost" size="icon" onClick={cancelEditingExpense}>
+                                      <X className="h-4 w-4 text-red-500" />
+                                    </Button>
+                                  </div>
+                                ) : (
+                                  <div className="flex justify-end gap-1">
+                                    {expense.receiptId && (
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        onClick={() => handleViewReceiptImage(expense.receiptId!)}
+                                        title={t('expenses.viewReceipt')}
+                                      >
+                                        <ImageIcon className="h-4 w-4 text-blue-500" />
+                                      </Button>
+                                    )}
+                                    <Button variant="ghost" size="icon" onClick={() => startEditingExpense(expense)}>
+                                      <Edit2 className="h-4 w-4" />
+                                    </Button>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      onClick={() => { setSelectedExpense(expense); setIsDeleteDialogOpen(true) }}
+                                    >
+                                      <Trash2 className="h-4 w-4 text-red-500" />
+                                    </Button>
+                                  </div>
+                                )}
+                              </TableCell>
+                            </motion.tr>
+                          ))}
+                        </AnimatePresence>
+                      </TableBody>
+                    </Table>
+                  </div>
+
+                  {/* ── Pagination ── */}
+                  {totalPages > 1 && (
+                    <div className="flex items-center justify-between mt-4 pt-4 border-t text-sm">
+                      <span className="text-muted-foreground text-xs" suppressHydrationWarning>
+                        {t('expenses.showing')} {pageStart + 1}–{Math.min(pageEnd, sortedExpenses.length)}{' '}
+                        {t('expenses.of')} {sortedExpenses.length} {t('expenses.results')}
+                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                          disabled={safePage === 1}
+                          className="h-8 px-2.5 text-xs gap-1"
+                          suppressHydrationWarning
+                        >
+                          <ChevronLeft className="h-3.5 w-3.5" />
+                          <span className="hidden sm:inline">{t('expenses.prevPage')}</span>
+                        </Button>
+                        <span className="text-xs text-muted-foreground px-1" suppressHydrationWarning>
+                          {t('expenses.page')} {safePage} {t('expenses.of')} {totalPages}
+                        </span>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                          disabled={safePage === totalPages}
+                          className="h-8 px-2.5 text-xs gap-1"
+                          suppressHydrationWarning
+                        >
+                          <span className="hidden sm:inline">{t('expenses.nextPage')}</span>
+                          <ChevronRight className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </motion.div>
           )}
         </section>
+
+        {/* ── Receipt Items Panel ── */}
+        <AnimatePresence>
+          {selectedExpense && (
+            <motion.section
+              key={selectedExpense.id}
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 8 }}
+              transition={{ duration: 0.2 }}
+              className="w-full"
+            >
+              {selectedExpense.receiptId ? (
+                <Card className="border p-4 sm:p-6">
+                  <CardHeader className="flex flex-row items-center justify-between pb-2">
+                    <CardTitle className="text-lg sm:text-2xl font-semibold" suppressHydrationWarning>
+                      {t('expenses.receiptItems')} — {selectedExpense.title}
+                    </CardTitle>
+                    {selectedItemIndices.size > 0 && (
+                      <Button variant="destructive" size="sm" onClick={bulkDeleteItems} className="text-xs sm:text-sm" suppressHydrationWarning>
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        {t('expenses.delete')} {selectedItemIndices.size}
+                      </Button>
+                    )}
+                  </CardHeader>
+                  <CardContent>
+                    {loadingReceiptItems ? (
+                      <div className="space-y-2 py-4">
+                        {Array.from({ length: 4 }).map((_, i) => (
+                          <div key={i} className="flex items-center gap-3">
+                            <Skeleton className="h-4 w-4 rounded" />
+                            <Skeleton className="h-4 flex-1 rounded" />
+                            <Skeleton className="h-4 w-20 rounded" />
+                            <Skeleton className="h-4 w-24 rounded" />
+                          </div>
+                        ))}
+                      </div>
+                    ) : receiptItems.length > 0 ? (
+                      <>
+                        {/* Mobile */}
+                        <div className="block sm:hidden space-y-2">
+                          <div className="flex items-center gap-2 pb-2 border-b">
+                            <Checkbox
+                              checked={selectedItemIndices.size === receiptItems.length && receiptItems.length > 0}
+                              onCheckedChange={toggleItemSelectAll}
+                            />
+                            <span className="text-sm font-medium" suppressHydrationWarning>{t('expenses.selectAll')}</span>
+                          </div>
+                          {receiptItems.map((item, index) => (
+                            <div key={index} className="border rounded-lg p-3">
+                              <div className="flex items-start gap-2">
+                                <Checkbox
+                                  checked={selectedItemIndices.has(index)}
+                                  onCheckedChange={() => toggleItemSelection(index)}
+                                  className="mt-1"
+                                />
+                                <div className="flex-1 space-y-1">
+                                  {editingItemIndex === index ? (
+                                    <div className="space-y-2">
+                                      <div>
+                                        <Input
+                                          value={editItemName}
+                                          onChange={(e) => {
+                                            setEditItemName(e.target.value)
+                                            if (e.target.value.trim()) setEditItemNameError(null)
+                                          }}
+                                          onKeyDown={(e) => handleItemKeyDown(e, index)}
+                                          className={`h-8 text-sm ${editItemNameError ? 'border-destructive' : ''}`}
+                                          placeholder={t('expenses.itemName')}
+                                        />
+                                        {editItemNameError && (
+                                          <p className="text-destructive text-xs mt-0.5">{editItemNameError}</p>
+                                        )}
+                                      </div>
+                                      <div>
+                                        <Input
+                                          value={editItemPrice}
+                                          onChange={(e) => {
+                                            setEditItemPrice(e.target.value)
+                                            if (parseFloat(e.target.value) >= 0) setEditItemPriceError(null)
+                                          }}
+                                          onKeyDown={(e) => handleItemKeyDown(e, index)}
+                                          type="number"
+                                          step="0.01"
+                                          min="0"
+                                          className={`h-8 text-sm ${editItemPriceError ? 'border-destructive' : ''}`}
+                                          placeholder={t('expenses.price')}
+                                        />
+                                        {editItemPriceError && (
+                                          <p className="text-destructive text-xs mt-0.5">{editItemPriceError}</p>
+                                        )}
+                                      </div>
+                                      <Select value={editItemCategory} onValueChange={setEditItemCategory}>
+                                        <SelectTrigger className="h-8 text-sm">
+                                          <SelectValue placeholder={t('expenses.category')} />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          <SelectItem value="" suppressHydrationWarning>{t('expenses.noCategory')}</SelectItem>
+                                          {categoriesList.map(cat => (
+                                            <SelectItem key={cat.id} value={cat.id}>
+                                              {translateCategoryName(cat.name)}
+                                            </SelectItem>
+                                          ))}
+                                        </SelectContent>
+                                      </Select>
+                                    </div>
+                                  ) : (
+                                    <>
+                                      <p className="font-medium text-sm">{item.name}</p>
+                                      <p className="text-xs text-muted-foreground">
+                                        {formatAmount(item.price ?? 0, currency)} · {item.categoryId
+                                          ? translateCategoryName(categories.get(item.categoryId) || 'Other')
+                                          : t('expenses.noCategory')
+                                        }
+                                      </p>
+                                    </>
+                                  )}
+                                </div>
+                                <div className="flex gap-1">
+                                  {editingItemIndex === index ? (
+                                    <>
+                                      <Button variant="ghost" size="icon" onClick={() => saveItem(index)} disabled={isSavingItem} className="h-7 w-7">
+                                        {isSavingItem ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3 text-green-600" />}
+                                      </Button>
+                                      <Button variant="ghost" size="icon" onClick={cancelEditingItem} className="h-7 w-7">
+                                        <X className="h-3 w-3" />
+                                      </Button>
+                                    </>
+                                  ) : (
+                                    <Button variant="ghost" size="icon" onClick={() => startEditingItem(index, item)} className="h-7 w-7">
+                                      <Edit2 className="h-3 w-3" />
+                                    </Button>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Desktop */}
+                        <div className="hidden sm:block overflow-y-auto max-h-[50vh]">
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead className="w-10">
+                                  <Checkbox
+                                    checked={selectedItemIndices.size === receiptItems.length && receiptItems.length > 0}
+                                    onCheckedChange={toggleItemSelectAll}
+                                  />
+                                </TableHead>
+                                <TableHead suppressHydrationWarning>{t('expenses.itemName')}</TableHead>
+                                <TableHead suppressHydrationWarning>{t('expenses.price')}</TableHead>
+                                <TableHead suppressHydrationWarning>{t('expenses.category')}</TableHead>
+                                <TableHead className="text-right" suppressHydrationWarning>{t('expenses.actions')}</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {receiptItems.map((item, index) => (
+                                <TableRow key={index}>
+                                  <TableCell>
+                                    <Checkbox checked={selectedItemIndices.has(index)} onCheckedChange={() => toggleItemSelection(index)} />
+                                  </TableCell>
+                                  <TableCell>
+                                    {editingItemIndex === index ? (
+                                      <div className="space-y-1">
+                                        <Input
+                                          value={editItemName}
+                                          onChange={(e) => {
+                                            setEditItemName(e.target.value)
+                                            if (e.target.value.trim()) setEditItemNameError(null)
+                                          }}
+                                          onKeyDown={(e) => handleItemKeyDown(e, index)}
+                                          className={`h-8 ${editItemNameError ? 'border-destructive' : ''}`}
+                                        />
+                                        {editItemNameError && (
+                                          <p className="text-destructive text-xs">{editItemNameError}</p>
+                                        )}
+                                      </div>
+                                    ) : <span className="font-medium">{item.name}</span>}
+                                  </TableCell>
+                                  <TableCell>
+                                    {editingItemIndex === index ? (
+                                      <div className="space-y-1">
+                                        <Input
+                                          value={editItemPrice}
+                                          onChange={(e) => {
+                                            setEditItemPrice(e.target.value)
+                                            if (parseFloat(e.target.value) >= 0) setEditItemPriceError(null)
+                                          }}
+                                          onKeyDown={(e) => handleItemKeyDown(e, index)}
+                                          type="number"
+                                          step="0.01"
+                                          min="0"
+                                          className={`h-8 w-28 ${editItemPriceError ? 'border-destructive' : ''}`}
+                                        />
+                                        {editItemPriceError && (
+                                          <p className="text-destructive text-xs">{editItemPriceError}</p>
+                                        )}
+                                      </div>
+                                    ) : formatAmount(item.price ?? 0, currency)}
+                                  </TableCell>
+                                  <TableCell>
+                                    {editingItemIndex === index ? (
+                                      <Select value={editItemCategory} onValueChange={setEditItemCategory}>
+                                        <SelectTrigger className="h-8">
+                                          <SelectValue placeholder={t('expenses.category')} />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          <SelectItem value="" suppressHydrationWarning>{t('expenses.noCategory')}</SelectItem>
+                                          {categoriesList.map(cat => (
+                                            <SelectItem key={cat.id} value={cat.id}>
+                                              {translateCategoryName(cat.name)}
+                                            </SelectItem>
+                                          ))}
+                                        </SelectContent>
+                                      </Select>
+                                    ) : item.categoryId
+                                      ? translateCategoryName(categories.get(item.categoryId) || 'Other')
+                                      : <span className="text-muted-foreground text-xs" suppressHydrationWarning>{t('expenses.noCategory')}</span>
+                                    }
+                                  </TableCell>
+                                  <TableCell className="text-right">
+                                    {editingItemIndex === index ? (
+                                      <div className="flex justify-end gap-1">
+                                        <Button variant="ghost" size="icon" onClick={() => saveItem(index)} disabled={isSavingItem}>
+                                          {isSavingItem ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4 text-green-600" />}
+                                        </Button>
+                                        <Button variant="ghost" size="icon" onClick={cancelEditingItem}>
+                                          <X className="h-4 w-4 text-red-500" />
+                                        </Button>
+                                      </div>
+                                    ) : (
+                                      <Button variant="ghost" size="icon" onClick={() => startEditingItem(index, item)}>
+                                        <Edit2 className="h-4 w-4" />
+                                      </Button>
+                                    )}
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </div>
+                      </>
+                    ) : (
+                      <p className="text-center text-muted-foreground py-8" suppressHydrationWarning>
+                        {t('expenses.noItems')}
+                      </p>
+                    )}
+                  </CardContent>
+                </Card>
+              ) : (
+                <Card className="border p-4 sm:p-6">
+                  <CardHeader>
+                    <CardTitle className="text-lg sm:text-2xl font-semibold">{selectedExpense.title}</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-muted-foreground" suppressHydrationWarning>{t('expenses.noReceiptAttached')}</p>
+                  </CardContent>
+                </Card>
+              )}
+            </motion.section>
+          )}
+        </AnimatePresence>
       </div>
 
-      {/* Dialog usuwania */}
+      {/* ── Delete single — Confirmation Dialog ── */}
       <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent>
           <DialogHeader>
-            <DialogTitle suppressHydrationWarning>{t('expenses.delete')} {t('expenses.title')}</DialogTitle>
+            <DialogTitle suppressHydrationWarning>{t('expenses.confirmDelete')}</DialogTitle>
             <DialogDescription suppressHydrationWarning>
-              {t('expenses.deleteConfirm')}
+              {t('expenses.confirmDeleteDesc')} <strong>{selectedExpense?.title}</strong>?
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => setIsDeleteDialogOpen(false)} suppressHydrationWarning>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setIsDeleteDialogOpen(false)}
+              disabled={isDeleting}
+              suppressHydrationWarning
+            >
               {t('common.cancel')}
             </Button>
             <Button
               variant="destructive"
               onClick={() => selectedExpense && deleteExpense(selectedExpense.id)}
               disabled={isDeleting}
-              suppressHydrationWarning
             >
-              {isDeleting ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  {t('expenses.deleting')}
-                </>
-              ) : (
-                t('expenses.delete')
-              )}
+              {isDeleting
+                ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />{t('expenses.deleting')}</>
+                : t('common.delete')
+              }
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Dialog podglądu zdjęcia paragonu */}
-      <Dialog open={isImageDialogOpen} onOpenChange={setIsImageDialogOpen}>
-        <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-auto">
+      {/* ── Bulk delete — Confirmation Dialog ── */}
+      <Dialog open={isBulkDeleteDialogOpen} onOpenChange={setIsBulkDeleteDialogOpen}>
+        <DialogContent>
           <DialogHeader>
-            <DialogTitle suppressHydrationWarning>
-              {t('expenses.receiptImage') || 'Receipt Image'}
-            </DialogTitle>
+            <DialogTitle suppressHydrationWarning>{t('expenses.confirmBulkDelete')}</DialogTitle>
+            <DialogDescription suppressHydrationWarning>
+              {t('expenses.confirmBulkDeleteDesc')}
+            </DialogDescription>
           </DialogHeader>
-          <div className="flex justify-center items-center min-h-[400px]">
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setIsBulkDeleteDialogOpen(false)}
+              disabled={isBulkDeleting}
+              suppressHydrationWarning
+            >
+              {t('common.cancel')}
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={bulkDeleteExpenses}
+              disabled={isBulkDeleting}
+            >
+              {isBulkDeleting
+                ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />{t('expenses.deleting')}</>
+                : <><Trash2 className="mr-2 h-4 w-4" />{t('expenses.delete')} {selectedExpenseIds.size}</>
+              }
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Receipt Image Dialog ── */}
+      <Dialog open={isImageDialogOpen} onOpenChange={(open) => {
+        setIsImageDialogOpen(open)
+        if (!open) { setShowShareQr(false); setShareCopied(false) }
+      }}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle suppressHydrationWarning>{t('expenses.receiptImage')}</DialogTitle>
+          </DialogHeader>
+          <div className="flex items-center justify-center min-h-[300px]">
             {loadingImage ? (
-              <div className="flex flex-col items-center justify-center py-16">
-                <Loader2 className="animate-spin h-8 w-8 text-muted-foreground mb-4" />
-                <p className="text-muted-foreground" suppressHydrationWarning>
-                  {t('expenses.loadingImage') || 'Loading image...'}
-                </p>
-              </div>
+              <Loader2 className="animate-spin h-8 w-8 text-muted-foreground" />
             ) : receiptImageUrl ? (
               <img
                 src={receiptImageUrl}
                 alt="Receipt"
                 className="max-w-full max-h-[70vh] object-contain rounded-lg"
-                onError={() => {
-                  console.error('Failed to load receipt image');
-                  setReceiptImageUrl(null);
-                }}
               />
             ) : (
-              <div className="flex flex-col items-center justify-center py-16">
-                <ImageIcon className="h-12 w-12 text-muted-foreground mb-4" />
-                <p className="text-muted-foreground" suppressHydrationWarning>
-                  {t('expenses.noImage') || 'No image available'}
-                </p>
-              </div>
+              <p className="text-muted-foreground" suppressHydrationWarning>
+                {t('expenses.noImage')}
+              </p>
             )}
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsImageDialogOpen(false)} suppressHydrationWarning>
-              {t('common.close') || 'Close'}
-            </Button>
-          </DialogFooter>
+
+          {/* Share section */}
+          {viewingReceiptId && (
+            <div className="border-t pt-4 space-y-3">
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  onClick={handleShareReceipt}
+                  className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors"
+                >
+                  {shareCopied ? (
+                    <><CheckCheck className="h-3.5 w-3.5" /> Copied!</>
+                  ) : (
+                    <><Copy className="h-3.5 w-3.5" /> {lang === 'pl' ? 'Kopiuj link' : 'Copy share link'}</>
+                  )}
+                </button>
+                <button
+                  onClick={() => setShowShareQr(q => !q)}
+                  className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md border text-sm font-medium hover:bg-muted transition-colors"
+                >
+                  <QrCode className="h-3.5 w-3.5" />
+                  {lang === 'pl' ? 'Kod QR' : 'QR Code'}
+                </button>
+                <a
+                  href={`/receipt/${viewingReceiptId}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md border text-sm font-medium hover:bg-muted transition-colors"
+                >
+                  <Share2 className="h-3.5 w-3.5" />
+                  {lang === 'pl' ? 'Otwórz' : 'Open'}
+                </a>
+              </div>
+
+              {showShareQr && (
+                <div className="flex flex-col items-center gap-2 py-2">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(`${typeof window !== 'undefined' ? window.location.origin : 'https://solvio-lac.vercel.app'}/receipt/${viewingReceiptId}`)}`}
+                    alt="QR code for receipt"
+                    width={150}
+                    height={150}
+                    className="rounded-lg border p-2 bg-white"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    {lang === 'pl' ? 'Zeskanuj, aby otworzyć paragon' : 'Scan to open receipt'}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </main>

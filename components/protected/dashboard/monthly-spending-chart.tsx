@@ -10,33 +10,21 @@ import {
   CartesianGrid,
   Legend,
 } from "recharts";
+import { getCategoryHex } from "@/lib/category-colors";
 
 type ChartData = {
   date: string;
   [categoryName: string]: number | string; // category names as keys with amounts
 };
 
-const CATEGORY_COLORS = [
-  'hsl(var(--chart-1))',
-  'hsl(var(--chart-2))',
-  'hsl(var(--chart-3))',
-  'hsl(var(--chart-4))',
-  'hsl(var(--chart-5))',
-  '#8b5cf6', // purple
-  '#06b6d4', // cyan
-  '#f59e0b', // amber
-  '#ec4899', // pink
-  '#10b981', // emerald
-];
-
-export function MonthlySpendingChart({ 
-  data, 
+export function MonthlySpendingChart({
+  data,
   currency,
-  categories 
-}: { 
-  data: ChartData[]; 
+  categories
+}: {
+  data: ChartData[];
   currency: string;
-  categories: string[]; // Array of category names
+  categories: string[]; // Array of category names (raw English names used as stable keys)
 }) {
   return (
     <ResponsiveContainer width="100%" height={400}>
@@ -57,7 +45,7 @@ export function MonthlySpendingChart({
           axisLine={false}
           tickFormatter={(value) => `${value}`}
         />
-        
+
         <Tooltip
           cursor={{ fill: 'rgba(0,0,0,0.05)' }}
           contentStyle={{
@@ -68,7 +56,7 @@ export function MonthlySpendingChart({
           formatter={(value: any) => `${Number(value).toFixed(2)} ${currency}`}
         />
 
-        <Legend 
+        <Legend
           wrapperStyle={{ paddingTop: '20px' }}
           iconType="circle"
         />
@@ -78,7 +66,10 @@ export function MonthlySpendingChart({
             key={category}
             dataKey={category}
             stackId="spending"
-            fill={CATEGORY_COLORS[index % CATEGORY_COLORS.length]}
+            // Use getCategoryHex so every chart bar matches the badge color for
+            // the same category — raw English name is the stable key here because
+            // the dashboard always passes rawName strings (not translated names).
+            fill={getCategoryHex(category)}
             radius={index === categories.length - 1 ? [4, 4, 0, 0] : [0, 0, 0, 0]}
           />
         ))}

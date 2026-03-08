@@ -1,59 +1,73 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import Link from 'next/link';
-import { AuthButton } from './auth-button';
-import { createClient } from '@/lib/supabase/client';
-import { LogoutButton } from './logout-button';
-import { Button } from './ui/button';
-import { ThemeSwitcher } from './theme-switcher';
-import { LanguageSwitcher } from './language-switcher';
-import { useTranslation } from '@/lib/i18n';
+import Link from 'next/link'
+import { usePathname } from 'next/navigation'
+import { useUser } from '@clerk/nextjs'
+import { LogoutButton } from './logout-button'
+import { Button } from './ui/button'
+import { ThemeSwitcher } from './theme-switcher'
+import { LanguageSwitcher } from './language-switcher'
+import { useTranslation } from '@/lib/i18n'
+import { Wallet } from 'lucide-react'
 
 export default function Header() {
-  const supabase = createClient();
-  const [user, setUser] = useState<any>(null)
-  const { t, lang, mounted } = useTranslation()
-  
-  useEffect(() => {
-    const fetchUser = async () => {
-      const { data: { user: currentUser } } = await supabase.auth.getUser()
-      setUser(currentUser)
-    }
-    
-    fetchUser()
-  }, [])
+  const { user, isLoaded } = useUser()
+  const { t, lang } = useTranslation()
+  const pathname = usePathname()
+
+  const isMarketing = pathname === '/' || pathname === ''
 
   return (
-    <header className="flex items-center justify-between px-3 sm:px-6 md:px-10 py-3 sm:py-4 border-b border-border/40 sticky top-0 bg-background/80 backdrop-blur-md z-50">
-      <Link
-        href={user ? '/' : '/'}
-        className="text-lg sm:text-xl font-semibold tracking-tight"
-      >
-        Solvio
-      </Link>
+    <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/80 backdrop-blur-md">
+      <div className="mx-auto flex max-w-7xl items-center justify-between px-5 sm:px-8 py-3 sm:py-4">
+        {/* Logo */}
+        <Link href="/" className="flex items-center gap-2 text-lg sm:text-xl font-bold tracking-tight">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+            <Wallet className="h-4 w-4" />
+          </div>
+          <span>Solvio</span>
+        </Link>
 
-      <div className="flex items-center gap-1 sm:gap-2 md:gap-4">
-        {user ? (
-          <div className="flex items-center gap-1 sm:gap-2 md:gap-4">
-            <span className="hidden lg:inline text-xs sm:text-sm md:text-base truncate max-w-[150px] sm:max-w-none" suppressHydrationWarning>
-              {lang === 'pl' ? 'Cześć' : 'Hey'}, {user.email}!
-            </span>
-            <LogoutButton />
-          </div>
-        ) : (
-          <div className="flex gap-1 sm:gap-2">
-            <Button asChild size="sm" variant={'outline'} className="text-xs sm:text-sm">
-              <Link href="/login" suppressHydrationWarning>{t('auth.signIn')}</Link>
-            </Button>
-            <Button asChild size="sm" variant={'default'} className="text-xs sm:text-sm">
-              <Link href="/sign-up" suppressHydrationWarning>{t('auth.signUp')}</Link>
-            </Button>
-          </div>
+        {/* Nav links — only on marketing pages */}
+        {isMarketing && !user && (
+          <nav className="hidden md:flex items-center gap-6 text-sm text-muted-foreground">
+            <a href="#features" className="hover:text-foreground transition-colors">
+              {lang === 'pl' ? 'Funkcje' : 'Features'}
+            </a>
+            <a href="#how" className="hover:text-foreground transition-colors">
+              {lang === 'pl' ? 'Jak działa' : 'How it works'}
+            </a>
+          </nav>
         )}
-        <LanguageSwitcher />
-        <ThemeSwitcher />
+
+        {/* Right side */}
+        <div className="flex items-center gap-1.5 sm:gap-2 md:gap-3">
+          {isLoaded && user ? (
+            <div className="flex items-center gap-1.5 sm:gap-2 md:gap-3">
+              <Link href="/dashboard">
+                <Button variant="ghost" size="sm" className="hidden sm:inline-flex text-xs sm:text-sm">
+                  Dashboard
+                </Button>
+              </Link>
+              <span className="hidden lg:inline text-sm text-muted-foreground truncate max-w-[180px]" suppressHydrationWarning>
+                {user.primaryEmailAddress?.emailAddress}
+              </span>
+              <LogoutButton />
+            </div>
+          ) : (
+            <div className="flex gap-1.5 sm:gap-2">
+              <Button asChild size="sm" variant="ghost" className="text-xs sm:text-sm">
+                <Link href="/login" suppressHydrationWarning>{t('auth.signIn')}</Link>
+              </Button>
+              <Button asChild size="sm" className="text-xs sm:text-sm">
+                <Link href="/sign-up" suppressHydrationWarning>{t('auth.signUp')}</Link>
+              </Button>
+            </div>
+          )}
+          <LanguageSwitcher />
+          <ThemeSwitcher />
+        </div>
       </div>
     </header>
-  );
+  )
 }

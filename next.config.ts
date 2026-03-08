@@ -9,7 +9,14 @@ const nextConfig: NextConfig = {
   compress: true,
   // Reduce bundle size
   experimental: {
-    optimizePackageImports: ['lucide-react', '@radix-ui/react-icons'],
+    // Tree-shake icon and component libraries — removes unused named exports from the bundle
+    optimizePackageImports: [
+      'lucide-react',
+      '@radix-ui/react-icons',
+      'framer-motion',
+      'recharts',
+      'date-fns',
+    ],
   },
   // Ignore TypeScript errors during build
   typescript: {

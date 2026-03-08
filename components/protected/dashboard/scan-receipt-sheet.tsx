@@ -1,8 +1,21 @@
 'use client';
 
 import * as React from 'react';
-import { UploadCloud, X, Loader2, AlertCircle, FileText } from 'lucide-react';
-import { createClient } from '@/lib/supabase/client';
+import {
+  UploadCloud,
+  X,
+  Loader2,
+  AlertCircle,
+  FileText,
+  ImageIcon,
+  RefreshCcw,
+  CheckCircle2,
+  ScanLine,
+  Cpu,
+  Edit2,
+  Check,
+  Tag,
+} from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { t, getLanguage } from '@/lib/i18n';
@@ -18,6 +31,35 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+
+type AiEnrichmentItem = {
+  index: number;
+  suggestedCategory: string;
+  confidence: number;
+};
+
+type AiEnrichment = {
+  items?: AiEnrichmentItem[];
+  vendor?: string;
+  receiptType?: string;
+  tags?: string[];
+};
+
+type ParsedItem = {
+  name: string;
+  quantity?: number | null;
+  price?: number | null;
+  category_id?: string | null;
+  suggestedCategory?: string;
+  confidence?: number;
+};
 
 type OcrResult = {
   receipt_id?: string;
@@ -30,7 +72,7 @@ type OcrResult = {
   };
   provider?: string;
   warnings?: string[];
-  // Nowy format dla wielu plików
+  // Multi-file format
   files_processed?: number;
   files_succeeded?: number;
   files_failed?: number;
@@ -40,7 +82,14 @@ type OcrResult = {
     receipt_id?: string;
     error?: string;
     message?: string;
-    data?: any;
+    data?: {
+      merchant?: string;
+      total?: number;
+      currency?: string;
+      date?: string;
+      items?: Array<{ name: string; quantity?: number | null; price?: number | null }>;
+      aiEnrichment?: AiEnrichment;
+    };
   }>;
 };
 
@@ -48,7 +97,10 @@ interface ScanReceiptSheetProps {
   isOpen: boolean;
   onClose: () => void;
   onParsed?: (result: OcrResult | null) => void;
+  categories?: Array<{ id: string; name: string }>;
 }
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function isHeicFile(file: File) {
   return (
@@ -59,7 +111,10 @@ function isHeicFile(file: File) {
 }
 
 function isImageFile(file: File) {
-  return file.type.startsWith('image/') || !!file.name.toLowerCase().match(/\.(jpe?g|png|webp|heic|heif)$/);
+  return (
+    file.type.startsWith('image/') ||
+    !!file.name.toLowerCase().match(/\.(jpe?g|png|webp|heic|heif)$/)
+  );
 }
 
 async function convertHeicToJpegFile(file: File): Promise<File> {
@@ -73,7 +128,6 @@ async function convertHeicToJpegFile(file: File): Promise<File> {
         return fd;
       })(),
     });
-
     if (!response.ok) return file;
     const blob = await response.blob();
     const uploadFileName = file.name.replace(/\.(heic|heif)$/i, '.jpg');
@@ -84,30 +138,22 @@ async function convertHeicToJpegFile(file: File): Promise<File> {
 }
 
 async function normalizeImageOrientation(file: File): Promise<File> {
-  // Normalize image orientation - createImageBitmap automatically handles EXIF orientation
-  // but we need to re-encode to remove EXIF and ensure correct orientation
   try {
     const img = await createImageBitmap(file);
-    
-    // Check if image needs rotation (if width < height, might be portrait/rotated)
-    // But we'll let Azure handle orientation detection, we just ensure clean JPEG
     const canvas = document.createElement('canvas');
     canvas.width = img.width;
     canvas.height = img.height;
     const ctx = canvas.getContext('2d');
     if (!ctx) return file;
-    
-    // Draw image (createImageBitmap already applied EXIF orientation)
     ctx.drawImage(img, 0, 0);
-    
-    // Convert to blob and return as new File
     return new Promise((resolve) => {
       canvas.toBlob((blob) => {
-        if (!blob) {
-          resolve(file);
-          return;
-        }
-        const normalizedFile = new File([blob], file.name.replace(/\.(png|webp|heic|heif)$/i, '.jpg'), { type: 'image/jpeg' });
+        if (!blob) { resolve(file); return; }
+        const normalizedFile = new File(
+          [blob],
+          file.name.replace(/\.(png|webp|heic|heif)$/i, '.jpg'),
+          { type: 'image/jpeg' }
+        );
         resolve(normalizedFile);
       }, 'image/jpeg', 0.92);
     });
@@ -122,19 +168,14 @@ async function compressImageToTarget(
   targetBytes: number,
   options?: { maxDim?: number }
 ): Promise<File> {
-  // If already small enough, still normalize orientation but don't compress
   if (file.size <= targetBytes) {
-    // Still normalize orientation for better OCR
     return normalizeImageOrientation(file);
   }
-
   try {
-    // Decode - use URL.createObjectURL as fallback if createImageBitmap fails
     let img: ImageBitmap;
     try {
       img = await createImageBitmap(file);
-    } catch (e) {
-      // Fallback: use img element for browsers that don't support createImageBitmap well
+    } catch {
       const url = URL.createObjectURL(file);
       const imgEl = new Image();
       await new Promise((resolve, reject) => {
@@ -145,154 +186,268 @@ async function compressImageToTarget(
       img = await createImageBitmap(imgEl);
       URL.revokeObjectURL(url);
     }
-    
     const maxDim = options?.maxDim ?? 2000;
-
     const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
     let w = Math.max(1, Math.round(img.width * scale));
     let h = Math.max(1, Math.round(img.height * scale));
-
-    // Draw - createImageBitmap already applied EXIF orientation
     let canvas = document.createElement('canvas');
     canvas.width = w;
     canvas.height = h;
     const ctx = canvas.getContext('2d');
     if (!ctx) return file;
     ctx.drawImage(img, 0, 0, w, h);
-
-  // Try JPEG with decreasing quality
-  const tryEncode = (quality: number) =>
-    new Promise<Blob | null>((resolve) => {
-      canvas.toBlob((b) => resolve(b), 'image/jpeg', quality);
-    });
-
-  let bestBlob: Blob | null = null;
-
-  for (const q of [0.85, 0.78, 0.72, 0.66, 0.6, 0.55]) {
-    const blob = await tryEncode(q);
-    if (!blob) continue;
-    bestBlob = blob;
-    if (blob.size <= targetBytes) break;
-  }
-
-  // If still too large, progressively downscale and re-encode
-  let safety = 0;
-  while (bestBlob && bestBlob.size > targetBytes && Math.max(w, h) > 900 && safety < 4) {
-    safety++;
-    w = Math.max(1, Math.round(w * 0.85));
-    h = Math.max(1, Math.round(h * 0.85));
-    canvas = document.createElement('canvas');
-    canvas.width = w;
-    canvas.height = h;
-    const ctx2 = canvas.getContext('2d');
-    if (!ctx2) break;
-    ctx2.drawImage(img, 0, 0, w, h);
-    const blob = await tryEncode(0.72);
-    if (!blob) break;
-    bestBlob = blob;
-  }
-
-    if (!bestBlob || bestBlob.size === 0) {
-      console.warn('[compressImageToTarget] Failed to create valid blob, using original');
-      return file;
+    const tryEncode = (quality: number) =>
+      new Promise<Blob | null>((resolve) => {
+        canvas.toBlob((b) => resolve(b), 'image/jpeg', quality);
+      });
+    let bestBlob: Blob | null = null;
+    for (const q of [0.85, 0.78, 0.72, 0.66, 0.6, 0.55]) {
+      const blob = await tryEncode(q);
+      if (!blob) continue;
+      bestBlob = blob;
+      if (blob.size <= targetBytes) break;
     }
-    
-    // Validate blob is actually JPEG
-    if (bestBlob.type && bestBlob.type !== 'image/jpeg') {
-      console.warn('[compressImageToTarget] Blob type is not JPEG:', bestBlob.type);
+    let safety = 0;
+    while (bestBlob && bestBlob.size > targetBytes && Math.max(w, h) > 900 && safety < 4) {
+      safety++;
+      w = Math.max(1, Math.round(w * 0.85));
+      h = Math.max(1, Math.round(h * 0.85));
+      canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      const ctx2 = canvas.getContext('2d');
+      if (!ctx2) break;
+      ctx2.drawImage(img, 0, 0, w, h);
+      const blob = await tryEncode(0.72);
+      if (!blob) break;
+      bestBlob = blob;
     }
-    
+    if (!bestBlob || bestBlob.size === 0) return file;
     const outName = file.name.replace(/\.(png|webp|jpe?g|heic|heif)$/i, '.jpg');
     const compressedFile = new File([bestBlob], outName, { type: 'image/jpeg' });
-    
-    // Final validation
-    if (compressedFile.size === 0) {
-      console.warn('[compressImageToTarget] Compressed file is empty, using original');
-      return file;
-    }
-    
+    if (compressedFile.size === 0) return file;
     return compressedFile;
   } catch (error) {
-    console.warn('[compressImageToTarget] Failed to compress image, using original:', error);
+    console.warn('[compressImageToTarget] Failed, using original:', error);
     return file;
   }
 }
+
+// ─── Image Thumbnail Component ────────────────────────────────────────────────
+
+function FileThumbnail({ file }: { file: File }) {
+  const [src, setSrc] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (!isImageFile(file) || isHeicFile(file)) return;
+    const url = URL.createObjectURL(file);
+    setSrc(url);
+    return () => URL.revokeObjectURL(url);
+  }, [file]);
+
+  if (!src) {
+    return (
+      <div className="h-10 w-10 rounded border bg-muted flex items-center justify-center shrink-0">
+        <FileText className="h-4 w-4 text-muted-foreground" />
+      </div>
+    );
+  }
+
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={src}
+      alt={file.name}
+      className="h-10 w-10 rounded border object-cover shrink-0"
+    />
+  );
+}
+
+// ─── Scanning Progress Indicator ─────────────────────────────────────────────
+
+type ScanStep = 'compressing' | 'uploading' | 'scanning' | 'categorizing';
+
+function ScanProgress({ step }: { step: ScanStep | null }) {
+  const isPl = getLanguage() === 'pl';
+
+  const steps: { id: ScanStep; labelPl: string; labelEn: string; icon: React.ReactNode }[] = [
+    {
+      id: 'compressing',
+      labelPl: 'Optymalizacja obrazu',
+      labelEn: 'Optimising image',
+      icon: <ImageIcon className="h-4 w-4" />,
+    },
+    {
+      id: 'uploading',
+      labelPl: 'Przesyłanie pliku',
+      labelEn: 'Uploading file',
+      icon: <UploadCloud className="h-4 w-4" />,
+    },
+    {
+      id: 'scanning',
+      labelPl: 'Skanowanie OCR',
+      labelEn: 'OCR scanning',
+      icon: <ScanLine className="h-4 w-4" />,
+    },
+    {
+      id: 'categorizing',
+      labelPl: 'Kategoryzacja AI',
+      labelEn: 'AI categorisation',
+      icon: <Cpu className="h-4 w-4" />,
+    },
+  ];
+
+  const currentIndex = steps.findIndex((s) => s.id === step);
+
+  return (
+    <div className="space-y-3 rounded-lg border bg-muted/30 p-4">
+      {steps.map((s, idx) => {
+        const isDone = currentIndex > idx;
+        const isActive = currentIndex === idx;
+        const isPending = currentIndex < idx;
+        return (
+          <div key={s.id} className="flex items-center gap-3">
+            <div
+              className={cn(
+                'flex h-7 w-7 items-center justify-center rounded-full border text-xs transition-colors duration-300',
+                isDone && 'border-green-500 bg-green-500/10 text-green-600',
+                isActive && 'border-primary bg-primary/10 text-primary animate-pulse',
+                isPending && 'border-muted-foreground/30 bg-muted text-muted-foreground/40'
+              )}
+            >
+              {isDone ? (
+                <CheckCircle2 className="h-4 w-4" />
+              ) : isActive ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                s.icon
+              )}
+            </div>
+            <span
+              className={cn(
+                'text-sm transition-colors duration-300',
+                isDone && 'text-green-600',
+                isActive && 'font-medium text-foreground',
+                isPending && 'text-muted-foreground/50'
+              )}
+            >
+              {isPl ? s.labelPl : s.labelEn}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── Main Component ───────────────────────────────────────────────────────────
 
 export function ScanReceiptSheet({
   isOpen,
   onClose,
   onParsed,
+  categories = [],
 }: ScanReceiptSheetProps) {
-  const supabase = React.useMemo(() => createClient(), []);
   const [files, setFiles] = React.useState<File[]>([]);
-  const [isUploading, setIsUploading] = React.useState(false);
-  const [isProcessing, setIsProcessing] = React.useState(false);
+  const [isBusy, setIsBusy] = React.useState(false);
+  const [scanStep, setScanStep] = React.useState<ScanStep | null>(null);
   const [errorMsg, setErrorMsg] = React.useState<string | null>(null);
-  const [progress, setProgress] = React.useState<{ uploaded: number; total: number } | null>(null);
+  const dropRef = React.useRef<HTMLLabelElement>(null);
+  const [isDragOver, setIsDragOver] = React.useState(false);
+
+  // Review step state
+  const [reviewItems, setReviewItems] = React.useState<ParsedItem[]>([]);
+  const [reviewMeta, setReviewMeta] = React.useState<{
+    merchant?: string;
+    total?: number;
+    currency?: string;
+    date?: string;
+    receiptId?: string;
+    ocrResult?: OcrResult;
+  } | null>(null);
+  const [isReviewing, setIsReviewing] = React.useState(false);
+  const [editingReviewIndex, setEditingReviewIndex] = React.useState<number | null>(null);
+  const [editReviewName, setEditReviewName] = React.useState('');
+  const [editReviewCategory, setEditReviewCategory] = React.useState('');
+
+  const isPl = getLanguage() === 'pl';
+
+  // ── Drag & drop ────────────────────────────────────────────────────────────
+
+  const addFiles = (incoming: FileList | File[]) => {
+    const arr = Array.from(incoming);
+    setFiles((prev) => {
+      const existing = new Set(prev.map((f) => `${f.name}-${f.size}`));
+      const deduped = arr.filter((f) => !existing.has(`${f.name}-${f.size}`));
+      return [...prev, ...deduped];
+    });
+    setErrorMsg(null);
+  };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files) {
-      const fileList = e.target.files;
-      setFiles((prev) => [...prev, ...Array.from(fileList)]);
-    }
+    if (e.target.files) addFiles(e.target.files);
+    // Reset input so same file can be re-selected
+    e.target.value = '';
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    if (isBusy) return;
+    if (e.dataTransfer.files) addFiles(e.dataTransfer.files);
   };
 
   const removeFile = (i: number) =>
     setFiles((prev) => prev.filter((_, idx) => idx !== i));
 
+  // ── Reset / close ──────────────────────────────────────────────────────────
+
   const resetState = () => {
     setFiles([]);
     setErrorMsg(null);
-    setIsUploading(false);
-    setIsProcessing(false);
-    setProgress(null);
+    setIsBusy(false);
+    setScanStep(null);
+    setReviewItems([]);
+    setReviewMeta(null);
+    setIsReviewing(false);
+    setEditingReviewIndex(null);
   };
 
   const handleClose = () => {
+    if (isBusy) return; // prevent accidental close during scan
     resetState();
     onClose();
   };
+
+  // ── Submit ─────────────────────────────────────────────────────────────────
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
 
     if (files.length === 0) {
-      setErrorMsg(getLanguage() === 'pl' ? 'Dodaj przynajmniej jeden plik.' : 'Add at least one file.');
+      setErrorMsg(isPl ? 'Dodaj przynajmniej jeden plik.' : 'Add at least one file.');
       return;
     }
 
-    const { data: userData, error: userErr } = await supabase.auth.getUser();
-    if (userErr || !userData?.user) {
-      if (process.env.NODE_ENV === 'development') {
-        console.error('[ScanReceipt] auth error:', userErr);
-      }
-      setErrorMsg(getLanguage() === 'pl' ? 'Musisz być zalogowany.' : 'You must be logged in.');
-      return;
-    }
-    const user = userData.user;
+    setIsBusy(true);
 
     try {
-      setIsUploading(true);
+      // Step 1 — compress / optimise
+      setScanStep('compressing');
 
-      // Vercel request size is limited (413). We compress images before sending to OCR.
-      // PDFs cannot be safely compressed here, so we hard-block only large PDFs.
-      // We target MUCH smaller images than the theoretical limit to avoid multipart overhead
-      // and different production limits (and to keep OCR fast).
       const perFileTarget =
         files.length <= 1
-          ? 1200 * 1024 // ~1.2MB for single photo
+          ? 1200 * 1024
           : files.length === 2
-            ? 800 * 1024  // ~0.8MB each
+            ? 800 * 1024
             : files.length === 3
-              ? 650 * 1024 // ~0.65MB each
-              : 500 * 1024; // >=4 files -> ~0.5MB each
+              ? 650 * 1024
+              : 500 * 1024;
 
       const optimizedForOcr: File[] = [];
       for (const original of files) {
-        // Large PDFs will likely 413 on Vercel.
         if (original.type === 'application/pdf' && original.size > perFileTarget) {
-          const isPl = getLanguage() === 'pl';
           throw new Error(
             isPl
               ? `PDF ${original.name} jest za duży. Spróbuj zdjęcie albo mniejszy PDF.`
@@ -306,245 +461,105 @@ export function ScanReceiptSheet({
         }
 
         let f = original;
-        
-        // Log original file info for debugging
-        if (process.env.NODE_ENV === 'development') {
-          console.log(`[ScanReceipt] Processing: ${original.name}, type: ${original.type}, size: ${(original.size / 1024).toFixed(0)}KB`);
-        }
-        
-        if (isHeicFile(f)) {
-          f = await convertHeicToJpegFile(f);
-          if (process.env.NODE_ENV === 'development') {
-            console.log(`[ScanReceipt] Converted HEIC: ${f.name}, type: ${f.type}`);
-          }
-        }
-
-        // Normalize orientation for better OCR (especially for rotated receipts)
-        // This ensures EXIF orientation is applied and image is in correct orientation
+        if (isHeicFile(f)) f = await convertHeicToJpegFile(f);
         f = await normalizeImageOrientation(f);
+        if (f.size > perFileTarget) f = await compressImageToTarget(f, perFileTarget, { maxDim: 2000 });
 
-        // If still too big, compress (resize+jpeg).
-        if (f.size > perFileTarget) {
-          f = await compressImageToTarget(f, perFileTarget, { maxDim: 2000 });
-        } else {
-          // Even if small, ensure orientation is normalized (already done above)
-        }
-
-        // Ensure MIME type is set correctly (some browsers don't set it on File constructor)
         if (!f.type || f.type === 'application/octet-stream') {
           const ext = f.name.toLowerCase();
-          if (ext.match(/\.(jpg|jpeg)$/)) {
-            f = new File([f], f.name, { type: 'image/jpeg' });
-          } else if (ext.match(/\.png$/)) {
-            f = new File([f], f.name, { type: 'image/png' });
-          } else if (ext.match(/\.webp$/)) {
-            f = new File([f], f.name, { type: 'image/webp' });
-          } else {
-            f = new File([f], f.name, { type: 'image/jpeg' }); // default to JPEG
-          }
-        }
-
-        if (process.env.NODE_ENV === 'development') {
-          console.log(`[ScanReceipt] OCR file: ${original.name} -> ${f.name} ${(original.size / 1024).toFixed(0)}KB -> ${(f.size / 1024).toFixed(0)}KB, type: ${f.type}`);
+          if (ext.match(/\.(jpg|jpeg)$/)) f = new File([f], f.name, { type: 'image/jpeg' });
+          else if (ext.match(/\.png$/)) f = new File([f], f.name, { type: 'image/png' });
+          else if (ext.match(/\.webp$/)) f = new File([f], f.name, { type: 'image/webp' });
+          else f = new File([f], f.name, { type: 'image/jpeg' });
         }
 
         optimizedForOcr.push(f);
       }
 
-      // 1) rekord w receipts
-      const { data: receipt, error: receiptError } = await supabase
-        .from('receipts')
-        .insert([{ user_id: user.id }])
-        .select()
-        .single();
+      // Step 2 — upload
+      setScanStep('uploading');
 
-      if (receiptError) {
-        if (process.env.NODE_ENV === 'development') {
-          console.error('[ScanReceipt] receipts insert error:', receiptError);
-        }
-        throw receiptError;
-      }
-      if (!receipt) {
-        throw new Error('Failed to create receipt');
-      }
-      const receiptId = receipt.id as string;
-
-      // 2) Upload do Storage (konwertuj HEIC bo Supabase Storage nie wspiera HEIC)
-      setProgress({ uploaded: 0, total: files.length });
-
-      const uploadResults = await Promise.allSettled(
-        files.map(async (file, index) => {
-          // Sprawdź czy to HEIC
-          const isHeic = isHeicFile(file);
-          
-          let fileToUpload = file;
-          let uploadFileName = file.name;
-          
-          // Jeśli HEIC, konwertuj do JPEG dla Supabase Storage
-          if (isHeic) {
-            try {
-              const converted = await convertHeicToJpegFile(file);
-              if (converted !== file) {
-                uploadFileName = converted.name;
-                fileToUpload = converted;
-              }
-            } catch (err) {
-              console.warn('[ScanReceipt] HEIC conversion for storage failed, using original');
-            }
-          }
-
-          const path = `${user.id}/${receiptId}/${uploadFileName}`;
-
-          const { error: uploadError } = await supabase.storage
-            .from('receipts')
-            .upload(path, fileToUpload, {
-              upsert: true,
-              contentType: fileToUpload.type || 'image/jpeg',
-            });
-
-          if (uploadError) {
-            if (process.env.NODE_ENV === 'development') {
-              console.error('[ScanReceipt] storage upload error:', uploadError);
-            }
-            throw uploadError;
-          }
-
-          const { data: pub } = supabase.storage
-            .from('receipts')
-            .getPublicUrl(path);
-          const publicUrl = pub.publicUrl;
-
-          const { error: imgErr } = await supabase
-            .from('receipt_images')
-            .insert([{ receipt_id: receiptId, image_url: publicUrl }]);
-
-          if (imgErr) {
-            if (process.env.NODE_ENV === 'development') {
-              console.error('[ScanReceipt] receipt_images insert error:', imgErr);
-            }
-            throw imgErr;
-          }
-
-          setProgress((prev) => prev ? { ...prev, uploaded: prev.uploaded + 1 } : null);
-          return { path, publicUrl };
-        })
-      );
-
-      // Sprawdź czy wszystkie uploady się powiodły
-      const failedUploads = uploadResults.filter(r => r.status === 'rejected');
-      if (failedUploads.length > 0) {
-        const firstError = failedUploads[0];
-        if (firstError.status === 'rejected') {
-          throw firstError.reason;
-        }
-      }
-      setProgress(null);
-
-      setIsUploading(false);
-      setIsProcessing(true);
-
-      // 3) OCR — wyślij pliki + metadane (Mindee akceptuje HEIC)
       const fd = new FormData();
-      fd.append('receiptId', receiptId);
-      fd.append('userId', user.id);
       for (const f of optimizedForOcr) fd.append('files', f, f.name);
+
+      // Step 3 — OCR scanning
+      setScanStep('scanning');
 
       const res = await fetch('/api/v1/ocr-receipt', {
         method: 'POST',
         body: fd,
       });
-      
-      // Najpierw pobierz response jako text
+
       const responseText = await res.text();
-      
+
       if (!res.ok) {
-        const isPl = getLanguage() === 'pl'
-        let errorMsg = isPl ? 'OCR zwrócił błąd.' : 'OCR returned an error.';
-        
-        // Obsługa specjalnych kodów błędów
+        let msg = isPl ? 'OCR zwrócił błąd.' : 'OCR returned an error.';
+
         if (res.status === 413) {
-          errorMsg = isPl
-            ? 'Request jest za duży (limit serwera). Spróbuj 1 plik naraz albo zrób zdjęcie bliżej paragonu. Jeśli to PDF — wyślij zdjęcie zamiast PDF.'
-            : 'Request is too large (server limit). Try 1 file at a time or take a closer photo of the receipt. If it’s a PDF, upload a photo instead.';
-          toast.error(isPl ? 'Za duży plik' : 'Request too large', { description: errorMsg, duration: 7000 });
-          throw new Error(errorMsg);
+          msg = isPl
+            ? 'Plik jest za duży (limit serwera). Spróbuj 1 plik naraz lub zrób zdjęcie bliżej paragonu.'
+            : 'File is too large (server limit). Try 1 file at a time or take a closer photo of the receipt.';
+          toast.error(isPl ? 'Za duży plik' : 'Request too large', { description: msg, duration: 7000 });
+          throw new Error(msg);
         }
-        
+
         if (res.status === 400) {
-          errorMsg = isPl
+          msg = isPl
             ? 'Nieprawidłowy format pliku. Użyj JPG, PNG, HEIC lub PDF.'
             : 'Invalid file format. Use JPG, PNG, HEIC or PDF.';
-          toast.error(isPl ? 'Błąd formatu' : 'Format error', {
-            description: errorMsg,
-            duration: 5000,
-          });
-          throw new Error(errorMsg);
+          toast.error(isPl ? 'Błąd formatu' : 'Format error', { description: msg, duration: 5000 });
+          throw new Error(msg);
         }
-        
+
         try {
           const errorData = JSON.parse(responseText);
-          
-          // Sprawdź czy to duplikat
           if (errorData.error === 'duplicate') {
-            errorMsg = isPl
-              ? `⚠️ Ten paragon został już wgrany!\n\n${errorData.message || 'Duplikat wykryty.'}`
-              : `⚠️ This receipt was already uploaded!\n\n${errorData.message || 'Duplicate detected.'}`;
+            msg = isPl
+              ? `Ten paragon został już wgrany! ${errorData.message || ''}`
+              : `This receipt was already uploaded! ${errorData.message || ''}`;
             toast.warning(isPl ? 'Duplikat paragonu' : 'Duplicate receipt', {
-              description: errorData.message || (isPl ? 'Ten paragon został już wcześniej dodany.' : 'This receipt was already added.'),
+              description: errorData.message || (isPl ? 'Ten paragon został już dodany.' : 'This receipt was already added.'),
               duration: 5000,
             });
           } else {
-            errorMsg = errorData.message || errorData.error || errorMsg;
-          }
-          
-          if (process.env.NODE_ENV === 'development') {
-            console.error('[ScanReceipt] OCR HTTP error:', res.status, errorData);
+            msg = errorData.message || errorData.error || msg;
           }
         } catch {
-          errorMsg = responseText || errorMsg;
-          if (process.env.NODE_ENV === 'development') {
-            console.error('[ScanReceipt] OCR HTTP error:', res.status, responseText);
-          }
+          msg = responseText || msg;
         }
-        throw new Error(errorMsg);
+        throw new Error(msg);
       }
 
-      // Parsuj JSON tylko jeśli response był OK
       let parsed: OcrResult;
       try {
         parsed = JSON.parse(responseText);
-      } catch (parseError) {
-        if (process.env.NODE_ENV === 'development') {
-          console.error('[ScanReceipt] JSON parse error:', parseError);
-          console.error('[ScanReceipt] Response text:', responseText.substring(0, 500));
-        }
-        throw new Error('Otrzymano nieprawidłową odpowiedź z serwera. Sprawdź logi.');
+      } catch {
+        throw new Error(isPl ? 'Nieprawidłowa odpowiedź serwera.' : 'Invalid server response.');
       }
-      
+
       if (process.env.NODE_ENV === 'development') {
         console.log('[ScanReceipt] OCR result:', parsed);
       }
-      
-      // Sprawdź czy są ostrzeżenia
-      if (parsed.warnings && parsed.warnings.length > 0) {
-        if (process.env.NODE_ENV === 'development') {
-          console.warn('[ScanReceipt] OCR warnings:', parsed.warnings);
-        }
-      }
 
-      // Obsługa wielu plików
+      // Step 4 — AI categorisation (happens server-side in background; we just show the step briefly)
+      setScanStep('categorizing');
+      await new Promise((r) => setTimeout(r, 600)); // brief visual pause
+
+      // ── Toast summary ──────────────────────────────────────────────────────
+      const successResults = parsed.results?.filter((r) => r.success) ?? [];
+      const duplicateCount = parsed.results?.filter((r) => r.error === 'duplicate').length ?? 0;
+      const successCount = parsed.files_succeeded ?? successResults.length;
+      const totalCount = parsed.files_processed ?? parsed.results?.length ?? 0;
+
       if (parsed.results && Array.isArray(parsed.results)) {
-        const successCount = parsed.files_succeeded || 0;
-        const totalCount = parsed.files_processed || parsed.results.length;
-        const duplicateCount = parsed.results.filter(r => r.error === 'duplicate').length;
-        
-        if (successCount === totalCount) {
-          toast.success(`Zakończono skanowanie`, {
-            description: `Przetworzono ${successCount} paragon${successCount > 1 ? 'ów' : ''}.`,
+        if (successCount === totalCount && successCount > 0) {
+          toast.success(isPl ? 'Skanowanie zakończone' : 'Scanning complete', {
+            description: isPl
+              ? `Przetworzono ${successCount} paragon${successCount > 1 ? 'ów' : ''}.`
+              : `Processed ${successCount} receipt${successCount !== 1 ? 's' : ''}.`,
           });
         } else if (successCount > 0) {
-          const isPl = getLanguage() === 'pl'
-          let desc = isPl 
+          let desc = isPl
             ? `Przetworzono ${successCount}/${totalCount} paragonów.`
             : `Processed ${successCount}/${totalCount} receipts.`;
           if (duplicateCount > 0) {
@@ -552,144 +567,391 @@ export function ScanReceiptSheet({
               ? ` ${duplicateCount} duplikat${duplicateCount > 1 ? 'ów' : ''} pominięto.`
               : ` ${duplicateCount} duplicate${duplicateCount > 1 ? 's' : ''} skipped.`;
           }
-          toast.warning(t('receipts.partialSuccess'), {
-            description: desc,
-          });
+          toast.warning(t('receipts.partialSuccess'), { description: desc });
         } else {
-          // Wszystkie błędy - sprawdź czy to duplikaty
-          if (duplicateCount === totalCount) {
-            toast.warning(t('receipts.duplicate'), {
-              description: t('receipts.allDuplicates'),
-            });
+          if (duplicateCount === totalCount && totalCount > 0) {
+            toast.warning(t('receipts.duplicate'), { description: t('receipts.allDuplicates') });
           } else {
             toast.error(t('receipts.error'), {
-              description: getLanguage() === 'pl' ? 'Nie udało się przetworzyć żadnego paragonu.' : 'Failed to process any receipts.',
+              description: isPl
+                ? 'Nie udało się przetworzyć żadnego paragonu.'
+                : 'Failed to process any receipts.',
             });
           }
         }
       } else {
-        toast.success(t('receipts.completed'), {
-          description: t('receipts.completedDesc'),
-        });
+        toast.success(t('receipts.completed'), { description: t('receipts.completedDesc') });
       }
 
-      onParsed?.(parsed ?? { receipt_id: receiptId });
+      // ── Show review step if we have items ──────────────────────────────────
+      const firstSuccess = successResults[0];
+      if (firstSuccess?.data?.items && firstSuccess.data.items.length > 0) {
+        const aiItems = firstSuccess.data.aiEnrichment?.items ?? [];
+        const enrichedItems: ParsedItem[] = firstSuccess.data.items.map((item, idx) => {
+          const aiItem = aiItems.find((a) => a.index === idx + 1);
+          return {
+            name: item.name,
+            quantity: item.quantity,
+            price: item.price,
+            suggestedCategory: aiItem?.suggestedCategory,
+            confidence: aiItem?.confidence,
+          };
+        });
+
+        setReviewItems(enrichedItems);
+        setReviewMeta({
+          merchant: firstSuccess.data.merchant,
+          total: firstSuccess.data.total,
+          currency: firstSuccess.data.currency,
+          date: firstSuccess.data.date,
+          receiptId: firstSuccess.receipt_id,
+          ocrResult: parsed,
+        });
+        setIsReviewing(true);
+        setIsBusy(false);
+        setScanStep(null);
+        return; // don't close yet — wait for user review
+      }
+
+      onParsed?.(parsed ?? {});
       resetState();
       onClose();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Błąd podczas skanowania.';
+      const msg =
+        err instanceof Error ? err.message : (isPl ? 'Błąd podczas skanowania.' : 'Scanning error.');
       if (process.env.NODE_ENV === 'development') {
         console.error('[ScanReceipt] catch:', err);
       }
       setErrorMsg(msg);
-      toast.error('Błąd', { description: msg });
     } finally {
-      setIsUploading(false);
-      setIsProcessing(false);
+      setIsBusy(false);
+      setScanStep(null);
     }
   };
 
-  const isBusy = isUploading || isProcessing;
+  // ─── Review helpers ──────────────────────────────────────────────────────────
 
-  return (
-    <Sheet open={isOpen} onOpenChange={handleClose}>
-      <SheetContent className="flex flex-col gap-0 p-0 sm:max-w-2xl">
-        <SheetHeader className="p-6 border-b">
-          <SheetTitle className="text-xl font-semibold">
-            {getLanguage() === 'pl' ? 'Nowy skan paragonu' : 'New Receipt Scan'}
-          </SheetTitle>
-          <SheetDescription>
-            {getLanguage() === 'pl' ? 'Dodaj zdjęcia paragonu. System odczyta dane przez OCR.' : 'Add receipt images. The system will read data via OCR.'}
-          </SheetDescription>
-        </SheetHeader>
+  const startReviewEdit = (index: number) => {
+    const item = reviewItems[index];
+    setEditingReviewIndex(index);
+    setEditReviewName(item.name);
+    setEditReviewCategory(item.suggestedCategory ?? '');
+  };
 
-        <div className="flex-1 overflow-y-auto px-6 py-6">
-          <form
-            id="scan-receipt-form"
-            onSubmit={onSubmit}
-            className="space-y-6"
-          >
+  const saveReviewEdit = (index: number) => {
+    setReviewItems((prev) =>
+      prev.map((item, i) =>
+        i === index
+          ? { ...item, name: editReviewName.trim() || item.name, suggestedCategory: editReviewCategory || item.suggestedCategory }
+          : item
+      )
+    );
+    setEditingReviewIndex(null);
+  };
+
+  const handleSaveAndClose = () => {
+    onParsed?.(reviewMeta?.ocrResult ?? null);
+    resetState();
+    onClose();
+  };
+
+  // ─── Render ─────────────────────────────────────────────────────────────────
+
+  const hasFiles = files.length > 0;
+
+  // ── Review step render ─────────────────────────────────────────────────────
+  if (isReviewing) {
+    return (
+      <Sheet open={isOpen} onOpenChange={(open) => { if (!open) handleSaveAndClose(); }}>
+        <SheetContent className="flex flex-col gap-0 p-0 sm:max-w-2xl">
+          <SheetHeader className="p-6 border-b">
+            <SheetTitle className="text-xl font-semibold">
+              {isPl ? 'Sprawdź pozycje paragonu' : 'Review Receipt Items'}
+            </SheetTitle>
+            <SheetDescription>
+              {reviewMeta?.merchant && (
+                <span className="font-medium text-foreground">{reviewMeta.merchant}</span>
+              )}
+              {reviewMeta?.date && (
+                <span className="text-muted-foreground"> &bull; {reviewMeta.date}</span>
+              )}
+              {reviewMeta?.total !== undefined && (
+                <span className="text-muted-foreground">
+                  {' '}&bull; {reviewMeta.total?.toFixed(2)} {reviewMeta.currency ?? ''}
+                </span>
+              )}
+            </SheetDescription>
+          </SheetHeader>
+
+          <div className="flex-1 overflow-y-auto px-6 py-4">
             <div className="space-y-2">
-              <Label htmlFor="file-upload">{t('receipts.addFile')}</Label>
-              <label
-                htmlFor="file-upload"
-                className={cn(
-                  'relative flex w-full cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-muted-foreground/20 bg-muted/30 p-8 transition-colors hover:bg-muted/50',
-                  isBusy && 'cursor-not-allowed opacity-50'
-                )}
-              >
-                <UploadCloud className="h-8 w-8 text-muted-foreground" />
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {getLanguage() === 'pl' ? (
-                    <>
-                      <span className="font-semibold text-primary">Wgraj</span> lub przeciągnij pliki
-                    </>
-                  ) : (
-                    <>
-                      <span className="font-semibold text-primary">Upload</span> or drag files
-                    </>
-                  )}
+              {reviewItems.length === 0 && (
+                <p className="text-center text-muted-foreground py-8 text-sm">
+                  {isPl ? 'Brak pozycji do wyświetlenia.' : 'No items to display.'}
                 </p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  {t('receipts.selectFiles')} ({t('receipts.maxSize')})
-                </p>
-                <Input
-                  id="file-upload"
-                  type="file"
-                  multiple
-                  accept="image/png, image/jpeg, image/webp, image/heic, application/pdf"
-                  className="hidden"
-                  onChange={handleFileChange}
-                  disabled={isBusy}
-                />
-              </label>
+              )}
 
-              {files.length > 0 && (
-                <div className="space-y-2 pt-2">
-                  {files.map((file, index) => (
-                    <div
-                      key={index}
-                      className="flex items-center justify-between rounded-md border bg-muted/50 px-3 py-2"
-                    >
-                      <div className="flex items-center gap-2 text-sm truncate">
-                        <FileText className="h-4 w-4 text-muted-foreground" />
-                        {file.name}
+              {/* Column headers */}
+              {reviewItems.length > 0 && (
+                <div className="grid grid-cols-[1fr_auto_auto] gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wide px-3 pb-1">
+                  <span>{isPl ? 'Produkt' : 'Item'}</span>
+                  <span className="w-20 text-right">{isPl ? 'Cena' : 'Price'}</span>
+                  <span className="w-7" />
+                </div>
+              )}
+
+              {reviewItems.map((item, index) => (
+                <div
+                  key={index}
+                  className="rounded-lg border bg-card px-3 py-2.5 space-y-1.5"
+                >
+                  {editingReviewIndex === index ? (
+                    <div className="space-y-2">
+                      <Input
+                        value={editReviewName}
+                        onChange={(e) => setEditReviewName(e.target.value)}
+                        className="h-8 text-sm"
+                        placeholder={isPl ? 'Nazwa produktu' : 'Item name'}
+                        autoFocus
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') { e.preventDefault(); saveReviewEdit(index); }
+                          if (e.key === 'Escape') { e.preventDefault(); setEditingReviewIndex(null); }
+                        }}
+                      />
+                      {categories.length > 0 && (
+                        <Select value={editReviewCategory} onValueChange={setEditReviewCategory}>
+                          <SelectTrigger className="h-8 text-sm">
+                            <SelectValue placeholder={isPl ? 'Kategoria' : 'Category'} />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="">
+                              {isPl ? 'Brak kategorii' : 'No category'}
+                            </SelectItem>
+                            {categories.map((cat) => (
+                              <SelectItem key={cat.id} value={cat.name}>
+                                {cat.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                      <div className="flex gap-1">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 px-2 text-green-600"
+                          onClick={() => saveReviewEdit(index)}
+                        >
+                          <Check className="h-3.5 w-3.5 mr-1" />
+                          {isPl ? 'Zapisz' : 'Save'}
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 px-2"
+                          onClick={() => setEditingReviewIndex(null)}
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </Button>
                       </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{item.name}</p>
+                        <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                          {item.suggestedCategory && (
+                            <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                              <Tag className="h-3 w-3" />
+                              {item.suggestedCategory}
+                              {item.confidence !== undefined && (
+                                <span className={cn(
+                                  'text-xs',
+                                  item.confidence >= 0.8 ? 'text-green-600' :
+                                  item.confidence >= 0.5 ? 'text-yellow-600' : 'text-muted-foreground'
+                                )}>
+                                  ({Math.round(item.confidence * 100)}%)
+                                </span>
+                              )}
+                            </span>
+                          )}
+                          {item.quantity !== null && item.quantity !== undefined && item.quantity !== 1 && (
+                            <span className="text-xs text-muted-foreground">×{item.quantity}</span>
+                          )}
+                        </div>
+                      </div>
+                      <span className="text-sm font-medium shrink-0 w-20 text-right">
+                        {item.price !== null && item.price !== undefined
+                          ? `${item.price.toFixed(2)} ${reviewMeta?.currency ?? ''}`
+                          : '—'}
+                      </span>
                       <Button
                         type="button"
                         variant="ghost"
                         size="icon"
-                        className="h-6 w-6"
-                        onClick={() => removeFile(index)}
-                        disabled={isBusy}
+                        className="h-7 w-7 shrink-0"
+                        onClick={() => startReviewEdit(index)}
                       >
-                        <X className="h-4 w-4" />
+                        <Edit2 className="h-3.5 w-3.5" />
                       </Button>
                     </div>
-                  ))}
+                  )}
                 </div>
-              )}
+              ))}
             </div>
+          </div>
 
-            {errorMsg && (
-              <div className="flex items-center gap-2 text-sm text-destructive">
-                <AlertCircle className="h-4 w-4" />
-                <span>{errorMsg}</span>
+          <SheetFooter className="mt-auto border-t p-6 flex justify-end gap-3">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleClose}
+            >
+              {isPl ? 'Odrzuć' : 'Discard'}
+            </Button>
+            <Button
+              type="button"
+              onClick={handleSaveAndClose}
+              className="min-w-[130px]"
+            >
+              <Check className="mr-2 h-4 w-4" />
+              {isPl ? 'Zapisz i zamknij' : 'Save & Close'}
+            </Button>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
+    );
+  }
+
+  // ── Upload step render ─────────────────────────────────────────────────────
+  return (
+    <Sheet open={isOpen} onOpenChange={(open) => { if (!open && !isBusy) handleClose(); }}>
+      <SheetContent className="flex flex-col gap-0 p-0 sm:max-w-2xl">
+        <SheetHeader className="p-6 border-b">
+          <SheetTitle className="text-xl font-semibold">
+            {isPl ? 'Nowy skan paragonu' : 'New Receipt Scan'}
+          </SheetTitle>
+          <SheetDescription>
+            {isPl
+              ? 'Dodaj zdjęcia paragonu. System odczyta dane przez OCR i AI.'
+              : 'Add receipt images. The system will extract data via OCR and AI.'}
+          </SheetDescription>
+        </SheetHeader>
+
+        <div className="flex-1 overflow-y-auto px-6 py-6">
+          <form id="scan-receipt-form" onSubmit={onSubmit} className="space-y-5">
+
+            {/* ── Drop zone ── */}
+            {!isBusy && (
+              <div className="space-y-2">
+                <Label htmlFor="file-upload">{t('receipts.addFile')}</Label>
+                <label
+                  ref={dropRef}
+                  htmlFor="file-upload"
+                  onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
+                  onDragLeave={() => setIsDragOver(false)}
+                  onDrop={handleDrop}
+                  className={cn(
+                    'relative flex w-full cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed p-8 transition-colors',
+                    isDragOver
+                      ? 'border-primary bg-primary/5'
+                      : 'border-muted-foreground/20 bg-muted/30 hover:bg-muted/50'
+                  )}
+                >
+                  <UploadCloud
+                    className={cn(
+                      'h-9 w-9 transition-colors',
+                      isDragOver ? 'text-primary' : 'text-muted-foreground'
+                    )}
+                  />
+                  <p className="mt-2 text-sm text-muted-foreground text-center">
+                    <span className="font-semibold text-primary">
+                      {isPl ? 'Kliknij' : 'Click'}
+                    </span>{' '}
+                    {isPl ? 'lub przeciągnij pliki tutaj' : 'or drag & drop files here'}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {t('receipts.selectFiles')} &mdash; {t('receipts.maxSize')}
+                  </p>
+                  <Input
+                    id="file-upload"
+                    type="file"
+                    multiple
+                    accept="image/png, image/jpeg, image/webp, image/heic, application/pdf"
+                    className="hidden"
+                    onChange={handleFileChange}
+                    disabled={isBusy}
+                  />
+                </label>
               </div>
             )}
 
-            {progress && (
+            {/* ── File list with thumbnails ── */}
+            {hasFiles && !isBusy && (
               <div className="space-y-2">
-                <div className="flex items-center justify-between text-sm text-muted-foreground">
-                  <span>{t('receipts.uploading')}</span>
-                  <span>{progress.uploaded} / {progress.total}</span>
-                </div>
-                <div className="h-2 w-full bg-muted rounded-full overflow-hidden">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                  {isPl ? `Wybrane pliki (${files.length})` : `Selected files (${files.length})`}
+                </p>
+                {files.map((file, index) => (
                   <div
-                    className="h-full bg-primary transition-all duration-300"
-                    style={{ width: `${(progress.uploaded / progress.total) * 100}%` }}
-                  />
+                    key={`${file.name}-${file.size}-${index}`}
+                    className="flex items-center gap-3 rounded-md border bg-muted/40 px-3 py-2"
+                  >
+                    <FileThumbnail file={file} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{file.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {(file.size / 1024).toFixed(0)} KB
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
+                      onClick={() => removeFile(index)}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* ── Scanning progress ── */}
+            {isBusy && scanStep && (
+              <div className="space-y-4">
+                <p className="text-sm font-medium text-center text-muted-foreground">
+                  {isPl ? 'Przetwarzanie paragonu...' : 'Processing receipt...'}
+                </p>
+                <ScanProgress step={scanStep} />
+                <p className="text-xs text-center text-muted-foreground">
+                  {isPl
+                    ? 'Może to potrwać 10–30 sekund.'
+                    : 'This may take 10–30 seconds.'}
+                </p>
+              </div>
+            )}
+
+            {/* ── Error with retry ── */}
+            {errorMsg && !isBusy && (
+              <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-4 space-y-3">
+                <div className="flex items-start gap-2 text-sm text-destructive">
+                  <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+                  <span className="leading-relaxed">{errorMsg}</span>
                 </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="w-full gap-2 border-destructive/40 text-destructive hover:bg-destructive/10"
+                  onClick={() => setErrorMsg(null)}
+                >
+                  <RefreshCcw className="h-3.5 w-3.5" />
+                  {isPl ? 'Spróbuj ponownie' : 'Try again'}
+                </Button>
               </div>
             )}
           </form>
@@ -704,13 +966,20 @@ export function ScanReceiptSheet({
           >
             {t('common.cancel')}
           </Button>
-          <Button type="submit" form="scan-receipt-form" disabled={isBusy}>
-            {isBusy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {isUploading
-              ? t('receipts.uploading')
-              : isProcessing
-              ? t('receipts.processing')
-              : t('receipts.scan')}
+          <Button
+            type="submit"
+            form="scan-receipt-form"
+            disabled={isBusy || files.length === 0}
+            className="min-w-[130px]"
+          >
+            {isBusy ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                {isPl ? 'Przetwarzanie...' : 'Processing...'}
+              </>
+            ) : (
+              t('receipts.scan')
+            )}
           </Button>
         </SheetFooter>
       </SheetContent>

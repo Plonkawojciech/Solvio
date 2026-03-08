@@ -1,19 +1,16 @@
 'use client'
 
 import { useEffect, useState, useCallback, useMemo } from 'react';
-import { createClient } from '@/lib/supabase/client';
-import { useRouter } from 'next/navigation';
+import { motion } from 'framer-motion';
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
+  Card, CardContent, CardDescription, CardHeader, CardTitle,
 } from '@/components/ui/card';
-import { Activity, TrendingUp, TrendingDown, Wallet, Target, Zap, ArrowUpRight } from 'lucide-react';
+import { Activity, TrendingUp, Wallet, Target, ArrowUpRight, AlertCircle, RefreshCw, CheckCircle2, Camera, BarChart3, Settings, Sparkles, ShieldCheck } from 'lucide-react';
+import dynamic from 'next/dynamic';
 import { RecentExpensesTable } from '@/components/protected/dashboard/recent-expenses-table';
-import { MonthlySpendingChart } from '@/components/protected/dashboard/monthly-spending-chart';
-import { SpendingByCategoryChart } from '@/components/protected/dashboard/spending-by-category-chart';
+/* Recharts-backed chart components — lazy-loaded so the recharts bundle is deferred */
+const MonthlySpendingChart = dynamic(() => import('@/components/protected/dashboard/monthly-spending-chart').then(m => ({ default: m.MonthlySpendingChart })), { ssr: false });
+const SpendingByCategoryChart = dynamic(() => import('@/components/protected/dashboard/spending-by-category-chart').then(m => ({ default: m.SpendingByCategoryChart })), { ssr: false });
 import { BudgetOverview } from '@/components/protected/dashboard/budget-overview';
 import { AddExpenseTrigger } from '@/components/protected/dashboard/add-expense-trigger';
 import { ScanReceiptButton } from '@/components/protected/dashboard/scan-receipt-button';
@@ -28,42 +25,290 @@ interface Category {
   icon?: string | null;
 }
 
-interface ReceiptItem {
-  name: string;
-  quantity?: number | null;
-  price?: number | null;
-  category_id?: string | null;
-}
-
-interface ReceiptData {
-  items?: ReceiptItem[];
-}
-
 interface Expense {
   id: string;
   title: string;
-  amount: number;
+  amount: number | string;
   date: string;
-  category_id: string | null;
-  receipt_id: string | null;
+  categoryId: string | null;
+  receiptId: string | null;
   vendor: string | null;
-  categories?: { name: string } | null;
 }
 
-interface Receipt {
-  id: string;
-  notes: string | null;
-  date: string | null;
-  vendor: string | null;
-  total: number | null;
+interface Budget {
+  categoryId: string;
+  amount: number | string;
 }
 
+// ─── Loading skeleton ─────────────────────────────────────────────────────────
+function DashboardSkeleton() {
+  return (
+    <div className="flex flex-col gap-4 sm:gap-6 animate-pulse">
+      {/* Hero card */}
+      <div className="rounded-xl border-2 bg-card p-6 space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="space-y-2">
+            <div className="h-5 w-32 rounded bg-muted" />
+            <div className="h-3 w-48 rounded bg-muted" />
+          </div>
+          <div className="h-8 w-8 rounded bg-muted" />
+        </div>
+        <div className="h-10 w-40 rounded bg-muted" />
+        <div className="h-3 w-56 rounded bg-muted" />
+        <div className="flex gap-2">
+          <div className="h-9 w-36 rounded-md bg-muted" />
+          <div className="h-9 w-32 rounded-md bg-muted" />
+          <div className="h-9 w-36 rounded-md bg-muted" />
+        </div>
+      </div>
+
+      {/* Stat cards */}
+      <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <div key={i} className="rounded-xl border bg-card p-4 space-y-3">
+            <div className="h-3 w-24 rounded bg-muted" />
+            <div className="h-7 w-28 rounded bg-muted" />
+            <div className="h-2.5 w-20 rounded bg-muted" />
+          </div>
+        ))}
+      </div>
+
+      {/* Main grid */}
+      <div className="grid gap-4 sm:gap-6 grid-cols-1 lg:grid-cols-3">
+        <div className="lg:col-span-2 rounded-xl border bg-card p-6 space-y-3">
+          <div className="h-5 w-36 rounded bg-muted" />
+          <div className="h-3 w-48 rounded bg-muted" />
+          <div className="space-y-2 pt-4">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="flex items-center justify-between py-2 border-b last:border-0">
+                <div className="space-y-1.5">
+                  <div className="h-4 w-32 rounded bg-muted" />
+                  <div className="h-3 w-20 rounded bg-muted" />
+                </div>
+                <div className="h-4 w-20 rounded bg-muted" />
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="rounded-xl border bg-card p-6 space-y-3">
+          <div className="h-5 w-32 rounded bg-muted" />
+          <div className="h-3 w-44 rounded bg-muted" />
+          <div className="mx-auto mt-4 h-48 w-48 rounded-full bg-muted" />
+        </div>
+      </div>
+
+      {/* Chart */}
+      <div className="rounded-xl border bg-card p-6 space-y-3">
+        <div className="h-5 w-40 rounded bg-muted" />
+        <div className="h-3 w-52 rounded bg-muted" />
+        <div className="mt-4 h-64 rounded-lg bg-muted" />
+      </div>
+    </div>
+  );
+}
+
+// ─── Error state ─────────────────────────────────────────────────────────────
+function DashboardError({ onRetry }: { onRetry: () => void }) {
+  const { t } = useTranslation()
+  return (
+    <div className="flex items-center justify-center min-h-[400px]">
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ duration: 0.35 }}
+        className="flex flex-col items-center gap-4 text-center max-w-sm"
+      >
+        <div className="h-16 w-16 rounded-full bg-destructive/10 flex items-center justify-center">
+          <AlertCircle className="h-8 w-8 text-destructive" />
+        </div>
+        <div className="space-y-1">
+          <h3 className="text-lg font-semibold" suppressHydrationWarning>
+            {t('dashboard.failedLoad')}
+          </h3>
+          <p className="text-sm text-muted-foreground" suppressHydrationWarning>
+            {t('dashboard.failedLoadDesc')}
+          </p>
+        </div>
+        <Button onClick={onRetry} variant="outline" className="gap-2" suppressHydrationWarning>
+          <RefreshCw className="h-4 w-4" />
+          {t('dashboard.tryAgain')}
+        </Button>
+      </motion.div>
+    </div>
+  );
+}
+
+// ─── Empty state / Onboarding ─────────────────────────────────────────────────
+function DashboardEmpty({
+  onAction,
+  fetchData,
+}: {
+  onAction: () => void;
+  fetchData: () => void;
+}) {
+  const { t } = useTranslation()
+
+  const containerVariants = {
+    hidden: { opacity: 0 },
+    show: {
+      opacity: 1,
+      transition: { staggerChildren: 0.12, delayChildren: 0.1 },
+    },
+  }
+
+  const itemVariants = {
+    hidden: { opacity: 0, y: 28 },
+    show: { opacity: 1, y: 0, transition: { duration: 0.5, ease: [0.22, 1, 0.36, 1] as const } },
+  }
+
+  const steps = [
+    {
+      badge: t('onboarding.step1.badge'),
+      icon: CheckCircle2,
+      iconClass: 'text-emerald-600 dark:text-emerald-400',
+      ringClass: 'bg-emerald-100 dark:bg-emerald-950/60',
+      badgeClass: 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300',
+      title: t('onboarding.step1.title'),
+      desc: t('onboarding.step1.desc'),
+      completed: true,
+      action: (
+        <Link href="/settings">
+          <Button variant="ghost" size="sm" className="gap-1.5 text-emerald-700 dark:text-emerald-400 hover:text-emerald-800 dark:hover:text-emerald-300 px-3">
+            <Settings className="h-3.5 w-3.5" />
+            <span suppressHydrationWarning>{t('onboarding.step1.action')}</span>
+            <ArrowUpRight className="h-3 w-3 opacity-60" />
+          </Button>
+        </Link>
+      ),
+    },
+    {
+      badge: t('onboarding.step2.badge'),
+      icon: Camera,
+      iconClass: 'text-primary',
+      ringClass: 'bg-primary/10',
+      badgeClass: 'bg-primary/10 text-primary',
+      title: t('onboarding.step2.title'),
+      desc: t('onboarding.step2.desc'),
+      completed: false,
+      action: (
+        <div className="flex flex-wrap gap-2">
+          <ScanReceiptButton onAction={() => { onAction(); fetchData(); }} />
+          <AddExpenseTrigger onAction={() => { onAction(); fetchData(); }} />
+        </div>
+      ),
+    },
+    {
+      badge: t('onboarding.step3.badge'),
+      icon: BarChart3,
+      iconClass: 'text-violet-600 dark:text-violet-400',
+      ringClass: 'bg-violet-100 dark:bg-violet-950/50',
+      badgeClass: 'bg-violet-100 dark:bg-violet-950/50 text-violet-700 dark:text-violet-300',
+      title: t('onboarding.step3.title'),
+      desc: t('onboarding.step3.desc'),
+      completed: false,
+      action: (
+        <Link href="/analysis">
+          <Button variant="ghost" size="sm" className="gap-1.5 text-violet-700 dark:text-violet-400 hover:text-violet-800 dark:hover:text-violet-300 px-3 opacity-50 cursor-not-allowed pointer-events-none">
+            <Sparkles className="h-3.5 w-3.5" />
+            <span suppressHydrationWarning>{t('onboarding.step3.action')}</span>
+          </Button>
+        </Link>
+      ),
+    },
+  ]
+
+  return (
+    <motion.div
+      variants={containerVariants}
+      initial="hidden"
+      animate="show"
+      className="w-full max-w-2xl mx-auto py-8 px-4 flex flex-col gap-8"
+    >
+      {/* Header */}
+      <motion.div variants={itemVariants} className="text-center space-y-3">
+        <div className="flex items-center justify-center gap-2 mb-4">
+          <div className="h-14 w-14 rounded-2xl bg-primary/10 flex items-center justify-center shadow-sm">
+            <Wallet className="h-7 w-7 text-primary" />
+          </div>
+        </div>
+        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight" suppressHydrationWarning>
+          {t('onboarding.title')}
+        </h1>
+        <p className="text-muted-foreground text-sm sm:text-base max-w-sm mx-auto" suppressHydrationWarning>
+          {t('onboarding.subtitle')}
+        </p>
+      </motion.div>
+
+      {/* Step cards */}
+      <div className="flex flex-col gap-4">
+        {steps.map((step, idx) => {
+          const Icon = step.icon
+          return (
+            <motion.div key={idx} variants={itemVariants}>
+              <div className={`relative rounded-xl border bg-card p-5 transition-all duration-200 ${step.completed ? 'border-emerald-200 dark:border-emerald-900/60' : 'hover:border-primary/30 hover:shadow-sm'}`}>
+                {/* Completion stripe */}
+                {step.completed && (
+                  <div className="absolute left-0 top-0 bottom-0 w-1 rounded-l-xl bg-emerald-500" />
+                )}
+
+                <div className="flex items-start gap-4">
+                  {/* Step icon */}
+                  <div className={`shrink-0 h-10 w-10 rounded-xl flex items-center justify-center ${step.ringClass}`}>
+                    <Icon className={`h-5 w-5 ${step.iconClass}`} />
+                  </div>
+
+                  <div className="flex-1 min-w-0 space-y-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${step.badgeClass}`} suppressHydrationWarning>
+                        {step.badge}
+                      </span>
+                      {step.completed && (
+                        <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400 flex items-center gap-1" suppressHydrationWarning>
+                          <CheckCircle2 className="h-3.5 w-3.5" />
+                          {t('onboarding.categoriesReady')}
+                        </span>
+                      )}
+                    </div>
+
+                    <div>
+                      <h3 className="font-semibold text-sm sm:text-base" suppressHydrationWarning>
+                        {step.title}
+                      </h3>
+                      <p className="text-xs sm:text-sm text-muted-foreground mt-0.5 leading-relaxed" suppressHydrationWarning>
+                        {step.desc}
+                      </p>
+                    </div>
+
+                    {/* Action */}
+                    <div className="pt-1">
+                      {step.action}
+                    </div>
+                  </div>
+
+                  {/* Step number */}
+                  <div className={`shrink-0 h-7 w-7 rounded-full flex items-center justify-center text-xs font-bold border-2 ${step.completed ? 'border-emerald-500 text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40' : 'border-muted text-muted-foreground'}`}>
+                    {idx + 1}
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          )
+        })}
+      </div>
+
+      {/* Footer */}
+      <motion.div variants={itemVariants} className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
+        <ShieldCheck className="h-3.5 w-3.5 shrink-0" />
+        <span suppressHydrationWarning>{t('onboarding.privacy')}</span>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+// ─── Main page ────────────────────────────────────────────────────────────────
 export default function ProtectedPage() {
-  const router = useRouter();
-  const supabase = createClient();
   const { t, lang, mounted } = useTranslation();
-  
-  // Funkcja do tłumaczenia nazw kategorii
+
   const translateCategoryName = useCallback((categoryName: string): string => {
     const categoryMap: Record<string, string> = {
       'Food': t('categories.food'),
@@ -76,160 +321,87 @@ export default function ProtectedPage() {
       'Entertainment': t('categories.entertainment'),
       'Bills & Utilities': t('categories.billsUtilities'),
       'Other': t('categories.other'),
-    }
-    return categoryMap[categoryName] || categoryName
+    };
+    return categoryMap[categoryName] || categoryName;
   }, [t]);
-  
+
   const [loading, setLoading] = useState(true);
-  const [user, setUser] = useState<any>(null);
+  const [error, setError] = useState<string | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
-  const [receipts, setReceipts] = useState<Receipt[]>([]);
+  const [receiptsCount, setReceiptsCount] = useState<number>(0);
   const [settings, setSettings] = useState<any>(null);
-  const [budgets, setBudgets] = useState<any[]>([]);
+  const [budgets, setBudgets] = useState<Budget[]>([]);
   const [lastUpdate, setLastUpdate] = useState<number>(Date.now());
 
-  // Główna funkcja pobierania danych
-  const fetchData = useCallback(async () => {
-    console.log('[Dashboard] 🔄 Refreshing all data...');
+  const fetchData = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
-    
+    setError(null);
     try {
-      const { data: { user: currentUser } } = await supabase.auth.getUser();
-      if (!currentUser) {
-        router.push('/login');
-        return;
+      const res = await fetch('/api/data/dashboard', { signal });
+      if (!res.ok) {
+        const msg = res.status === 401
+          ? 'Unauthorized'
+          : `Server error ${res.status}`;
+        throw new Error(msg);
       }
-      setUser(currentUser);
-
-      // Daty dla ostatnich 30 dni
-      const today = new Date();
-      const start30 = new Date(today);
-      start30.setDate(today.getDate() - 29);
-      
-      // Poprzedni miesiąc (do porównania)
-      const start60 = new Date(today);
-      start60.setDate(today.getDate() - 59);
-      const end30 = new Date(today);
-      end30.setDate(today.getDate() - 30);
-
-      // Równoległe zapytania do bazy
-      const [
-        { data: categoriesData, error: categoriesError },
-        { data: settingsRow, error: settingsError },
-        { data: budgetsRows, error: budgetsError },
-        { data: expensesData, error: expensesError },
-        { data: receiptsData, error: receiptsError },
-      ] = await Promise.all([
-        supabase.from('categories').select('id, name, icon').order('name'),
-        supabase
-          .from('user_settings')
-          .select('currency_id, language_id')
-          .eq('user_id', currentUser.id)
-          .maybeSingle(),
-        supabase
-          .from('category_budgets')
-          .select('category_id, budget')
-          .eq('user_id', currentUser.id),
-        supabase
-          .from('expenses')
-          .select('id, title, amount, date, category_id, categories (name), receipt_id, vendor')
-          .eq('user_id', currentUser.id)
-          .gte('date', start30.toISOString().slice(0, 10))
-          .order('date', { ascending: false })
-          .limit(500),
-        supabase
-          .from('receipts')
-          .select('id, notes, date, vendor, total')
-          .eq('user_id', currentUser.id)
-          .gte('date', start30.toISOString().slice(0, 10))
-          .not('notes', 'is', null)
-          .order('date', { ascending: false })
-          .limit(200),
-      ]);
-
-      if (categoriesError || settingsError || budgetsError || expensesError || receiptsError) {
-        console.error('[Dashboard] ❌ Errors:', { 
-          categoriesError, 
-          settingsError, 
-          budgetsError, 
-          expensesError,
-          receiptsError 
-        });
-      }
-
-      setCategories(categoriesData || []);
-      setExpenses(expensesData || []);
-      setReceipts(receiptsData || []);
-      setSettings(settingsRow);
-      setBudgets(budgetsRows || []);
-      setLastUpdate(Date.now()); // Aktualizuj timestamp
-      
-      console.log('[Dashboard] ✅ Data refreshed:', {
-        expenses: expensesData?.length || 0,
-        receipts: receiptsData?.length || 0,
-        categories: categoriesData?.length || 0,
-        timestamp: new Date().toISOString(),
-      });
-    } catch (error) {
-      console.error('[Dashboard] ❌ Fetch error:', error);
+      const data = await res.json();
+      setCategories(data.categories || []);
+      setExpenses(data.expenses || []);
+      setReceiptsCount(data.receiptsCount ?? 0);
+      setSettings(data.settings || null);
+      setBudgets(data.budgets || []);
+      setLastUpdate(Date.now());
+    } catch (err: any) {
+      if (err.name === 'AbortError') return;
+      setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
       setLoading(false);
     }
-  }, [supabase, router]);
+  }, []);
 
-  // Pobierz dane przy mount
   useEffect(() => {
-    fetchData();
+    const controller = new AbortController();
+    fetchData(controller.signal);
+    return () => controller.abort();
   }, [fetchData]);
 
-  // Nasłuchuj eventów aktualizacji
   useEffect(() => {
-    const handleExpensesUpdated = () => {
-      console.log('[Dashboard] 📢 Expenses updated event received');
-      fetchData();
-    };
-
-    window.addEventListener('expensesUpdated', handleExpensesUpdated);
-
-    return () => {
-      window.removeEventListener('expensesUpdated', handleExpensesUpdated);
-    };
+    const handler = () => fetchData();
+    window.addEventListener('expensesUpdated', handler);
+    return () => window.removeEventListener('expensesUpdated', handler);
   }, [fetchData]);
 
-  // Obliczenia danych - używamy useMemo dla wydajności
+  // ── Derived data ────────────────────────────────────────────────────────────
   const calculatedData = useMemo(() => {
-    if (loading || !categories.length) {
-      return null;
-    }
+    // Don't compute while loading
+    if (loading) return null;
+    // After loading, even if there are 0 categories/expenses, compute (just with empty data)
 
     const today = new Date();
-    const currency = (settings?.currency_id || 'PLN').toUpperCase();
+    const currency = (settings?.currency || 'PLN').toUpperCase();
     const locale = lang === 'pl' ? 'pl-PL' : 'en-US';
-    const isPolish = lang === 'pl';
 
-    // Mapy pomocnicze
-    const catById = new Map<string, Category>(
-      categories.map((c) => [c.id, c])
-    );
-    
+    const catById = new Map<string, Category>(categories.map(c => [c.id, c]));
     const budgetByCatId = new Map<string, number>(
-      budgets.map((b) => [b.category_id as string, Number(b.budget || 0)])
+      budgets.map(b => [b.categoryId, Number(b.amount || 0)])
     );
 
-    // Recent expenses dla tabeli
-    const recentExpenses = expenses.map((e) => ({
+    const recentExpenses = expenses.map(e => ({
       id: e.id,
       description: e.title,
-      categoryId: e.category_id,
-      category: e.categories?.name ? translateCategoryName(e.categories.name) : t('expenses.noCategory'),
+      categoryId: e.categoryId,
+      // raw name for colour lookup in the table
+      categoryRaw: e.categoryId ? (catById.get(e.categoryId)?.name || 'Other') : '',
+      category: e.categoryId
+        ? translateCategoryName(catById.get(e.categoryId)?.name || 'Other')
+        : '',
       amount: Number(e.amount),
       date: e.date,
-      receiptId: e.receipt_id,
+      receiptId: e.receiptId,
       vendor: e.vendor,
     }));
 
-    // Total spent - suma wszystkich expenses
     const totalSpent = recentExpenses.reduce((sum, e) => sum + e.amount, 0);
     const totalTransactions = recentExpenses.length;
     const avgDaily = totalSpent / 30;
@@ -238,343 +410,219 @@ export default function ProtectedPage() {
       ? Math.max(...recentExpenses.map(e => e.amount))
       : 0;
 
-    // Wydatki per kategoria - z receipt items (tylko z aktywnych expenses!)
+    // Category spending from expenses
     const spentByCatId = new Map<string, number>();
-    let otherTotal = 0;
-
-    // Utwórz set aktywnych receipt_id z expenses
-    const activeReceiptIds = new Set(
-      expenses
-        .filter(e => e.receipt_id)
-        .map(e => e.receipt_id as string)
-    );
-
-    console.log('[Dashboard] 📊 Calculating category data:', {
-      totalExpenses: expenses.length,
-      totalReceipts: receipts.length,
-      activeReceiptIds: activeReceiptIds.size,
-    });
-
-    // Przetwarzaj TYLKO receipt items z aktywnych expenses
-    receipts.forEach((receipt) => {
-      // WAŻNE: Tylko przetwarzaj receipts które mają aktywny expense!
-      if (!receipt.id || !activeReceiptIds.has(receipt.id)) {
-        return;
-      }
-      
-      if (!receipt.notes) return;
-      
-      try {
-        const receiptData: ReceiptData = JSON.parse(receipt.notes);
-        const items = receiptData.items || [];
-        
-        items.forEach((item) => {
-          if (item.price && item.price > 0) {
-            if (item.category_id) {
-              const current = spentByCatId.get(item.category_id) || 0;
-              spentByCatId.set(item.category_id, current + item.price);
-            } else {
-              otherTotal += item.price;
-            }
-          }
-        });
-      } catch (e) {
-        console.warn('[Dashboard] Failed to parse receipt notes:', e);
-      }
-    });
-
-    // Dodaj "Other" jeśli są wydatki bez kategorii
-    if (otherTotal > 0) {
-      spentByCatId.set('other', otherTotal);
+    for (const e of expenses) {
+      const key = e.categoryId || 'other';
+      spentByCatId.set(key, (spentByCatId.get(key) || 0) + Number(e.amount || 0));
     }
 
-    // Top 5 kategorii z tłumaczeniami
     const categorySpendingData = Array.from(spentByCatId.entries())
       .map(([catId, total]) => {
-        const rawName = catId === 'other' 
-          ? 'Other' 
-          : (catById.get(catId)?.name || 'Other');
-        return {
-          name: translateCategoryName(rawName),
-          total,
-          rawName, // Zachowaj dla wykresów
-        };
+        const rawName = catId === 'other' ? 'Other' : (catById.get(catId)?.name || 'Other');
+        return { name: translateCategoryName(rawName), total, rawName };
       })
       .sort((a, b) => b.total - a.total)
       .slice(0, 5);
 
-    console.log('[Dashboard] 📈 Category spending data:', {
-      categoriesFound: categorySpendingData.length,
-      totalSpent: Array.from(spentByCatId.values()).reduce((sum, v) => sum + v, 0),
-      otherTotal,
-    });
-
     const topCategory = categorySpendingData[0]?.name || '—';
 
-    // Budget data per kategoria
     const budgetData = categories
-      .map((cat) => {
-        const spent = Number(spentByCatId.get(cat.id) || 0);
-        const budget = budgetByCatId.get(cat.id) || 0;
-        return { 
-          id: cat.id, 
-          name: translateCategoryName(cat.name), 
-          spent, 
-          budget 
-        };
-      })
+      .map(cat => ({
+        id: cat.id,
+        name: translateCategoryName(cat.name),
+        spent: Number(spentByCatId.get(cat.id) || 0),
+        budget: budgetByCatId.get(cat.id) || 0,
+      }))
       .filter(item => item.budget > 0)
       .sort((a, b) => b.spent - a.spent);
 
-    // Total budget
     const totalBudget = Array.from(budgetByCatId.values()).reduce((sum, b) => sum + b, 0);
     const budgetRemaining = totalBudget - totalSpent;
     const budgetProgress = totalBudget > 0 ? (totalSpent / totalBudget) * 100 : 0;
 
-    // Monthly chart (30 days) z kategoriami - z receipt items
-    const monthlySpendingData = Array.from({ length: 30 })
-      .map((_, i) => {
-        const d = new Date(today);
-        d.setDate(today.getDate() - (29 - i));
-        const dateStr = d.toISOString().slice(0, 10);
-        
-        const dayData: any = {
-          date: d.toLocaleDateString(locale, { day: 'numeric', month: 'short' }),
-        };
-        
-        // Inicjalizuj wszystkie kategorie na 0
-        categorySpendingData.forEach(cat => {
-          dayData[cat.rawName] = 0;
+    // Monthly chart (30 days)
+    const monthlySpendingData = Array.from({ length: 30 }).map((_, i) => {
+      const d = new Date(today);
+      d.setDate(today.getDate() - (29 - i));
+      const dateStr = d.toISOString().slice(0, 10);
+      const dayData: any = {
+        date: d.toLocaleDateString(locale, { day: 'numeric', month: 'short' }),
+      };
+      categorySpendingData.forEach(cat => { dayData[cat.rawName] = 0; });
+      dayData['Other'] = 0;
+
+      expenses
+        .filter(e => e.date?.startsWith(dateStr))
+        .forEach(e => {
+          const catName = e.categoryId ? (catById.get(e.categoryId)?.name || 'Other') : 'Other';
+          if (!dayData[catName]) dayData[catName] = 0;
+          dayData[catName] += Number(e.amount || 0);
         });
-        dayData['Other'] = 0;
-        
-        // Policz wydatki z receipt items tego dnia (TYLKO z aktywnych expenses!)
-        receipts
-          .filter((receipt) => {
-            // Tylko aktywne receipts (z powiązanym expense)
-            return receipt.id && activeReceiptIds.has(receipt.id) && receipt.date?.startsWith(dateStr);
-          })
-          .forEach((receipt) => {
-            if (!receipt.notes) return;
-            try {
-              const receiptData: ReceiptData = JSON.parse(receipt.notes);
-              const items = receiptData.items || [];
-              
-              items.forEach((item) => {
-                if (item.price && item.price > 0) {
-                  const catName = item.category_id 
-                    ? (catById.get(item.category_id)?.name || 'Other')
-                    : 'Other';
-                  
-                  if (!dayData[catName]) dayData[catName] = 0;
-                  dayData[catName] += item.price;
-                }
-              });
-            } catch (e) {
-              // ignore
-            }
-          });
-        
-        return dayData;
-      });
-  
-    // Lista unikalnych kategorii dla wykresu
-    const chartCategories = Array.from(
-      new Set([
-        ...categorySpendingData.map(c => c.rawName),
-        'Other'
-      ])
-    ).filter(cat => {
-      return monthlySpendingData.some(day => (day[cat] || 0) > 0);
+
+      return dayData;
     });
 
-    return {
-      currency,
-      locale,
-      isPolish,
-      recentExpenses,
-      totalSpent,
-      totalTransactions,
-      avgDaily,
-      avgTransaction,
-      mostExpensive,
-      receiptsScanned: receipts.length,
-      categorySpendingData,
-      topCategory,
-      budgetData,
-      totalBudget,
-      budgetRemaining,
-      budgetProgress,
-      monthlySpendingData,
-      chartCategories,
-      catById,
-    };
-  }, [loading, categories, expenses, receipts, settings, budgets, lang, t, translateCategoryName]);
+    const chartCategories = Array.from(new Set([
+      ...categorySpendingData.map(c => c.rawName),
+      'Other',
+    ])).filter(cat => monthlySpendingData.some(day => (day[cat] || 0) > 0));
 
-  if (loading || !calculatedData) {
+    return {
+      currency, locale, recentExpenses, totalSpent, totalTransactions,
+      avgDaily, avgTransaction, mostExpensive, receiptsScanned: receiptsCount,
+      categorySpendingData, topCategory, budgetData, totalBudget, budgetRemaining,
+      budgetProgress, monthlySpendingData, chartCategories, catById,
+    };
+  }, [loading, categories, expenses, receiptsCount, settings, budgets, lang, t, translateCategoryName]);
+
+  // ── Render states ──────────────────────────────────────────────────────────
+  if (loading) {
+    return <DashboardSkeleton />;
+  }
+
+  if (error) {
+    return <DashboardError onRetry={fetchData} />;
+  }
+
+  // calculatedData is guaranteed non-null here (loading is false, no error)
+  const {
+    currency, locale, recentExpenses, totalSpent, totalTransactions, avgDaily, avgTransaction,
+    mostExpensive, receiptsScanned, categorySpendingData, topCategory, budgetData,
+    totalBudget, budgetRemaining, budgetProgress, monthlySpendingData, chartCategories,
+  } = calculatedData!;
+
+  function formatAmount(amount: number) {
+    return new Intl.NumberFormat(locale, {
+      style: 'currency',
+      currency,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(amount);
+  }
+
+  // Empty state: fetch succeeded but there are no expenses at all
+  if (recentExpenses.length === 0) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="flex flex-col items-center gap-4">
-          <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>
-          <p className="text-sm text-muted-foreground">{t('dashboard.loading') || 'Loading your financial data...'}</p>
-        </div>
-      </div>
+      <DashboardEmpty
+        onAction={() => {}}
+        fetchData={fetchData}
+      />
     );
   }
 
-  const {
-    currency,
-    recentExpenses,
-    totalSpent,
-    totalTransactions,
-    avgDaily,
-    avgTransaction,
-    mostExpensive,
-    receiptsScanned,
-    categorySpendingData,
-    topCategory,
-    budgetData,
-    totalBudget,
-    budgetRemaining,
-    budgetProgress,
-    monthlySpendingData,
-    chartCategories,
-    isPolish,
-  } = calculatedData;
+  const fadeUp = {
+    hidden: { opacity: 0, y: 24 },
+    show: (i: number) => ({
+      opacity: 1, y: 0,
+      transition: { duration: 0.5, delay: i * 0.08, ease: [0.22, 1, 0.36, 1] as const },
+    }),
+  };
+
+  const budgetProgressColor =
+    budgetProgress >= 100
+      ? 'bg-red-500'
+      : budgetProgress >= 90
+      ? 'bg-yellow-500'
+      : budgetProgress >= 70
+      ? 'bg-amber-400'
+      : 'bg-emerald-500';
 
   return (
-    <div className="flex flex-col gap-4 sm:gap-6 p-4 sm:p-6 lg:p-10">
-      {/* Hero Section - Total Spent */}
-      <Card className="border-2">
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="text-2xl sm:text-3xl font-bold">
-                {t('dashboard.totalSpent') || 'Total Spent'}
-              </CardTitle>
-              <CardDescription className="hidden sm:block">
-                {t('dashboard.spendingOverview') || 'Your spending overview'}
-              </CardDescription>
-            </div>
-            <Wallet className="h-6 w-6 sm:h-8 sm:w-8 text-muted-foreground" />
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-4 sm:space-y-6">
-          {/* Total Spent */}
-          <div>
-            <p className="text-sm text-muted-foreground mb-1">{t('dashboard.totalSpent') || 'Total Spent'}</p>
-            <div className="flex items-baseline gap-2 sm:gap-3">
-              <span className="text-3xl sm:text-4xl font-bold">{totalSpent.toFixed(2)}</span>
-              <span className="text-xl sm:text-2xl text-muted-foreground">{currency}</span>
-            </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              {totalTransactions} {t('dashboard.transactions') || 'transactions'} · {avgDaily.toFixed(2)} {currency}/{isPolish ? 'dzień' : 'day'}
-            </p>
-          </div>
-
-          {/* Budget Progress */}
-          {totalBudget > 0 && (
-            <div className="space-y-2">
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">{t('dashboard.budgetProgress') || 'Budget Progress'}</span>
-                <span className="font-medium">
-                  {budgetRemaining >= 0 ? (
-                    <span className="text-green-600">{budgetRemaining.toFixed(2)} {currency} {t('dashboard.left') || 'left'}</span>
-                  ) : (
-                    <span className="text-red-600">{Math.abs(budgetRemaining).toFixed(2)} {currency} {t('dashboard.over') || 'over'}</span>
-                  )}
-                </span>
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.35 }} className="flex flex-col gap-4 sm:gap-6">
+      {/* Hero Section */}
+      <motion.div custom={0} initial="hidden" animate="show" variants={fadeUp}>
+        <Card className="border-2">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="text-2xl sm:text-3xl font-bold">{t('dashboard.totalSpent') || 'Total Spent'}</CardTitle>
+                <CardDescription className="hidden sm:block">{t('dashboard.spendingOverview') || 'Your spending overview'}</CardDescription>
               </div>
-              <Progress 
-                value={Math.min(budgetProgress, 100)} 
-                className={budgetProgress > 100 ? 'bg-red-100' : ''}
-              />
-              <p className="text-xs text-muted-foreground">
-                {budgetProgress.toFixed(1)}% {isPolish ? 'z' : 'of'} {totalBudget.toFixed(2)} {currency} {t('dashboard.budget') || 'budget'} {t('dashboard.used') || 'used'}
+              <Wallet className="h-6 w-6 sm:h-8 sm:w-8 text-muted-foreground" />
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4 sm:space-y-6">
+            <div>
+              <p className="text-sm text-muted-foreground mb-1">{t('dashboard.totalSpent') || 'Total Spent'}</p>
+              <div className="flex items-baseline gap-2 sm:gap-3">
+                <span className="text-3xl sm:text-4xl font-bold tabular-nums">{formatAmount(totalSpent)}</span>
+              </div>
+              <p className="text-xs text-muted-foreground mt-1" suppressHydrationWarning>
+                {totalTransactions} {t('dashboard.transactions') || 'transactions'} · {formatAmount(avgDaily)}/{t('dashboard.day')}
               </p>
             </div>
-          )}
 
-          {/* Quick Actions */}
-          <div className="flex flex-col sm:flex-row gap-2 pt-2">
-            <ScanReceiptButton onAction={fetchData} />
-            <AddExpenseTrigger onAction={fetchData} />
-            <Link href="/expenses" className="w-full sm:w-auto">
-              <Button variant="outline" size="default" className="w-full sm:w-auto text-xs sm:text-sm">
-                {t('dashboard.viewAllExpenses') || 'View All Expenses'}
-                <ArrowUpRight className="ml-2 h-4 w-4" />
-              </Button>
-            </Link>
-          </div>
-        </CardContent>
-      </Card>
+            {totalBudget > 0 && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">{t('dashboard.budgetProgress') || 'Budget Progress'}</span>
+                  <span className="font-medium">
+                    {budgetRemaining >= 0
+                      ? <span className="text-emerald-600 dark:text-emerald-400">{formatAmount(budgetRemaining)} {t('dashboard.left') || 'left'}</span>
+                      : <span className="text-red-600 dark:text-red-400">{formatAmount(Math.abs(budgetRemaining))} {t('dashboard.over') || 'over'}</span>
+                    }
+                  </span>
+                </div>
+                {/* Color-coded progress bar */}
+                <div className={`relative h-2.5 w-full overflow-hidden rounded-full ${
+                  budgetProgress >= 100
+                    ? 'bg-red-100 dark:bg-red-950/40'
+                    : budgetProgress >= 90
+                    ? 'bg-yellow-100 dark:bg-yellow-950/40'
+                    : budgetProgress >= 70
+                    ? 'bg-amber-100 dark:bg-amber-950/40'
+                    : 'bg-emerald-100 dark:bg-emerald-950/40'
+                }`}>
+                  <div
+                    className={`h-full rounded-full transition-all duration-700 ${budgetProgressColor}`}
+                    style={{ width: `${Math.min(budgetProgress, 100)}%` }}
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground" suppressHydrationWarning>
+                  {budgetProgress.toFixed(1)}% {t('dashboard.of')} {formatAmount(totalBudget)} {t('dashboard.budget') || 'budget'} {t('dashboard.used') || 'used'}
+                </p>
+              </div>
+            )}
 
-      {/* Small Metrics Cards */}
+            <div className="flex flex-col sm:flex-row gap-2 pt-2">
+              <ScanReceiptButton onAction={fetchData} />
+              <AddExpenseTrigger onAction={fetchData} />
+              <Link href="/expenses" className="w-full sm:w-auto">
+                <Button variant="outline" size="default" className="w-full sm:w-auto text-xs sm:text-sm">
+                  {t('dashboard.viewAllExpenses') || 'View All Expenses'}
+                  <ArrowUpRight className="ml-2 h-4 w-4" />
+                </Button>
+              </Link>
+            </div>
+          </CardContent>
+        </Card>
+      </motion.div>
+
+      {/* Metric Cards */}
       <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              {t('dashboard.receiptsScanned') || 'Receipts Scanned'}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{receiptsScanned}</div>
-            <p className="text-xs text-muted-foreground mt-1">
-              {t('dashboard.aiProcessed') || 'AI processed'}
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              {t('dashboard.biggestPurchase') || 'Biggest Purchase'}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {mostExpensive.toFixed(2)} {currency}
-            </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              {t('dashboard.largestTransaction') || 'Largest transaction'}
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              {t('dashboard.avgTransaction') || 'Avg Transaction'}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {avgTransaction.toFixed(2)} {currency}
-            </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              {t('dashboard.averagePerTransaction') || 'Average per transaction'}
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              {t('dashboard.topCategory') || 'Top Category'}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold truncate">{topCategory}</div>
-            <p className="text-xs text-muted-foreground mt-1">
-              {t('dashboard.highestSpending') || 'Highest spending'}
-            </p>
-          </CardContent>
-        </Card>
+        {[
+          { label: t('dashboard.receiptsScanned') || 'Receipts Scanned', value: receiptsScanned, sub: t('dashboard.aiProcessed') || 'AI processed' },
+          { label: t('dashboard.biggestPurchase') || 'Biggest Purchase', value: formatAmount(mostExpensive), sub: t('dashboard.largestTransaction') || 'Largest transaction' },
+          { label: t('dashboard.avgTransaction') || 'Avg Transaction', value: formatAmount(avgTransaction), sub: t('dashboard.averagePerTransaction') || 'Average per transaction' },
+          { label: t('dashboard.topCategory') || 'Top Category', value: topCategory, sub: t('dashboard.highestSpending') || 'Highest spending', truncate: true },
+        ].map((card, i) => (
+          <motion.div key={i} custom={i + 1} initial="hidden" animate="show" variants={fadeUp}>
+            <Card className="h-full hover:shadow-md transition-shadow duration-200">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-medium text-muted-foreground">{card.label}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className={`text-2xl font-bold tabular-nums${card.truncate ? ' truncate' : ''}`}>{card.value}</div>
+                <p className="text-xs text-muted-foreground mt-1">{card.sub}</p>
+              </CardContent>
+            </Card>
+          </motion.div>
+        ))}
       </div>
 
       {/* Main Content Grid */}
-      <div className="grid gap-4 sm:gap-6 grid-cols-1 lg:grid-cols-3">
-        {/* Recent Activity */}
+      <motion.div custom={5} initial="hidden" animate="show" variants={fadeUp} className="grid gap-4 sm:gap-6 grid-cols-1 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -584,27 +632,22 @@ export default function ProtectedPage() {
             <CardDescription>{t('dashboard.latestTransactions') || 'Latest transactions'}</CardDescription>
           </CardHeader>
           <CardContent>
-            {recentExpenses.length === 0 ? (
-              <div className="text-center py-12">
-                <p className="text-muted-foreground text-sm">{t('dashboard.noExpensesYet') || 'No expenses yet'}</p>
-              </div>
-            ) : (
-              <RecentExpensesTable
-                key={`recent-${lastUpdate}`}
-                data={recentExpenses.slice(0, 10).map((e) => ({
-                  id: e.id,
-                  description: e.description,
-                  vendor: e.vendor,
-                  amount: e.amount,
-                  date: e.date,
-                }))}
-                currency={currency}
-              />
-            )}
+            <RecentExpensesTable
+              key={`recent-${lastUpdate}`}
+              data={recentExpenses.slice(0, 10).map(e => ({
+                id: e.id,
+                description: e.description,
+                vendor: e.vendor,
+                category: e.category,
+                categoryId: e.categoryId,
+                amount: e.amount,
+                date: e.date,
+              }))}
+              currency={currency}
+            />
           </CardContent>
         </Card>
 
-        {/* Top Categories */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -616,12 +659,12 @@ export default function ProtectedPage() {
           <CardContent>
             {categorySpendingData.length === 0 ? (
               <p className="text-muted-foreground text-sm text-center py-8">
-                {isPolish ? 'Brak danych kategorii jeszcze.' : 'No category data yet.'}
+                <span suppressHydrationWarning>{t('dashboard.noCategoryData')}</span>
               </p>
             ) : (
               <div className="space-y-4">
                 <SpendingByCategoryChart
-                  key={`category-${lastUpdate}-${categorySpendingData.length}-${categorySpendingData.reduce((sum, c) => sum + c.total, 0).toFixed(2)}`}
+                  key={`category-${lastUpdate}`}
                   data={categorySpendingData.map(c => ({ name: c.name, total: c.total }))}
                   currency={currency}
                 />
@@ -629,7 +672,7 @@ export default function ProtectedPage() {
                   {categorySpendingData.map((cat, idx) => (
                     <div key={idx} className="flex items-center justify-between text-sm">
                       <span className="text-muted-foreground">{cat.name}</span>
-                      <span className="font-medium">{cat.total.toFixed(2)} {currency}</span>
+                      <span className="font-medium tabular-nums">{formatAmount(cat.total)}</span>
                     </div>
                   ))}
                 </div>
@@ -637,50 +680,46 @@ export default function ProtectedPage() {
             )}
           </CardContent>
         </Card>
-      </div>
+      </motion.div>
 
       {/* Category Budgets */}
       {budgetData.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Target className="h-5 w-5" />
-              {t('dashboard.categoryBudgets') || 'Category Budgets'}
-            </CardTitle>
-            <CardDescription>
-              {t('dashboard.trackSpending') || 'Track your spending by category'}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <BudgetOverview 
-              key={`budget-${lastUpdate}`}
-              data={budgetData} 
-              currency={currency} 
-            />
-          </CardContent>
-        </Card>
+        <motion.div custom={6} initial="hidden" animate="show" variants={fadeUp}>
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Target className="h-5 w-5" />
+                {t('dashboard.categoryBudgets') || 'Category Budgets'}
+              </CardTitle>
+              <CardDescription>{t('dashboard.trackSpending') || 'Track your spending by category'}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <BudgetOverview key={`budget-${lastUpdate}`} data={budgetData} currency={currency} />
+            </CardContent>
+          </Card>
+        </motion.div>
       )}
 
       {/* Monthly Spending Trend */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <TrendingUp className="h-5 w-5" />
-            {t('dashboard.monthlySpending') || 'Monthly Spending'}
-          </CardTitle>
-          <CardDescription>
-            {t('dashboard.dailyExpenses') || 'Daily expenses over the last 30 days'}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="pl-2">
-          <MonthlySpendingChart 
-            key={`monthly-${lastUpdate}-${monthlySpendingData.reduce((sum, d) => sum + Object.values(d).reduce((s: number, v: any) => typeof v === 'number' ? s + v : s, 0), 0).toFixed(2)}`}
-            data={monthlySpendingData} 
-            currency={currency}
-            categories={chartCategories}
-          />
-        </CardContent>
-      </Card>
-    </div>
+      <motion.div custom={7} initial="hidden" animate="show" variants={fadeUp}>
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <TrendingUp className="h-5 w-5" />
+              {t('dashboard.monthlySpending') || 'Monthly Spending'}
+            </CardTitle>
+            <CardDescription>{t('dashboard.dailyExpenses') || 'Daily expenses over the last 30 days'}</CardDescription>
+          </CardHeader>
+          <CardContent className="pl-2">
+            <MonthlySpendingChart
+              key={`monthly-${lastUpdate}`}
+              data={monthlySpendingData}
+              currency={currency}
+              categories={chartCategories}
+            />
+          </CardContent>
+        </Card>
+      </motion.div>
+    </motion.div>
   );
 }

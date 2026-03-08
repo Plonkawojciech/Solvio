@@ -2,17 +2,32 @@
 
 import * as React from "react"
 import { z } from "zod"
-import { useForm } from "react-hook-form"
+import { useForm, useWatch } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
-import { Loader2 } from "lucide-react"
+import { Loader2, DollarSign, Globe, Wallet } from "lucide-react"
 import { toast } from "sonner"
-import { createClient } from "@/lib/supabase/client"
+import { motion } from "framer-motion"
 
 import { Button } from "@/components/ui/button"
 import { Form, FormField, FormItem, FormLabel, FormMessage, FormControl } from "@/components/ui/form"
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select"
 import { Input } from "@/components/ui/input"
 import { Separator } from "@/components/ui/separator"
+import { useTranslation, setLanguage, type Language } from "@/lib/i18n"
+
+const CURRENCIES = [
+  { code: 'PLN', name: 'Polski Złoty', symbol: 'zł' },
+  { code: 'USD', name: 'US Dollar', symbol: '$' },
+  { code: 'EUR', name: 'Euro', symbol: '€' },
+  { code: 'GBP', name: 'British Pound', symbol: '£' },
+  { code: 'CHF', name: 'Swiss Franc', symbol: 'Fr' },
+  { code: 'CZK', name: 'Czech Koruna', symbol: 'Kč' },
+]
+
+const LANGUAGES = [
+  { code: 'EN', name: 'English', flag: '🇬🇧' },
+  { code: 'PL', name: 'Polski', flag: '🇵🇱' },
+]
 
 type CategoryBudget = {
   categoryId: string
@@ -22,26 +37,20 @@ type CategoryBudget = {
   currency: string
 }
 
-type CurrencyRow = {
-  id: number
-  currency: string | null            // pełna nazwa, np. "Polski Złoty"
-  currency_symbol: string | null     // kod, np. "PLN"
-  currency_before: boolean | null
-}
-
-type LanguageRow = {
-  id: number
-  language: string | null            // pełna nazwa, np. "English"
-  language_symbol: string | null     // kod, np. "EN"
-}
-
 const settingsSchema = z.object({
-  currency: z.string().min(1), // przechowujemy kody: PLN / USD
-  language: z.string().min(1), // przechowujemy kody: EN / PL
+  currency: z.string().min(1),
+  language: z.string().min(1),
   budgets: z.array(z.object({
     categoryId: z.string(),
     categoryName: z.string(),
-    amount: z.string(),
+    amount: z.string()
+      .refine((val) => val === '' || val === '0' || /^\d+(\.\d{0,2})?$/.test(val), {
+        message: 'Must be a valid positive number',
+      })
+      .refine((val) => {
+        const num = parseFloat(val)
+        return val === '' || val === '0' || (!isNaN(num) && num >= 0)
+      }, { message: 'Budget must be 0 or a positive number' }),
   })),
 })
 
@@ -51,25 +60,27 @@ interface SettingsFormProps {
   initialCurrency: string
   initialLanguage: string
   categoryBudgets: CategoryBudget[]
-  currencies: CurrencyRow[]
-  languages: LanguageRow[]
 }
 
-export function SettingsForm({
-  initialCurrency,
-  initialLanguage,
-  categoryBudgets,
-  currencies,
-  languages,
-}: SettingsFormProps) {
-  const supabase = React.useMemo(() => createClient(), [])
+const containerVariants = {
+  hidden: {},
+  visible: { transition: { staggerChildren: 0.06 } },
+} as any
+
+const itemVariants = {
+  hidden: { opacity: 0, y: 12 },
+  visible: { opacity: 1, y: 0, transition: { duration: 0.3 } },
+} as any
+
+export function SettingsForm({ initialCurrency, initialLanguage, categoryBudgets }: SettingsFormProps) {
+  const { t, lang } = useTranslation()
 
   const form = useForm<SettingsFormValues>({
     resolver: zodResolver(settingsSchema),
     defaultValues: {
       currency: (initialCurrency || "PLN").toUpperCase(),
       language: (initialLanguage || "EN").toUpperCase(),
-      budgets: categoryBudgets.map((b) => ({
+      budgets: categoryBudgets.map(b => ({
         categoryId: b.categoryId,
         categoryName: b.categoryName,
         amount: b.amount ? b.amount.toString() : "0",
@@ -79,40 +90,63 @@ export function SettingsForm({
 
   const [isSaving, setIsSaving] = React.useState(false)
 
+  // Reactively watch the selected currency so budget inputs update live
+  const watchedCurrency = useWatch({ control: form.control, name: 'currency' })
+  const currencySymbol = CURRENCIES.find(c => c.code === watchedCurrency)?.symbol ?? watchedCurrency
+
   const onSubmit = async (values: SettingsFormValues) => {
     setIsSaving(true)
     try {
-      const { data: { user }, error: userError } = await supabase.auth.getUser()
-      if (userError) throw userError
-      if (!user) throw new Error("User not found")
+      // Save general settings
+      const settingsRes = await fetch('/api/data/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'settings',
+          data: {
+            currency: values.currency,
+            language: values.language.toLowerCase(),
+          },
+        }),
+      })
+      if (!settingsRes.ok) throw new Error('Failed to save settings')
 
-      // user_settings: zapisujemy kody
-      const { error: settingsError } = await supabase
-        .from("user_settings")
-        .upsert(
-          { user_id: user.id, currency_id: values.currency, language_id: values.language },
-          { onConflict: "user_id" },
+      // Save budgets in parallel — only include budgets with valid positive amounts
+      const budgetSaveResults = await Promise.allSettled(
+        values.budgets.map(b => {
+          const amount = parseFloat(b.amount || '0')
+          // Always upsert even when 0 so server can reset budgets
+          return fetch('/api/data/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              type: 'budget',
+              data: { categoryId: b.categoryId, amount: isNaN(amount) ? 0 : amount },
+            }),
+          })
+        })
+      )
+
+      const budgetErrors = budgetSaveResults.filter(r => r.status === 'rejected')
+      if (budgetErrors.length > 0) {
+        toast.warning(
+          lang === 'pl' ? 'Ustawienia zapisane częściowo' : 'Settings partially saved',
+          { description: lang === 'pl' ? `${budgetErrors.length} budżet(ów) nie udało się zapisać.` : `${budgetErrors.length} budget(s) failed to save.` }
         )
-      if (settingsError) throw settingsError
-
-      // category_budgets: tylko budget
-      const payload = values.budgets.map((b) => ({
-        user_id: user.id,
-        category_id: b.categoryId,
-        budget: Number(b.amount || 0),
-      }))
-      const { error: budgetsError } = await supabase
-        .from("category_budgets")
-        .upsert(payload, { onConflict: "user_id,category_id" })
-      if (budgetsError) throw budgetsError
-
-      toast.success("Settings saved", { description: "Your preferences and budgets have been updated." })
-    } catch (err: unknown) {
-      const errorMessage = err instanceof Error ? err.message : "Unexpected error."
-      if (process.env.NODE_ENV === 'development') {
-        console.error('[SettingsForm] error:', err)
+      } else {
+        toast.success(t('settings.saved'), { description: t('settings.savedDesc') })
       }
-      toast.error("Failed to save settings", { description: errorMessage })
+
+      // Apply language change client-side without full page reload if possible
+      const newLang = values.language.toLowerCase() as Language
+      setLanguage(newLang)
+      if (newLang !== lang) {
+        // Brief delay so toast is visible, then reload to apply translations
+        setTimeout(() => window.location.reload(), 1200)
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : (lang === 'pl' ? 'Nieoczekiwany błąd.' : 'Unexpected error.')
+      toast.error(lang === 'pl' ? 'Nie udało się zapisać ustawień' : 'Failed to save settings', { description: msg })
     } finally {
       setIsSaving(false)
     }
@@ -121,30 +155,30 @@ export function SettingsForm({
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
-        {/* General */}
-        <div className="flex flex-wrap gap-4">
+        {/* Language + Currency selectors */}
+        <div className="flex flex-wrap gap-4 sm:gap-6">
           <FormField
             control={form.control}
             name="currency"
             render={({ field }) => (
               <FormItem className="w-full sm:w-auto sm:min-w-[220px] max-w-xs space-y-2">
-                <FormLabel>Default currency</FormLabel>
+                <FormLabel className="flex items-center gap-1.5">
+                  <DollarSign className="h-3.5 w-3.5 text-muted-foreground" />
+                  {t('settings.currency')}
+                </FormLabel>
                 <Select value={field.value} onValueChange={field.onChange}>
                   <FormControl>
                     <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Select currency" />
+                      <SelectValue placeholder={lang === 'pl' ? 'Wybierz walutę' : 'Select currency'} />
                     </SelectTrigger>
                   </FormControl>
                   <SelectContent>
-                    {currencies.map((cur) => {
-                      const code = (cur.currency_symbol ?? "").toUpperCase()
-                      const name = cur.currency ?? code
-                      return (
-                        <SelectItem key={cur.id} value={code}>
-                          {code} — {name}
-                        </SelectItem>
-                      )
-                    })}
+                    {CURRENCIES.map(cur => (
+                      <SelectItem key={cur.code} value={cur.code}>
+                        <span className="font-mono text-xs text-muted-foreground mr-1">{cur.symbol}</span>
+                        {cur.code} — {cur.name}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
                 <FormMessage />
@@ -157,23 +191,23 @@ export function SettingsForm({
             name="language"
             render={({ field }) => (
               <FormItem className="w-full sm:w-auto sm:min-w-[220px] max-w-xs space-y-2">
-                <FormLabel>Language</FormLabel>
+                <FormLabel className="flex items-center gap-1.5">
+                  <Globe className="h-3.5 w-3.5 text-muted-foreground" />
+                  {t('settings.language')}
+                </FormLabel>
                 <Select value={field.value} onValueChange={field.onChange}>
                   <FormControl>
                     <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Select language" />
+                      <SelectValue placeholder={lang === 'pl' ? 'Wybierz język' : 'Select language'} />
                     </SelectTrigger>
                   </FormControl>
                   <SelectContent>
-                    {languages.map((lang) => {
-                      const code = (lang.language_symbol ?? "").toUpperCase()
-                      const name = lang.language ?? code
-                      return (
-                        <SelectItem key={lang.id} value={code}>
-                          {code} — {name}
-                        </SelectItem>
-                      )
-                    })}
+                    {LANGUAGES.map(l => (
+                      <SelectItem key={l.code} value={l.code}>
+                        <span className="mr-1">{l.flag}</span>
+                        {l.name}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
                 <FormMessage />
@@ -184,53 +218,91 @@ export function SettingsForm({
 
         <Separator />
 
-        {/* Budgets per category */}
+        {/* Category budgets */}
         <div className="space-y-4">
-          <div>
-            <h3 className="text-lg font-semibold">Category budgets</h3>
-            <p className="text-sm text-muted-foreground">Set monthly budget for each category.</p>
+          <div className="flex items-center gap-2">
+            <Wallet className="h-4 w-4 text-muted-foreground" />
+            <div>
+              <h3 className="text-base font-semibold leading-none">
+                {lang === 'pl' ? 'Budżety miesięczne' : 'Monthly budgets'}
+              </h3>
+              <p className="text-sm text-muted-foreground mt-0.5">
+                {lang === 'pl'
+                  ? 'Ustaw miesięczny limit dla każdej kategorii wydatków.'
+                  : 'Set a monthly spending limit for each expense category.'}
+              </p>
+            </div>
           </div>
 
-          <div className="grid gap-4 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
-            {form.watch("budgets").length === 0 ? (
-              <p className="text-sm text-muted-foreground">No categories available.</p>
-            ) : (
-              form.watch("budgets").map((budget, index) => (
-                <FormField
-                  key={budget.categoryId}
-                  control={form.control}
-                  name={`budgets.${index}.amount`}
-                  render={({ field }) => (
-                    <FormItem className="flex flex-col gap-2 rounded-lg border bg-muted/20 p-3 sm:p-4">
-                      <div className="flex flex-col">
-                        <FormLabel className="flex items-center gap-2">
-                          {categoryBudgets[index]?.icon && <span>{categoryBudgets[index]?.icon}</span>}
-                          {budget.categoryName}
+          {form.watch("budgets").length === 0 ? (
+            <p className="text-sm text-muted-foreground py-4 text-center border rounded-lg bg-muted/20">
+              {lang === 'pl'
+                ? 'Brak kategorii. Najpierw dodaj kategorie poniżej.'
+                : 'No categories available. Add categories in the section below first.'}
+            </p>
+          ) : (
+            <motion.div
+              variants={containerVariants}
+              initial="hidden"
+              animate="visible"
+              className="grid gap-3 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3"
+            >
+              {form.watch("budgets").map((budget, index) => (
+                <motion.div key={budget.categoryId} variants={itemVariants}>
+                  <FormField
+                    control={form.control}
+                    name={`budgets.${index}.amount`}
+                    render={({ field }) => (
+                      <FormItem className="flex flex-col gap-2 rounded-lg border bg-muted/20 hover:bg-muted/30 transition-colors p-3 sm:p-4">
+                        <FormLabel className="flex items-center gap-2 font-medium text-sm">
+                          {categoryBudgets[index]?.icon && (
+                            <span className="text-lg leading-none">{categoryBudgets[index].icon}</span>
+                          )}
+                          <span className="truncate">{budget.categoryName}</span>
                         </FormLabel>
-                      </div>
-
-                      <div className="mt-1 flex justify-end">
                         <FormControl>
                           <div className="flex items-center gap-2">
-                            <Input {...field} inputMode="decimal" placeholder="0.00" className="w-[110px] sm:w-[130px] text-right" />
-                            <span className="text-sm text-muted-foreground">{form.getValues("currency")}</span>
+                            <div className="relative flex-1">
+                              <Input
+                                {...field}
+                                type="text"
+                                inputMode="decimal"
+                                placeholder="0.00"
+                                className="pr-12 text-right tabular-nums"
+                                onChange={(e) => {
+                                  // Only allow digits and a single decimal point
+                                  const val = e.target.value
+                                  if (val === '' || /^\d*\.?\d{0,2}$/.test(val)) {
+                                    field.onChange(val)
+                                  }
+                                }}
+                              />
+                              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground pointer-events-none font-mono">
+                                {currencySymbol}
+                              </span>
+                            </div>
                           </div>
                         </FormControl>
-                      </div>
-
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              ))
-            )}
-          </div>
+                        <FormMessage className="text-xs" />
+                      </FormItem>
+                    )}
+                  />
+                </motion.div>
+              ))}
+            </motion.div>
+          )}
         </div>
 
-        <div className="flex justify-end">
-          <Button type="submit" disabled={isSaving}>
-            {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Save changes
+        <div className="flex justify-end pt-2">
+          <Button type="submit" disabled={isSaving} className="min-w-[140px]">
+            {isSaving ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                {lang === 'pl' ? 'Zapisywanie...' : 'Saving...'}
+              </>
+            ) : (
+              t('common.save')
+            )}
           </Button>
         </div>
       </form>

@@ -1,124 +1,158 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { createClient } from "@/lib/supabase/client"
-import { useRouter } from "next/navigation"
+import { motion } from 'framer-motion'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
+import { Skeleton } from "@/components/ui/skeleton"
 import { SettingsForm } from "@/components/protected/settings/settings-form"
 import { CategoriesManager } from "@/components/protected/settings/categories-manager"
-import { getLanguage, t } from '@/lib/i18n'
+import { useTranslation } from '@/lib/i18n'
+
+const fadeUp = {
+  hidden: { opacity: 0, y: 20 },
+  visible: { opacity: 1, y: 0, transition: { duration: 0.4 } },
+} as any
+
+function SettingsSkeleton() {
+  return (
+    <div className="flex flex-col gap-4 sm:gap-6 md:gap-8">
+      <div className="space-y-2">
+        <Skeleton className="h-9 w-48" />
+        <Skeleton className="h-5 w-72" />
+      </div>
+
+      <Card>
+        <CardHeader>
+          <Skeleton className="h-6 w-24" />
+          <Skeleton className="h-4 w-56 mt-1" />
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="flex flex-wrap gap-4">
+            <div className="space-y-2 w-full sm:w-56">
+              <Skeleton className="h-4 w-20" />
+              <Skeleton className="h-10 w-full" />
+            </div>
+            <div className="space-y-2 w-full sm:w-56">
+              <Skeleton className="h-4 w-20" />
+              <Skeleton className="h-10 w-full" />
+            </div>
+          </div>
+          <Skeleton className="h-px w-full" />
+          <div className="space-y-3">
+            <Skeleton className="h-5 w-40" />
+            <div className="grid gap-3 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
+              {[1, 2, 3, 4, 5, 6].map((i) => (
+                <Skeleton key={i} className="h-20 w-full rounded-lg" />
+              ))}
+            </div>
+          </div>
+          <div className="flex justify-end">
+            <Skeleton className="h-10 w-32" />
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <Skeleton className="h-6 w-40" />
+          <Skeleton className="h-4 w-80 mt-1" />
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <Skeleton className="h-16 w-full rounded-lg" />
+          <div className="flex gap-2">
+            <Skeleton className="h-10 flex-1" />
+            <Skeleton className="h-10 w-10" />
+            <Skeleton className="h-10 w-24" />
+          </div>
+          <Skeleton className="h-48 w-full rounded-lg" />
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
 
 export default function SettingsPage() {
-  const router = useRouter()
-  const supabase = createClient()
+  const { t } = useTranslation()
   const [loading, setLoading] = useState(true)
   const [categories, setCategories] = useState<any[]>([])
   const [settings, setSettings] = useState<any>(null)
   const [budgets, setBudgets] = useState<any[]>([])
-  const [currencies, setCurrencies] = useState<any[]>([])
-  const [languages, setLanguages] = useState<any[]>([])
-  
+
   useEffect(() => {
-    const fetchData = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      
-      if (!user) {
-        router.push('/login')
-        return
-      }
-      
-      const [
-        { data: categoriesData },
-        { data: settingsRow },
-        { data: budgetsRows },
-        { data: currenciesData },
-        { data: languagesData },
-      ] = await Promise.all([
-        supabase.from("categories").select("id, name, icon").order("name"),
-        supabase.from("user_settings").select("language_id, currency_id").eq("user_id", user.id).maybeSingle(),
-        supabase.from("category_budgets").select("category_id, budget").eq("user_id", user.id),
-        supabase.from("currencies").select("id, currency, currency_symbol, currency_before").order("currency"),
-        supabase.from("languages").select("id, language, language_symbol").order("language"),
-      ])
-      
-      setCategories(categoriesData || [])
-      setSettings(settingsRow)
-      setBudgets(budgetsRows || [])
-      setCurrencies(currenciesData || [])
-      setLanguages(languagesData || [])
-      setLoading(false)
-    }
-    
-    fetchData()
+    fetch('/api/data/settings')
+      .then(r => r.json())
+      .then(data => {
+        setCategories(data.categories || [])
+        setSettings(data.settings || null)
+        setBudgets(data.budgets || [])
+        setLoading(false)
+      })
+      .catch(() => setLoading(false))
   }, [])
-  
+
   if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>
-      </div>
-    )
+    return <SettingsSkeleton />
   }
 
-  // używamy kodów: PLN / USD, EN / PL
-  const fallbackCurrency = "PLN"
-  const fallbackLanguage = "EN"
+  const initialCurrency = settings?.currency ?? 'PLN'
+  const initialLanguage = settings?.language ?? 'EN'
 
-  const initialCurrency = settings?.currency_id ?? fallbackCurrency
-  const initialLanguage = settings?.language_id ?? fallbackLanguage
-
-  const categoryBudgets =
-    categories.map((cat) => {
-      const budget = budgets.find((b) => b.category_id === cat.id)
-      return {
-        categoryId: cat.id as string,
-        categoryName: cat.name as string,
-        icon: cat.icon as string | null | undefined,
-        amount: budget?.budget ?? 0,
-        currency: initialCurrency,
-      }
-    })
+  const categoryBudgets = categories.map((cat) => {
+    const budget = budgets.find((b) => b.categoryId === cat.id)
+    return {
+      categoryId: cat.id as string,
+      categoryName: cat.name as string,
+      icon: cat.icon as string | null | undefined,
+      amount: budget?.amount ? Number(budget.amount) : 0,
+      currency: initialCurrency,
+    }
+  })
 
   return (
     <div className="flex flex-col gap-4 sm:gap-6 md:gap-8">
-      <div>
+      <motion.div
+        variants={fadeUp}
+        initial="hidden"
+        animate="visible"
+        transition={{ delay: 0 }}
+      >
         <h2 className="text-2xl sm:text-3xl font-bold tracking-tight">{t('settings.title')}</h2>
-        <p className="text-muted-foreground">{t('settings.managePreferences')}</p>
-      </div>
+        <p className="text-muted-foreground mt-1">{t('settings.managePreferences')}</p>
+      </motion.div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>{t('settings.general')}</CardTitle>
-          <CardDescription>{t('settings.languageCurrency')}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <SettingsForm
-            initialCurrency={initialCurrency}
-            initialLanguage={initialLanguage}
-            categoryBudgets={categoryBudgets}
-            currencies={currencies}
-            languages={languages}
-          />
-        </CardContent>
-      </Card>
+      <motion.div variants={fadeUp} initial="hidden" animate="visible" transition={{ delay: 0.1 }}>
+        <Card>
+          <CardHeader>
+            <CardTitle>{t('settings.general')}</CardTitle>
+            <CardDescription>{t('settings.languageCurrency')}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <SettingsForm
+              initialCurrency={initialCurrency}
+              initialLanguage={initialLanguage}
+              categoryBudgets={categoryBudgets}
+            />
+          </CardContent>
+        </Card>
+      </motion.div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>{t('settings.categories')}</CardTitle>
-          <CardDescription>
-            {t('settings.categoriesDesc')}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <CategoriesManager 
-            initialCategories={categories.map(c => ({
-              id: c.id as string,
-              name: c.name as string,
-              icon: c.icon as string | null,
-            }))} 
-          />
-        </CardContent>
-      </Card>
+      <motion.div variants={fadeUp} initial="hidden" animate="visible" transition={{ delay: 0.2 }}>
+        <Card>
+          <CardHeader>
+            <CardTitle>{t('settings.categories')}</CardTitle>
+            <CardDescription>{t('settings.categoriesDesc')}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <CategoriesManager
+              initialCategories={categories.map(c => ({
+                id: c.id as string,
+                name: c.name as string,
+                icon: c.icon as string | null,
+              }))}
+            />
+          </CardContent>
+        </Card>
+      </motion.div>
     </div>
   )
 }

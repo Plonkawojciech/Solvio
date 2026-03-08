@@ -3,7 +3,6 @@
 import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Languages } from 'lucide-react'
-import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
 import {
   DropdownMenu,
@@ -19,81 +18,42 @@ export function LanguageSwitcher() {
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
-    // Pobierz język z bazy danych lub localStorage
-    const fetchLanguage = async () => {
-      // Najpierw sprawdź localStorage
-      const storedLang = localStorage.getItem('language') as Language
-      if (storedLang && (storedLang === 'pl' || storedLang === 'en')) {
-        setLanguage(storedLang)
-        return
-      }
-      
-      const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
-      
-      if (user) {
-        const { data: settings } = await supabase
-          .from('user_settings')
-          .select('language_id')
-          .eq('user_id', user.id)
-          .maybeSingle()
-        
-        if (settings?.language_id) {
-          const lang = settings.language_id.toLowerCase() as Language
-          if (lang === 'pl' || lang === 'en') {
-            setLanguage(lang)
-            localStorage.setItem('language', lang)
-            return
-          }
-        }
-      }
-      
-      // Domyślnie angielski
-      setLanguage('en')
-      localStorage.setItem('language', 'en')
+    // Get language from localStorage only
+    const storedLang = localStorage.getItem('language') as Language
+    if (storedLang && (storedLang === 'pl' || storedLang === 'en')) {
+      setLanguage(storedLang)
+      return
     }
-    
-    fetchLanguage()
+    setLanguage('en')
+    localStorage.setItem('language', 'en')
   }, [])
 
   const changeLanguage = async (newLang: Language) => {
     setLoading(true)
     try {
-      const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
-      
-      if (!user) {
-        // Dla niezalogowanych, zapisz tylko w localStorage
-        localStorage.setItem('language', newLang)
-        setLanguage(newLang)
-        window.location.reload()
-        return
-      }
-      
-      // Zaktualizuj w bazie danych
-      const { error } = await supabase
-        .from('user_settings')
-        .upsert({
-          user_id: user.id,
-          language_id: newLang.toUpperCase(),
-        }, {
-          onConflict: 'user_id',
-        })
-      
-      if (error) throw error
-      
       localStorage.setItem('language', newLang)
       setLanguage(newLang)
-      
+
+      // Also persist to settings API if user is logged in
+      try {
+        await fetch('/api/data/settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type: 'settings', data: { language: newLang } }),
+        })
+      } catch {
+        // Ignore - user might not be logged in
+      }
+
       toast.success('Language changed', {
         description: `Language set to ${newLang === 'pl' ? 'Polish' : 'English'}`,
       })
-      
-      // Odśwież stronę po 500ms
+
+      // Refresh page after 500ms
       setTimeout(() => {
         window.location.reload()
       }, 500)
-      
+
     } catch (error) {
       console.error('Failed to change language:', error)
       toast.error('Failed to change language')

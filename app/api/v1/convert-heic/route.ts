@@ -1,5 +1,6 @@
 // app/api/v1/convert-heic/route.ts
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
+import { auth } from '@clerk/nextjs/server';
 import sharp from 'sharp';
 
 export const runtime = 'nodejs';
@@ -53,6 +54,11 @@ async function convertHeicToJpeg(buffer: Buffer): Promise<Buffer> {
 }
 
 export async function POST(req: NextRequest) {
+  const { userId } = await auth();
+  if (!userId) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   try {
     const form = await req.formData();
     const file = form.get('file') as File;
@@ -90,7 +96,7 @@ export async function POST(req: NextRequest) {
     // Zwróć przekonwertowany plik
     const newFileName = file.name.replace(/\.(heic|heif|hif)$/i, '.jpg');
     
-    return new Response(convertedBuffer, {
+    return new Response(new Uint8Array(convertedBuffer), {
       status: 200,
       headers: {
         'Content-Type': 'image/jpeg',
