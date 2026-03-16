@@ -23,7 +23,8 @@ import { VatSummaryCard } from '@/components/protected/business/vat-summary-card
 import { cn } from '@/lib/utils'
 import dynamic from 'next/dynamic'
 
-const VatChart = dynamic(() => import('./vat-chart').then(m => ({ default: m.VatChart })), { ssr: false })
+const ChartSkeleton = () => <div className="h-[300px] w-full animate-pulse rounded-lg bg-muted" />;
+const VatChart = dynamic(() => import('./vat-chart').then(m => ({ default: m.VatChart })), { ssr: false, loading: ChartSkeleton })
 
 // i18n keys:
 // 'vat.title' / 'vat.description'

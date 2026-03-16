@@ -7,11 +7,12 @@ import dynamic from 'next/dynamic'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 
 /* ─── Lazy-load Recharts chart components (keeps ~500 KB recharts bundle out of initial JS) ─── */
+const DynamicChartLoader = () => <div className="h-[300px] w-full animate-pulse rounded-lg bg-muted" />;
 const { MonthlyTrendChart, CategoryPieChart, DailySpendingChart, CategoryBarChart } = {
-  MonthlyTrendChart: dynamic(() => import('@/components/protected/analysis/analysis-charts').then(m => ({ default: m.MonthlyTrendChart })), { ssr: false }),
-  CategoryPieChart: dynamic(() => import('@/components/protected/analysis/analysis-charts').then(m => ({ default: m.CategoryPieChart })), { ssr: false }),
-  DailySpendingChart: dynamic(() => import('@/components/protected/analysis/analysis-charts').then(m => ({ default: m.DailySpendingChart })), { ssr: false }),
-  CategoryBarChart: dynamic(() => import('@/components/protected/analysis/analysis-charts').then(m => ({ default: m.CategoryBarChart })), { ssr: false }),
+  MonthlyTrendChart: dynamic(() => import('@/components/protected/analysis/analysis-charts').then(m => ({ default: m.MonthlyTrendChart })), { ssr: false, loading: DynamicChartLoader }),
+  CategoryPieChart: dynamic(() => import('@/components/protected/analysis/analysis-charts').then(m => ({ default: m.CategoryPieChart })), { ssr: false, loading: DynamicChartLoader }),
+  DailySpendingChart: dynamic(() => import('@/components/protected/analysis/analysis-charts').then(m => ({ default: m.DailySpendingChart })), { ssr: false, loading: DynamicChartLoader }),
+  CategoryBarChart: dynamic(() => import('@/components/protected/analysis/analysis-charts').then(m => ({ default: m.CategoryBarChart })), { ssr: false, loading: DynamicChartLoader }),
 }
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'

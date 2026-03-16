@@ -202,6 +202,29 @@
   }
 }
 
+/* ── Performance: smooth scrolling & tap optimization ── */
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  /* Faster taps on mobile — remove 300ms delay highlight */
+  button, a, [role="button"], input, select, textarea {
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+}
+
+/* ── Reduced motion: respect user preference ── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 /* Hide scrollbar but keep scrolling */
 @layer utilities {
   .scrollbar-hide {
@@ -210,5 +233,21 @@
   }
   .scrollbar-hide::-webkit-scrollbar {
     display: none;
+  }
+
+  /* GPU-accelerated transform hint — use sparingly on animated elements */
+  .will-change-transform {
+    will-change: transform;
+  }
+
+  /* Touch optimization for scrollable containers */
+  .touch-manipulation {
+    touch-action: manipulation;
+  }
+
+  /* Content visibility for off-screen sections — huge paint savings */
+  .content-auto {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 500px;
   }
 }

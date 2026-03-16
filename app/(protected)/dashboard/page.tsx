@@ -9,8 +9,9 @@ import { Activity, TrendingUp, Wallet, Target, ArrowUpRight, AlertCircle, Refres
 import dynamic from 'next/dynamic';
 import { RecentExpensesTable } from '@/components/protected/dashboard/recent-expenses-table';
 /* Recharts-backed chart components — lazy-loaded so the recharts bundle is deferred */
-const MonthlySpendingChart = dynamic(() => import('@/components/protected/dashboard/monthly-spending-chart').then(m => ({ default: m.MonthlySpendingChart })), { ssr: false });
-const SpendingByCategoryChart = dynamic(() => import('@/components/protected/dashboard/spending-by-category-chart').then(m => ({ default: m.SpendingByCategoryChart })), { ssr: false });
+const ChartSkeleton = () => <div className="h-[300px] w-full animate-pulse rounded-lg bg-muted" />;
+const MonthlySpendingChart = dynamic(() => import('@/components/protected/dashboard/monthly-spending-chart').then(m => ({ default: m.MonthlySpendingChart })), { ssr: false, loading: ChartSkeleton });
+const SpendingByCategoryChart = dynamic(() => import('@/components/protected/dashboard/spending-by-category-chart').then(m => ({ default: m.SpendingByCategoryChart })), { ssr: false, loading: ChartSkeleton });
 import { BudgetOverview } from '@/components/protected/dashboard/budget-overview';
 import { AddExpenseTrigger } from '@/components/protected/dashboard/add-expense-trigger';
 import { ScanReceiptButton } from '@/components/protected/dashboard/scan-receipt-button';
