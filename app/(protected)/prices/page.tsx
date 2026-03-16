@@ -56,6 +56,9 @@ interface PriceData {
   productsAnalyzed: number
 }
 
+// Safe number helper — handles strings, null, undefined from AI responses
+function n(v: unknown): number { return Number(v) || 0 }
+
 /* ─── Store badge colors ─── */
 const STORE_STYLES: Record<string, { bg: string; text: string }> = {
   Lidl:      { bg: 'bg-yellow-400/20', text: 'text-yellow-700 dark:text-yellow-400' },
@@ -228,8 +231,8 @@ function ComparisonCard({ item, currency, index, isPolish }: {
   index: number
   isPolish: boolean
 }) {
-  const savingsPct = item.savingsPercent
-  const hasSavings = item.savingsAmount > 0.01
+  const savingsPct = n(item.savingsPercent)
+  const hasSavings = n(item.savingsAmount) > 0.01
 
   return (
     <motion.div
@@ -257,7 +260,7 @@ function ComparisonCard({ item, currency, index, isPolish }: {
           <div className="grid grid-cols-2 gap-2">
             <div className="rounded-lg bg-muted/50 px-2.5 py-2">
               <p className="text-[10px] text-muted-foreground mb-0.5">{isPolish ? 'Ty zapłaciłeś' : 'You paid'}</p>
-              <p className="text-sm font-semibold">{item.userLastPrice.toFixed(2)} {currency}</p>
+              <p className="text-sm font-semibold">{n(item.userLastPrice).toFixed(2)} {currency}</p>
               {item.userLastStore && (
                 <StoreBadge store={item.userLastStore} size="xs" />
               )}
@@ -265,7 +268,7 @@ function ComparisonCard({ item, currency, index, isPolish }: {
             <div className={`rounded-lg px-2.5 py-2 ${hasSavings ? 'bg-emerald-500/10 border border-emerald-500/20' : 'bg-muted/50'}`}>
               <p className="text-[10px] text-muted-foreground mb-0.5">{isPolish ? 'Najlepsza cena' : 'Best price'}</p>
               <p className={`text-sm font-semibold ${hasSavings ? 'text-emerald-700 dark:text-emerald-400' : ''}`}>
-                {item.bestPrice.toFixed(2)} {currency}
+                {n(item.bestPrice).toFixed(2)} {currency}
               </p>
               {item.bestStore && <StoreBadge store={item.bestStore} size="xs" />}
             </div>
@@ -276,7 +279,7 @@ function ComparisonCard({ item, currency, index, isPolish }: {
             <div className="flex items-center gap-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-2.5 py-1.5">
               <PiggyBank className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
               <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">
-                {isPolish ? 'Oszczędź' : 'Save'} {item.savingsAmount.toFixed(2)} {currency}
+                {isPolish ? 'Oszczędź' : 'Save'} {n(item.savingsAmount).toFixed(2)} {currency}
               </span>
               <span className="ml-auto text-[10px] bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 font-bold px-1.5 py-0.5 rounded-full">
                 -{savingsPct.toFixed(0)}%
@@ -306,10 +309,10 @@ function ComparisonCard({ item, currency, index, isPolish }: {
                         </span>
                       )}
                     </span>
-                    <span className={`font-semibold shrink-0 ${sp.price === item.bestPrice ? 'text-emerald-600 dark:text-emerald-400' : ''}`}>
-                      {sp.price.toFixed(2)} {currency}
+                    <span className={`font-semibold shrink-0 ${n(sp.price) === n(item.bestPrice) ? 'text-emerald-600 dark:text-emerald-400' : ''}`}>
+                      {n(sp.price).toFixed(2)} {currency}
                     </span>
-                    {sp.price === item.bestPrice && (
+                    {n(sp.price) === n(item.bestPrice) && (
                       <CheckCircle2 className="h-3 w-3 text-emerald-500 shrink-0" />
                     )}
                   </div>
@@ -350,8 +353,8 @@ function SummaryBanner({ data, currency, isPolish }: { data: PriceData; currency
           {
             icon: PiggyBank,
             label: isPolish ? 'Łączne możliwe oszczędności' : 'Total potential savings',
-            value: <CountUp target={data.totalPotentialSavings} currency={currency} />,
-            color: data.totalPotentialSavings > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-foreground',
+            value: <CountUp target={n(data.totalPotentialSavings)} currency={currency} />,
+            color: n(data.totalPotentialSavings) > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-foreground',
             sub: isPolish ? 'na Twoich zakupach' : 'on your purchases',
           },
           {

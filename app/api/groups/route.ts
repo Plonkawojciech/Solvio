@@ -58,13 +58,16 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json()
-    const { name, description, currency, emoji, members } = body
+    const { name, description, currency, emoji, members, mode, startDate, endDate } = body
 
     const [group] = await db.insert(groups).values({
       name,
       description,
       currency: currency || 'PLN',
       emoji: emoji || '👥',
+      mode: mode || 'default',
+      startDate: startDate || null,
+      endDate: endDate || null,
       createdBy: userId,
     }).returning()
 

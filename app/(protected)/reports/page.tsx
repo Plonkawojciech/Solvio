@@ -86,11 +86,11 @@ export default function ReportsPage() {
       setYearBlocks(blocks)
     } catch (err: any) {
       if (err.name === 'AbortError') return
-      setError(t('reports.somethingWrong'))
+      setError('reports.somethingWrong')
     } finally {
       setLoading(false)
     }
-  }, [t])
+  }, [])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -161,7 +161,6 @@ export default function ReportsPage() {
           </div>
           <div className="space-y-1 max-w-xs">
             <h3 className="text-lg font-semibold">{t('reports.somethingWrong')}</h3>
-            <p className="text-sm text-muted-foreground">{error}</p>
           </div>
           <Button onClick={() => fetchData()} variant="outline" className="gap-2">
             <RefreshCcw className="h-4 w-4" />

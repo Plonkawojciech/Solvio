@@ -537,9 +537,7 @@ export function ScanReceiptSheet({
         throw new Error(isPl ? 'Nieprawidłowa odpowiedź serwera.' : 'Invalid server response.');
       }
 
-      if (process.env.NODE_ENV === 'development') {
-        console.log('[ScanReceipt] OCR result:', parsed);
-      }
+      // OCR result is available in `parsed` — logging removed for cleanliness
 
       // Step 4 — AI categorisation (happens server-side in background; we just show the step briefly)
       setScanStep('categorizing');
@@ -663,7 +661,7 @@ export function ScanReceiptSheet({
   if (isReviewing) {
     return (
       <Sheet open={isOpen} onOpenChange={(open) => { if (!open) handleSaveAndClose(); }}>
-        <SheetContent className="flex flex-col gap-0 p-0 sm:max-w-2xl">
+        <SheetContent className="w-full flex flex-col gap-0 p-0 sm:max-w-2xl">
           <SheetHeader className="p-6 border-b">
             <SheetTitle className="text-xl font-semibold">
               {isPl ? 'Sprawdź pozycje paragonu' : 'Review Receipt Items'}
@@ -828,7 +826,7 @@ export function ScanReceiptSheet({
   // ── Upload step render ─────────────────────────────────────────────────────
   return (
     <Sheet open={isOpen} onOpenChange={(open) => { if (!open && !isBusy) handleClose(); }}>
-      <SheetContent className="flex flex-col gap-0 p-0 sm:max-w-2xl">
+      <SheetContent className="w-full flex flex-col gap-0 p-0 sm:max-w-2xl">
         <SheetHeader className="p-6 border-b">
           <SheetTitle className="text-xl font-semibold">
             {isPl ? 'Nowy skan paragonu' : 'New Receipt Scan'}

@@ -346,7 +346,8 @@ export default function AnalysisPage() {
     }
     init()
     return () => controller.abort()
-  }, [])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [processExpenses, fetchAi])
 
   if (loading) {
     return (

@@ -1,8 +1,9 @@
 'use client'
 
-import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
+import { useSession } from '@/lib/use-session'
+import { useProductType } from '@/hooks/use-product-type'
 import {
   Sidebar,
   SidebarContent,
@@ -26,40 +27,72 @@ import {
   LogOut,
   Users,
   Tag,
+  Landmark,
+  Receipt,
+  Building2,
+  Target,
+  PiggyBank,
+  Trophy,
+  type LucideIcon,
 } from "lucide-react"
 import { useTranslation } from '@/lib/i18n'
 import { Button } from '@/components/ui/button'
 import { ThemeToggle } from '@/components/ui/theme-toggle'
 import { KeyboardShortcutsButton } from '@/components/protected/main/keyboard-shortcuts'
+import { LanguageSwitcher } from '@/components/language-switcher'
 
-const items = [
-  { key: 'dashboard', href: "/dashboard", icon: Home },
-  { key: 'expenses', href: "/expenses", icon: DollarSign },
-  { key: 'groups', href: "/groups", icon: Users },
-  { key: 'analysis', href: "/analysis", icon: BrainCircuit },
-  { key: 'audit', href: "/audit", icon: ShoppingCart },
-  { key: 'prices', href: "/prices", icon: Tag },
-  { key: 'reports', href: "/reports", icon: FileText },
-  { key: 'settings', href: "/settings", icon: Settings },
-]
+interface NavItem {
+  key: string
+  href: string
+  icon: LucideIcon
+}
+
+function getNavItems(isPersonal: boolean): NavItem[] {
+  if (isPersonal) {
+    return [
+      { key: 'dashboard', href: '/dashboard', icon: Home },
+      { key: 'expenses', href: '/expenses', icon: DollarSign },
+      { key: 'groups', href: '/groups', icon: Users },
+      { key: 'bank', href: '/bank', icon: Landmark },
+      { key: 'analysis', href: '/analysis', icon: BrainCircuit },
+      { key: 'audit', href: '/audit', icon: ShoppingCart },
+      { key: 'prices', href: '/prices', icon: Tag },
+      { key: 'goals', href: '/goals', icon: Target },
+      { key: 'budget', href: '/budget', icon: PiggyBank },
+      { key: 'challenges', href: '/challenges', icon: Trophy },
+      { key: 'reports', href: '/reports', icon: FileText },
+      { key: 'settings', href: '/settings', icon: Settings },
+    ]
+  }
+
+  return [
+    { key: 'dashboard', href: '/dashboard', icon: Home },
+    { key: 'expenses', href: '/expenses', icon: DollarSign },
+    { key: 'invoices', href: '/invoices', icon: FileText },
+    { key: 'bank', href: '/bank', icon: Landmark },
+    { key: 'vat', href: '/vat', icon: Receipt },
+    { key: 'team', href: '/team', icon: Users },
+    { key: 'analysis', href: '/analysis', icon: BrainCircuit },
+    { key: 'reports', href: '/reports', icon: FileText },
+    { key: 'settings', href: '/settings', icon: Settings },
+  ]
+}
 
 export function AppSidebar() {
   const { t, lang, mounted } = useTranslation()
   const pathname = usePathname()
-  const [userEmail, setUserEmail] = useState('')
+  const router = useRouter()
+  const { email } = useSession()
+  const { isPersonal, isBusiness } = useProductType()
 
-  useEffect(() => {
-    setUserEmail(localStorage.getItem('solvio_email') || '')
-  }, [])
-
-  const displayName = userEmail.split('@')[0] || 'User'
-  const email = userEmail
+  const items = getNavItems(isPersonal)
+  const displayName = email ? email.split('@')[0] : 'User'
   const initials = displayName.slice(0, 2).toUpperCase()
 
-  const handleSignOut = async () => {
+  async function handleSignOut() {
     await fetch('/api/auth/session', { method: 'DELETE' })
-    localStorage.removeItem('solvio_email')
-    window.location.href = '/login'
+    router.push('/login')
+    router.refresh()
   }
 
   return (
@@ -67,9 +100,25 @@ export function AppSidebar() {
       <SidebarHeader className="border-b p-4">
         <Link href="/dashboard" className="flex items-center gap-2 font-bold text-lg">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-            <Wallet className="h-4 w-4" />
+            {isBusiness ? (
+              <Building2 className="h-4 w-4" />
+            ) : (
+              <Wallet className="h-4 w-4" />
+            )}
           </div>
-          <span>Solvio</span>
+          <div className="flex flex-col">
+            <span className="leading-tight">Solvio</span>
+            <span
+              suppressHydrationWarning
+              className={`text-[10px] font-semibold uppercase tracking-wider leading-none ${
+                isBusiness
+                  ? 'text-blue-500 dark:text-blue-400'
+                  : 'text-emerald-500 dark:text-emerald-400'
+              }`}
+            >
+              {t(`nav.${isPersonal ? 'personal' : 'business'}`)}
+            </span>
+          </div>
         </Link>
       </SidebarHeader>
 
@@ -109,6 +158,9 @@ export function AppSidebar() {
             {email && <p className="text-xs text-muted-foreground truncate">{email}</p>}
           </div>
         </div>
+
+        {/* Language toggle */}
+        <LanguageSwitcher className="w-full justify-center" />
 
         {/* Theme toggle */}
         <ThemeToggle />

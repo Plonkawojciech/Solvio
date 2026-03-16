@@ -21,11 +21,11 @@ export function AppMobileHeader() {
           <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary text-primary-foreground">
             <Wallet className="h-3.5 w-3.5" />
           </div>
-          <span>Solvio</span>
+          <span className="truncate">Solvio</span>
         </Link>
 
         {/* Right-side controls */}
-        <div className="flex items-center gap-0.5">
+        <div className="flex items-center gap-1.5">
           <LanguageSwitcher />
           <ThemeSwitcher />
         </div>

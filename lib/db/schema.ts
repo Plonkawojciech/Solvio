@@ -1,10 +1,14 @@
-import { pgTable, uuid, text, decimal, date, timestamp, boolean, jsonb, varchar, unique } from 'drizzle-orm/pg-core'
+import { pgTable, uuid, text, decimal, date, timestamp, boolean, jsonb, varchar, unique, integer } from 'drizzle-orm/pg-core'
 
 export const userSettings = pgTable('user_settings', {
   id: uuid('id').primaryKey().defaultRandom(),
   userId: text('user_id').unique().notNull(),
   currency: varchar('currency', { length: 3 }).default('PLN').notNull(),
   language: varchar('language', { length: 2 }).default('pl').notNull(),
+  productType: varchar('product_type', { length: 10 }).default('personal').notNull(), // 'personal' | 'business'
+  companyName: varchar('company_name', { length: 255 }),
+  nip: varchar('nip', { length: 10 }),
+  onboardingComplete: boolean('onboarding_complete').default(false).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 })
@@ -31,6 +35,8 @@ export const receipts = pgTable('receipts', {
   rawOcr: jsonb('raw_ocr'),
   status: varchar('status', { length: 20 }).default('processed').notNull(),
   hash: text('hash'),
+  groupId: text('group_id'),
+  paidByMemberId: text('paid_by_member_id'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 })
 
@@ -59,6 +65,15 @@ export const expenses = pgTable('expenses', {
   notes: text('notes'),
   tags: text('tags').array(),
   isRecurring: boolean('is_recurring').default(false).notNull(),
+  // Business-only fields (nullable, ignored for personal)
+  deductibility: varchar('deductibility', { length: 5 }), // 'kup' | 'nkup'
+  vatRate: varchar('vat_rate', { length: 5 }), // '23%', '8%', '5%', '0%', 'zw'
+  vatAmount: decimal('vat_amount', { precision: 12, scale: 2 }),
+  netAmount: decimal('net_amount', { precision: 12, scale: 2 }),
+  departmentId: uuid('department_id'),
+  invoiceId: uuid('invoice_id'),
+  approvalStatus: varchar('approval_status', { length: 20 }), // 'pending' | 'approved' | 'rejected'
+  bankTransactionId: uuid('bank_transaction_id'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 })
@@ -105,6 +120,9 @@ export const groups = pgTable('groups', {
   createdBy: text('created_by').notNull(),
   currency: text('currency').notNull().default('PLN'),
   emoji: text('emoji').default('👥'),
+  mode: varchar('mode', { length: 15 }).default('default').notNull(), // 'default' | 'trip' | 'household'
+  startDate: date('start_date'),
+  endDate: date('end_date'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 })
 
@@ -138,17 +156,38 @@ export const expenseSplits = pgTable('expense_splits', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
 })
 
+// ── Receipt Item Assignments (group splitting per item) ───────────────────
+export const receiptItemAssignments = pgTable('receipt_item_assignments', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  receiptItemId: uuid('receipt_item_id').notNull(),
+  groupId: text('group_id').notNull(),
+  memberId: text('member_id').notNull(),
+  share: decimal('share', { precision: 5, scale: 4 }).default('1').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
 // ── Payment Requests ───────────────────────────────────────────────────────────
 export const paymentRequests = pgTable('payment_requests', {
   id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
-  splitId: text('split_id').notNull().references(() => expenseSplits.id, { onDelete: 'cascade' }),
+  splitId: text('split_id').references(() => expenseSplits.id, { onDelete: 'cascade' }),
+  groupId: text('group_id').references(() => groups.id, { onDelete: 'cascade' }),
   fromMemberId: text('from_member_id').notNull().references(() => groupMembers.id),
   toMemberId: text('to_member_id').notNull().references(() => groupMembers.id),
   amount: decimal('amount', { precision: 12, scale: 2 }).notNull(),
   currency: text('currency').notNull().default('PLN'),
   status: text('status').notNull().default('pending'), // 'pending' | 'settled' | 'declined'
   note: text('note'),
+  shareToken: text('share_token'),
+  bankAccount: text('bank_account'),
+  itemBreakdown: jsonb('item_breakdown').$type<Array<{
+    itemName: string
+    store: string
+    date: string
+    amount: number
+    share: number
+  }>>(),
   settledAt: timestamp('settled_at'),
+  settledBy: text('settled_by'), // 'creditor' | 'debtor'
   createdAt: timestamp('created_at').defaultNow().notNull(),
 })
 
@@ -181,4 +220,281 @@ export const priceComparisons = pgTable('price_comparisons', {
   }>>(),
   aiSummary: text('ai_summary'),
   checkedAt: timestamp('checked_at').defaultNow().notNull(),
+})
+
+// ══════════════════════════════════════════════════════════════════════════════
+// PKO PSD2 Bank Integration
+// ══════════════════════════════════════════════════════════════════════════════
+
+export const bankConnections = pgTable('bank_connections', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: text('user_id').notNull(),
+  provider: varchar('provider', { length: 20 }).default('pko').notNull(),
+  accessToken: text('access_token'),
+  refreshToken: text('refresh_token'),
+  consentId: text('consent_id'),
+  consentExpiresAt: timestamp('consent_expires_at', { withTimezone: true }),
+  accountIds: jsonb('account_ids').$type<string[]>(),
+  status: varchar('status', { length: 20 }).default('pending').notNull(), // 'pending' | 'active' | 'expired' | 'revoked'
+  lastSyncAt: timestamp('last_sync_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
+export const bankAccounts = pgTable('bank_accounts', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  connectionId: uuid('connection_id').notNull().references(() => bankConnections.id, { onDelete: 'cascade' }),
+  userId: text('user_id').notNull(),
+  accountNumber: text('account_number'),
+  accountName: varchar('account_name', { length: 255 }),
+  accountType: varchar('account_type', { length: 30 }), // 'personal' | 'business' | 'savings'
+  currency: varchar('currency', { length: 3 }).default('PLN'),
+  balance: decimal('balance', { precision: 14, scale: 2 }),
+  balanceUpdatedAt: timestamp('balance_updated_at', { withTimezone: true }),
+  isActive: boolean('is_active').default(true).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
+export const bankTransactions = pgTable('bank_transactions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  accountId: uuid('account_id').notNull().references(() => bankAccounts.id, { onDelete: 'cascade' }),
+  userId: text('user_id').notNull(),
+  externalId: text('external_id'),
+  amount: decimal('amount', { precision: 14, scale: 2 }).notNull(),
+  currency: varchar('currency', { length: 3 }).default('PLN'),
+  date: date('date').notNull(),
+  bookingDate: date('booking_date'),
+  description: text('description'),
+  counterpartyName: text('counterparty_name'),
+  counterpartyAccount: text('counterparty_account'),
+  mccCode: varchar('mcc_code', { length: 10 }),
+  transactionType: varchar('transaction_type', { length: 30 }),
+  category: varchar('category', { length: 20 }), // 'debit' | 'credit'
+  expenseId: uuid('expense_id'),
+  suggestedCategoryId: uuid('suggested_category_id'),
+  isMatched: boolean('is_matched').default(false).notNull(),
+  metadata: jsonb('metadata'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Savings Goals & Budget Planning
+// ══════════════════════════════════════════════════════════════════════════════
+
+export const savingsGoals = pgTable('savings_goals', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: text('user_id').notNull(),
+  name: varchar('name', { length: 255 }).notNull(),
+  emoji: varchar('emoji', { length: 10 }).default('🎯'),
+  targetAmount: decimal('target_amount', { precision: 14, scale: 2 }).notNull(),
+  currentAmount: decimal('current_amount', { precision: 14, scale: 2 }).default('0').notNull(),
+  currency: varchar('currency', { length: 3 }).default('PLN'),
+  deadline: date('deadline'),
+  priority: varchar('priority', { length: 10 }).default('medium'),
+  color: varchar('color', { length: 7 }).default('#6366f1'),
+  category: varchar('category', { length: 50 }),
+  isCompleted: boolean('is_completed').default(false).notNull(),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+  aiTips: jsonb('ai_tips').$type<string[]>(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
+export const savingsDeposits = pgTable('savings_deposits', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  goalId: uuid('goal_id').notNull().references(() => savingsGoals.id, { onDelete: 'cascade' }),
+  userId: text('user_id').notNull(),
+  amount: decimal('amount', { precision: 14, scale: 2 }).notNull(),
+  note: text('note'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
+export const monthlyBudgets = pgTable('monthly_budgets', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: text('user_id').notNull(),
+  month: varchar('month', { length: 7 }).notNull(),
+  totalIncome: decimal('total_income', { precision: 14, scale: 2 }),
+  totalBudget: decimal('total_budget', { precision: 14, scale: 2 }),
+  savingsTarget: decimal('savings_target', { precision: 14, scale: 2 }),
+  aiSummary: text('ai_summary'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
+export const financialChallenges = pgTable('financial_challenges', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: text('user_id').notNull(),
+  name: varchar('name', { length: 255 }).notNull(),
+  emoji: varchar('emoji', { length: 10 }).default('💪'),
+  type: varchar('type', { length: 20 }).notNull(),
+  targetCategory: varchar('target_category', { length: 100 }),
+  targetAmount: decimal('target_amount', { precision: 12, scale: 2 }),
+  startDate: date('start_date').notNull(),
+  endDate: date('end_date').notNull(),
+  isActive: boolean('is_active').default(true).notNull(),
+  isCompleted: boolean('is_completed').default(false),
+  currentProgress: decimal('current_progress', { precision: 12, scale: 2 }).default('0'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Personal Features
+// ══════════════════════════════════════════════════════════════════════════════
+
+export const weeklySummaries = pgTable('weekly_summaries', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: text('user_id').notNull(),
+  weekStart: date('week_start').notNull(),
+  weekEnd: date('week_end').notNull(),
+  totalSpent: decimal('total_spent', { precision: 12, scale: 2 }),
+  comparedToAvg: decimal('compared_to_avg', { precision: 5, scale: 2 }),
+  topCategory: varchar('top_category', { length: 255 }),
+  savingsTips: jsonb('savings_tips').$type<Array<{
+    product: string
+    currentStore: string
+    currentPrice: number
+    alternativeStore: string
+    alternativePrice: number
+    saving: number
+  }>>(),
+  aiSummary: text('ai_summary'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
+export const loyaltyCards = pgTable('loyalty_cards', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: text('user_id').notNull(),
+  store: varchar('store', { length: 50 }).notNull(), // 'biedronka' | 'lidl' | 'zabka' | 'kaufland' | 'aldi' | 'auchan' | 'carrefour'
+  cardNumber: text('card_number'),
+  memberName: varchar('member_name', { length: 255 }),
+  isActive: boolean('is_active').default(true).notNull(),
+  lastUsed: timestamp('last_used', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
+export const storePromotions = pgTable('store_promotions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  store: varchar('store', { length: 50 }).notNull(),
+  productName: text('product_name').notNull(),
+  regularPrice: decimal('regular_price', { precision: 10, scale: 2 }),
+  promoPrice: decimal('promo_price', { precision: 10, scale: 2 }).notNull(),
+  discount: varchar('discount', { length: 20 }),
+  currency: varchar('currency', { length: 3 }).default('PLN'),
+  validFrom: date('valid_from'),
+  validUntil: date('valid_until'),
+  category: varchar('category', { length: 100 }),
+  imageUrl: text('image_url'),
+  source: text('source'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Business Features
+// ══════════════════════════════════════════════════════════════════════════════
+
+export const companies = pgTable('companies', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  ownerId: text('owner_id').notNull(),
+  name: varchar('name', { length: 255 }).notNull(),
+  nip: varchar('nip', { length: 10 }),
+  regon: varchar('regon', { length: 14 }),
+  address: text('address'),
+  city: varchar('city', { length: 100 }),
+  postalCode: varchar('postal_code', { length: 10 }),
+  country: varchar('country', { length: 2 }).default('PL'),
+  vatPayer: boolean('vat_payer').default(true).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
+export const companyMembers = pgTable('company_members', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  companyId: uuid('company_id').notNull().references(() => companies.id, { onDelete: 'cascade' }),
+  userId: text('user_id').notNull(),
+  role: varchar('role', { length: 20 }).notNull(), // 'owner' | 'admin' | 'manager' | 'employee'
+  displayName: varchar('display_name', { length: 255 }),
+  email: varchar('email', { length: 255 }),
+  departmentId: uuid('department_id'),
+  spendingLimit: decimal('spending_limit', { precision: 12, scale: 2 }),
+  isActive: boolean('is_active').default(true).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
+export const departments = pgTable('departments', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  companyId: uuid('company_id').notNull().references(() => companies.id, { onDelete: 'cascade' }),
+  name: varchar('name', { length: 255 }).notNull(),
+  budget: decimal('budget', { precision: 12, scale: 2 }),
+  budgetPeriod: varchar('budget_period', { length: 10 }).default('monthly'),
+  color: varchar('color', { length: 7 }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
+export const invoices = pgTable('invoices', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  companyId: uuid('company_id'),
+  userId: text('user_id').notNull(),
+  invoiceNumber: varchar('invoice_number', { length: 100 }),
+  vendorName: varchar('vendor_name', { length: 255 }),
+  vendorNip: varchar('vendor_nip', { length: 10 }),
+  buyerName: varchar('buyer_name', { length: 255 }),
+  buyerNip: varchar('buyer_nip', { length: 10 }),
+  issueDate: date('issue_date'),
+  dueDate: date('due_date'),
+  paymentDate: date('payment_date'),
+  netAmount: decimal('net_amount', { precision: 14, scale: 2 }),
+  vatAmount: decimal('vat_amount', { precision: 14, scale: 2 }),
+  grossAmount: decimal('gross_amount', { precision: 14, scale: 2 }),
+  vatRate: varchar('vat_rate', { length: 5 }),
+  currency: varchar('currency', { length: 3 }).default('PLN'),
+  deductibility: varchar('deductibility', { length: 5 }).default('kup'), // 'kup' | 'nkup'
+  splitPayment: boolean('split_payment').default(false),
+  paymentMethod: varchar('payment_method', { length: 20 }), // 'transfer' | 'cash' | 'card'
+  imageUrl: text('image_url'),
+  rawOcr: jsonb('raw_ocr'),
+  items: jsonb('items').$type<Array<{
+    name: string
+    quantity: number
+    unit: string
+    unitPrice: number
+    netAmount: number
+    vatRate: string
+    vatAmount: number
+    grossAmount: number
+  }>>(),
+  status: varchar('status', { length: 20 }).default('pending'), // 'pending' | 'approved' | 'rejected' | 'paid'
+  submittedBy: text('submitted_by'),
+  approvedBy: text('approved_by'),
+  approvedAt: timestamp('approved_at', { withTimezone: true }),
+  expenseId: uuid('expense_id'),
+  departmentId: uuid('department_id'),
+  notes: text('notes'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
+export const expenseApprovals = pgTable('expense_approvals', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  companyId: uuid('company_id'),
+  expenseId: uuid('expense_id').notNull().references(() => expenses.id, { onDelete: 'cascade' }),
+  submittedBy: text('submitted_by').notNull(),
+  reviewedBy: text('reviewed_by'),
+  status: varchar('status', { length: 20 }).default('pending'), // 'pending' | 'approved' | 'rejected'
+  notes: text('notes'),
+  submittedAt: timestamp('submitted_at', { withTimezone: true }).defaultNow().notNull(),
+  reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
+})
+
+export const vatEntries = pgTable('vat_entries', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  companyId: uuid('company_id').notNull(),
+  userId: text('user_id').notNull(),
+  invoiceId: uuid('invoice_id').references(() => invoices.id, { onDelete: 'set null' }),
+  type: varchar('type', { length: 10 }).notNull(), // 'input' | 'output' (naliczony / należny)
+  period: varchar('period', { length: 7 }).notNull(), // 'YYYY-MM'
+  netAmount: decimal('net_amount', { precision: 14, scale: 2 }).notNull(),
+  vatAmount: decimal('vat_amount', { precision: 14, scale: 2 }).notNull(),
+  vatRate: varchar('vat_rate', { length: 5 }).notNull(),
+  counterpartyName: varchar('counterparty_name', { length: 255 }),
+  counterpartyNip: varchar('counterparty_nip', { length: 10 }),
+  documentNumber: varchar('document_number', { length: 100 }),
+  documentDate: date('document_date'),
+  deductible: boolean('deductible').default(true),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 })

@@ -80,8 +80,12 @@ function VerdictBadge({ verdict, isPolish }: { verdict: string; isPolish: boolea
   )
 }
 
-function PriceBar({ store, price, maxPrice, currency }: { store: string; price: number; maxPrice: number; currency: string }) {
-  const pct = maxPrice > 0 ? (price / maxPrice) * 100 : 0
+// Safe number helper — handles strings, null, undefined from AI responses
+function n(v: unknown): number { return Number(v) || 0 }
+
+function PriceBar({ store, price, maxPrice, currency }: { store: string; price: unknown; maxPrice: number; currency: string }) {
+  const p = n(price)
+  const pct = maxPrice > 0 ? (p / maxPrice) * 100 : 0
   return (
     <div className="flex items-center gap-2 text-xs">
       <span className="w-20 text-muted-foreground truncate">{store}</span>
@@ -93,7 +97,7 @@ function PriceBar({ store, price, maxPrice, currency }: { store: string; price: 
           className={`h-2 rounded-full ${getStoreColor(store)}`}
         />
       </div>
-      <span className="w-16 text-right font-medium">{price.toFixed(2)} {currency}</span>
+      <span className="w-16 text-right font-medium">{p.toFixed(2)} {currency}</span>
     </div>
   )
 }
@@ -129,12 +133,12 @@ function buildAuditText(audit: AuditData, isPolish: boolean): string {
   }
   lines.push('')
   lines.push(isPolish
-    ? `Wydano łącznie: ${audit.totalSpent.toFixed(2)} ${audit.currency} (${audit.transactionCount} transakcji)`
-    : `Total spent: ${audit.totalSpent.toFixed(2)} ${audit.currency} (${audit.transactionCount} transactions)`)
-  if (audit.totalPotentialSaving > 0) {
+    ? `Wydano łącznie: ${n(audit.totalSpent).toFixed(2)} ${audit.currency} (${audit.transactionCount} transakcji)`
+    : `Total spent: ${n(audit.totalSpent).toFixed(2)} ${audit.currency} (${audit.transactionCount} transactions)`)
+  if (n(audit.totalPotentialSaving) > 0) {
     lines.push(isPolish
-      ? `Możliwe oszczędności: ${audit.totalPotentialSaving.toFixed(2)} ${audit.currency}`
-      : `Potential savings: ${audit.totalPotentialSaving.toFixed(2)} ${audit.currency}`)
+      ? `Możliwe oszczędności: ${n(audit.totalPotentialSaving).toFixed(2)} ${audit.currency}`
+      : `Potential savings: ${n(audit.totalPotentialSaving).toFixed(2)} ${audit.currency}`)
   }
   if (audit.bestStore) {
     lines.push(isPolish
@@ -145,11 +149,11 @@ function buildAuditText(audit: AuditData, isPolish: boolean): string {
     lines.push('')
     lines.push(isPolish ? '--- Porównanie cen ---' : '--- Price Comparisons ---')
     for (const pc of audit.priceComparisons) {
-      lines.push(`${pc.product}: ${pc.pricePaid.toFixed(2)} ${audit.currency}`)
-      if (pc.cheapestStore && pc.cheapestPrice < pc.pricePaid) {
+      lines.push(`${pc.product}: ${n(pc.pricePaid).toFixed(2)} ${audit.currency}`)
+      if (pc.cheapestStore && n(pc.cheapestPrice) < n(pc.pricePaid)) {
         lines.push(isPolish
-          ? `  Najtaniej w ${pc.cheapestStore}: ${pc.cheapestPrice.toFixed(2)} ${audit.currency} (oszczędność: ${pc.potentialSaving.toFixed(2)})`
-          : `  Cheapest at ${pc.cheapestStore}: ${pc.cheapestPrice.toFixed(2)} ${audit.currency} (save: ${pc.potentialSaving.toFixed(2)})`)
+          ? `  Najtaniej w ${pc.cheapestStore}: ${n(pc.cheapestPrice).toFixed(2)} ${audit.currency} (oszczędność: ${n(pc.potentialSaving).toFixed(2)})`
+          : `  Cheapest at ${pc.cheapestStore}: ${n(pc.cheapestPrice).toFixed(2)} ${audit.currency} (save: ${n(pc.potentialSaving).toFixed(2)})`)
       }
     }
   }
@@ -157,7 +161,7 @@ function buildAuditText(audit: AuditData, isPolish: boolean): string {
     lines.push('')
     lines.push(isPolish ? '--- Aktualne promocje ---' : '--- Current Promotions ---')
     for (const promo of audit.currentPromotions) {
-      lines.push(`${promo.product} @ ${promo.store}: ${promo.promoPrice.toFixed(2)} ${audit.currency} (${isPolish ? 'do' : 'until'} ${promo.validUntil})`)
+      lines.push(`${promo.product} @ ${promo.store}: ${n(promo.promoPrice).toFixed(2)} ${audit.currency} (${isPolish ? 'do' : 'until'} ${promo.validUntil})`)
     }
   }
   return lines.join('\n')
@@ -476,14 +480,14 @@ export default function AuditPage() {
               {
                 icon: ShoppingCart,
                 label: t('Wydano łącznie', 'Total spent'),
-                value: `${audit.totalSpent.toFixed(2)} ${audit.currency}`,
+                value: `${n(audit.totalSpent).toFixed(2)} ${audit.currency}`,
                 sub: `${audit.transactionCount} ${t('transakcji', 'transactions')}`,
                 color: 'text-foreground',
               },
               {
                 icon: PiggyBank,
                 label: t('Możliwe oszczędności', 'Potential savings'),
-                value: `${audit.totalPotentialSaving.toFixed(2)} ${audit.currency}`,
+                value: `${n(audit.totalPotentialSaving).toFixed(2)} ${audit.currency}`,
                 sub: t('gdybyś kupił taniej', 'if you shopped smarter'),
                 color: audit.totalPotentialSaving > 0 ? 'text-emerald-600' : 'text-foreground',
               },
@@ -572,8 +576,8 @@ export default function AuditPage() {
                 </CardHeader>
                 <CardContent className="space-y-6">
                   {audit.priceComparisons.map((pc, i) => {
-                    const allPrices = Object.values(pc.prices || {}).filter(p => p > 0)
-                    const maxP = Math.max(pc.pricePaid, ...allPrices)
+                    const allPrices = Object.values(pc.prices || {}).map(p => n(p)).filter(p => p > 0)
+                    const maxP = Math.max(n(pc.pricePaid), ...allPrices)
                     return (
                       <motion.div
                         key={i}
@@ -586,24 +590,24 @@ export default function AuditPage() {
                           <span className="font-medium text-sm truncate max-w-[200px]">{pc.product}</span>
                           <div className="flex items-center gap-2 shrink-0">
                             <VerdictBadge verdict={pc.verdict} isPolish={isPolish} />
-                            {pc.potentialSaving > 0 && (
+                            {n(pc.potentialSaving) > 0 && (
                               <span className="text-xs font-semibold text-emerald-600">
-                                -{pc.potentialSaving.toFixed(2)} {audit.currency}
+                                -{n(pc.potentialSaving).toFixed(2)} {audit.currency}
                               </span>
                             )}
                           </div>
                         </div>
                         <div className="space-y-1.5">
                           <PriceBar store={t('Ty zapłaciłeś', 'You paid')} price={pc.pricePaid} maxPrice={maxP} currency={audit.currency} />
-                          {Object.entries(pc.prices || {}).filter(([, p]) => p > 0).map(([store, price]) => (
+                          {Object.entries(pc.prices || {}).filter(([, p]) => n(p) > 0).map(([store, price]) => (
                             <PriceBar key={store} store={store} price={price} maxPrice={maxP} currency={audit.currency} />
                           ))}
                         </div>
-                        {pc.cheapestStore && pc.cheapestPrice < pc.pricePaid && (
+                        {pc.cheapestStore && n(pc.cheapestPrice) < n(pc.pricePaid) && (
                           <p className="text-xs text-muted-foreground flex items-center gap-1">
                             <ArrowRight className="h-3 w-3" />
-                            {t(`Najtaniej w ${pc.cheapestStore}: ${pc.cheapestPrice.toFixed(2)} ${audit.currency}`,
-                              `Cheapest at ${pc.cheapestStore}: ${pc.cheapestPrice.toFixed(2)} ${audit.currency}`)}
+                            {t(`Najtaniej w ${pc.cheapestStore}: ${n(pc.cheapestPrice).toFixed(2)} ${audit.currency}`,
+                              `Cheapest at ${pc.cheapestStore}: ${n(pc.cheapestPrice).toFixed(2)} ${audit.currency}`)}
                           </p>
                         )}
                       </motion.div>
@@ -647,10 +651,10 @@ export default function AuditPage() {
                           <p className="font-medium text-sm truncate">{promo.product}</p>
                           <p className="text-xs text-muted-foreground">{promo.store} · {promo.validUntil}</p>
                           <div className="flex items-center gap-2 mt-1">
-                            <span className="text-xs line-through text-muted-foreground">{promo.originalPrice.toFixed(2)} {audit.currency}</span>
-                            <span className="text-sm font-bold text-amber-600">{promo.promoPrice.toFixed(2)} {audit.currency}</span>
+                            <span className="text-xs line-through text-muted-foreground">{n(promo.originalPrice).toFixed(2)} {audit.currency}</span>
+                            <span className="text-sm font-bold text-amber-600">{n(promo.promoPrice).toFixed(2)} {audit.currency}</span>
                             <span className="text-xs bg-emerald-500/10 text-emerald-600 px-1.5 py-0.5 rounded-full">
-                              -{promo.saving.toFixed(2)} {audit.currency}
+                              -{n(promo.saving).toFixed(2)} {audit.currency}
                             </span>
                           </div>
                         </div>
@@ -688,7 +692,7 @@ export default function AuditPage() {
                             className={`h-2 rounded-full ${getStoreColor(s.store)}`}
                           />
                         </div>
-                        <span className="w-28 text-right font-medium">{s.amount.toFixed(2)} {audit.currency}</span>
+                        <span className="w-28 text-right font-medium">{n(s.amount).toFixed(2)} {audit.currency}</span>
                       </div>
                     )
                   })}
@@ -730,7 +734,7 @@ export default function AuditPage() {
                               className="h-2 bg-primary rounded-full"
                             />
                           </div>
-                          <span className="w-28 text-right font-medium">{amt.toFixed(2)} {audit.currency}</span>
+                          <span className="w-28 text-right font-medium">{n(amt).toFixed(2)} {audit.currency}</span>
                         </div>
                       )
                     })}

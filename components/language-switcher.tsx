@@ -1,95 +1,75 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Button } from '@/components/ui/button'
-import { Languages } from 'lucide-react'
 import { toast } from 'sonner'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+import { cn } from '@/lib/utils'
 
 type Language = 'pl' | 'en'
 
-export function LanguageSwitcher() {
+interface LanguageSwitcherProps {
+  className?: string
+}
+
+export function LanguageSwitcher({ className }: LanguageSwitcherProps) {
   const [language, setLanguage] = useState<Language>('en')
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
-    // Get language from localStorage only
     const storedLang = localStorage.getItem('language') as Language
-    if (storedLang && (storedLang === 'pl' || storedLang === 'en')) {
+    if (storedLang === 'pl' || storedLang === 'en') {
       setLanguage(storedLang)
-      return
+    } else {
+      setLanguage('en')
+      localStorage.setItem('language', 'en')
     }
-    setLanguage('en')
-    localStorage.setItem('language', 'en')
   }, [])
 
   const changeLanguage = async (newLang: Language) => {
+    if (newLang === language || loading) return
     setLoading(true)
     try {
       localStorage.setItem('language', newLang)
       setLanguage(newLang)
-
-      // Also persist to settings API if user is logged in
       try {
         await fetch('/api/data/settings', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ type: 'settings', data: { language: newLang } }),
         })
-      } catch {
-        // Ignore - user might not be logged in
-      }
-
-      toast.success('Language changed', {
-        description: `Language set to ${newLang === 'pl' ? 'Polish' : 'English'}`,
-      })
-
-      // Refresh page after 500ms
-      setTimeout(() => {
-        window.location.reload()
-      }, 500)
-
-    } catch (error) {
-      console.error('Failed to change language:', error)
-      toast.error('Failed to change language')
+      } catch {}
+      toast.success(newLang === 'pl' ? 'Język zmieniony na Polski' : 'Language set to English')
+      setTimeout(() => window.location.reload(), 400)
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-9 w-9"
-          disabled={loading}
-          title={language === 'pl' ? 'Język: Polski' : 'Language: English'}
-        >
-          <Languages className="h-4 w-4" />
-          <span className="sr-only">Change language</span>
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuItem
-          onClick={() => changeLanguage('pl')}
-          className={language === 'pl' ? 'bg-accent' : ''}
-        >
-          🇵🇱 Polski
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          onClick={() => changeLanguage('en')}
-          className={language === 'en' ? 'bg-accent' : ''}
-        >
-          🇬🇧 English
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <div className={cn('flex items-center rounded-full border border-border/60 bg-muted/50 p-0.5 gap-0.5', className)}>
+      <button
+        onClick={() => changeLanguage('pl')}
+        disabled={loading}
+        className={cn(
+          'px-2.5 py-1 rounded-full text-xs font-semibold transition-all duration-200 leading-none',
+          language === 'pl'
+            ? 'bg-background text-foreground shadow-sm'
+            : 'text-muted-foreground hover:text-foreground'
+        )}
+      >
+        PL
+      </button>
+      <button
+        onClick={() => changeLanguage('en')}
+        disabled={loading}
+        className={cn(
+          'px-2.5 py-1 rounded-full text-xs font-semibold transition-all duration-200 leading-none',
+          language === 'en'
+            ? 'bg-background text-foreground shadow-sm'
+            : 'text-muted-foreground hover:text-foreground'
+        )}
+      >
+        EN
+      </button>
+    </div>
   )
 }

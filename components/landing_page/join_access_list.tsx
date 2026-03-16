@@ -32,7 +32,7 @@ export default function JoinAccessList() {
     }
     setError('')
     setLoading(true)
-    router.push(`/sign-up?email=${encodeURIComponent(trimmed)}`)
+    router.push(`/login?email=${encodeURIComponent(trimmed)}`)
   }
 
   return (

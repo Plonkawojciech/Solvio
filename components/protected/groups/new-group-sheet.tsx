@@ -22,22 +22,98 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Plus, Trash2, Loader2, Users } from 'lucide-react'
+import { Plus, Trash2, Loader2, Users, CalendarDays, ChevronDown, ChevronUp } from 'lucide-react'
 
-const EMOJIS = ['👥', '🏠', '🎉', '✈️', '🍕', '🎓', '💍', '🏋️', '🛒', '🎮']
+const EMOJIS = ['👥', '🏠', '🎉', '✈️', '🍕', '🎓', '💍', '🏋️', '🛒', '🎮', '💸', '🚗']
 
 const CURRENCIES = [
-  { code: 'PLN', label: 'PLN – Złoty' },
-  { code: 'EUR', label: 'EUR – Euro' },
-  { code: 'USD', label: 'USD – Dollar' },
-  { code: 'GBP', label: 'GBP – Pound' },
-  { code: 'CZK', label: 'CZK – Koruna' },
-  { code: 'CHF', label: 'CHF – Franc' },
+  { code: 'PLN', label: 'PLN -- Zloty' },
+  { code: 'EUR', label: 'EUR -- Euro' },
+  { code: 'USD', label: 'USD -- Dollar' },
+  { code: 'GBP', label: 'GBP -- Pound' },
+  { code: 'CZK', label: 'CZK -- Koruna' },
+  { code: 'CHF', label: 'CHF -- Franc' },
 ]
 
 const MEMBER_COLORS = [
   '#6366f1', '#ec4899', '#f59e0b', '#10b981',
   '#3b82f6', '#8b5cf6', '#ef4444', '#14b8a6',
+]
+
+type TemplateKey = 'dinner' | 'trip' | 'household' | 'event' | 'quickDebt' | 'custom'
+
+interface TemplateConfig {
+  key: TemplateKey
+  emoji: string
+  labelKey: string
+  descKey: string
+  defaultEmoji: string
+  defaultMode: string
+  hasDates: boolean
+  defaultMemberCount: number
+}
+
+const TEMPLATES: TemplateConfig[] = [
+  {
+    key: 'dinner',
+    emoji: '🍕',
+    labelKey: 'groups.templates.dinner',
+    descKey: 'groups.templates.dinnerDesc',
+    defaultEmoji: '🍕',
+    defaultMode: 'default',
+    hasDates: false,
+    defaultMemberCount: 3,
+  },
+  {
+    key: 'trip',
+    emoji: '✈️',
+    labelKey: 'groups.templates.trip',
+    descKey: 'groups.templates.tripDesc',
+    defaultEmoji: '✈️',
+    defaultMode: 'trip',
+    hasDates: true,
+    defaultMemberCount: 4,
+  },
+  {
+    key: 'household',
+    emoji: '🏠',
+    labelKey: 'groups.templates.household',
+    descKey: 'groups.templates.householdDesc',
+    defaultEmoji: '🏠',
+    defaultMode: 'household',
+    hasDates: false,
+    defaultMemberCount: 3,
+  },
+  {
+    key: 'event',
+    emoji: '🎉',
+    labelKey: 'groups.templates.event',
+    descKey: 'groups.templates.eventDesc',
+    defaultEmoji: '🎉',
+    defaultMode: 'default',
+    hasDates: true,
+    defaultMemberCount: 5,
+  },
+  {
+    key: 'quickDebt',
+    emoji: '💸',
+    labelKey: 'groups.templates.quickDebt',
+    descKey: 'groups.templates.quickDebtDesc',
+    defaultEmoji: '💸',
+    defaultMode: 'default',
+    hasDates: false,
+    defaultMemberCount: 2,
+  },
+  {
+    key: 'custom',
+    emoji: '➕',
+    labelKey: 'groups.templates.custom',
+    descKey: 'groups.templates.customDesc',
+    defaultEmoji: '👥',
+    defaultMode: 'default',
+    hasDates: false,
+    defaultMemberCount: 2,
+  },
 ]
 
 interface Member {
@@ -61,17 +137,38 @@ function getInitials(name: string): string {
     .toUpperCase()
 }
 
+function generateMembers(count: number): Member[] {
+  return Array.from({ length: count }, (_, i) => ({
+    id: String(i + 1),
+    name: '',
+    email: '',
+  }))
+}
+
 export function NewGroupSheet({ open, onOpenChange, onCreated }: NewGroupSheetProps) {
   const { t } = useTranslation()
 
+  const [selectedTemplate, setSelectedTemplate] = useState<TemplateKey | null>(null)
   const [name, setName] = useState('')
   const [emoji, setEmoji] = useState('👥')
   const [currency, setCurrency] = useState('PLN')
-  const [members, setMembers] = useState<Member[]>([
-    { id: '1', name: '', email: '' },
-    { id: '2', name: '', email: '' },
-  ])
+  const [mode, setMode] = useState('default')
+  const [startDate, setStartDate] = useState('')
+  const [endDate, setEndDate] = useState('')
+  const [showDates, setShowDates] = useState(false)
+  const [members, setMembers] = useState<Member[]>(generateMembers(2))
   const [loading, setLoading] = useState(false)
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false)
+
+  const handleTemplateSelect = (template: TemplateConfig) => {
+    setSelectedTemplate(template.key)
+    setEmoji(template.defaultEmoji)
+    setMode(template.defaultMode)
+    setShowDates(template.hasDates)
+    if (members.every((m) => !m.name.trim())) {
+      setMembers(generateMembers(template.defaultMemberCount))
+    }
+  }
 
   const addMember = () => {
     setMembers((prev) => [
@@ -111,6 +208,9 @@ export function NewGroupSheet({ open, onOpenChange, onCreated }: NewGroupSheetPr
           name: name.trim(),
           emoji,
           currency,
+          mode,
+          startDate: showDates && startDate ? startDate : null,
+          endDate: showDates && endDate ? endDate : null,
           members: validMembers.map((m) => ({
             name: m.name.trim(),
             email: m.email.trim() || null,
@@ -120,13 +220,7 @@ export function NewGroupSheet({ open, onOpenChange, onCreated }: NewGroupSheetPr
       if (!res.ok) throw new Error('Failed to create group')
       toast.success(t('groups.created'), { description: t('groups.createdDesc') })
       // Reset
-      setName('')
-      setEmoji('👥')
-      setCurrency('PLN')
-      setMembers([
-        { id: '1', name: '', email: '' },
-        { id: '2', name: '', email: '' },
-      ])
+      reset()
       onOpenChange(false)
       onCreated()
     } catch {
@@ -136,8 +230,27 @@ export function NewGroupSheet({ open, onOpenChange, onCreated }: NewGroupSheetPr
     }
   }
 
+  const reset = () => {
+    setSelectedTemplate(null)
+    setName('')
+    setEmoji('👥')
+    setCurrency('PLN')
+    setMode('default')
+    setStartDate('')
+    setEndDate('')
+    setShowDates(false)
+    setMembers(generateMembers(2))
+    setShowEmojiPicker(false)
+  }
+
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
+    <Sheet
+      open={open}
+      onOpenChange={(v) => {
+        if (!v) reset()
+        onOpenChange(v)
+      }}
+    >
       <SheetContent className="w-full sm:max-w-md overflow-y-auto flex flex-col gap-0 p-0">
         <SheetHeader className="p-6 pb-4 border-b">
           <div className="flex items-center gap-3">
@@ -154,6 +267,48 @@ export function NewGroupSheet({ open, onOpenChange, onCreated }: NewGroupSheetPr
         </SheetHeader>
 
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
+          {/* Template selection */}
+          <div className="space-y-2">
+            <Label>{t('groups.suggestedTemplates')}</Label>
+            <div className="grid grid-cols-3 gap-2">
+              {TEMPLATES.map((template) => {
+                const isActive = selectedTemplate === template.key
+                return (
+                  <motion.button
+                    key={template.key}
+                    type="button"
+                    onClick={() => handleTemplateSelect(template)}
+                    whileTap={{ scale: 0.96 }}
+                    className={`relative flex flex-col items-center gap-1.5 rounded-xl border-2 py-3 px-2 text-center transition-all duration-200 ${
+                      isActive
+                        ? 'border-primary bg-primary/5 shadow-sm'
+                        : 'border-border bg-muted/30 hover:bg-muted/60 hover:border-border'
+                    }`}
+                  >
+                    <span className="text-lg">{template.emoji}</span>
+                    <span
+                      className={`text-xs font-semibold leading-tight ${
+                        isActive ? 'text-primary' : 'text-muted-foreground'
+                      }`}
+                    >
+                      {t(template.labelKey as any)}
+                    </span>
+                    <span className="text-[10px] text-muted-foreground leading-tight">
+                      {t(template.descKey as any)}
+                    </span>
+                    {isActive && (
+                      <motion.div
+                        layoutId="template-indicator"
+                        className="absolute -top-px -right-px h-3 w-3 rounded-full bg-primary border-2 border-background"
+                        transition={{ type: 'spring', damping: 20, stiffness: 300 }}
+                      />
+                    )}
+                  </motion.button>
+                )
+              })}
+            </div>
+          </div>
+
           {/* Group name */}
           <div className="space-y-2">
             <Label>{t('groups.groupName')}</Label>
@@ -164,25 +319,101 @@ export function NewGroupSheet({ open, onOpenChange, onCreated }: NewGroupSheetPr
             />
           </div>
 
-          {/* Emoji picker */}
+          {/* Emoji picker (collapsible) */}
           <div className="space-y-2">
-            <Label>{t('groups.emoji')}</Label>
-            <div className="flex flex-wrap gap-2">
-              {EMOJIS.map((e) => (
-                <button
-                  key={e}
-                  type="button"
-                  onClick={() => setEmoji(e)}
-                  className={`flex h-10 w-10 items-center justify-center rounded-lg text-xl transition-all border-2 ${
-                    emoji === e
-                      ? 'border-primary bg-primary/10 scale-110'
-                      : 'border-transparent bg-muted hover:bg-muted/80'
-                  }`}
+            <button
+              type="button"
+              onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+              className="flex items-center gap-2 text-sm font-medium hover:text-primary transition-colors"
+            >
+              <span>{t('groups.emoji')}</span>
+              <span className="text-lg">{emoji}</span>
+              {showEmojiPicker ? (
+                <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" />
+              ) : (
+                <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+              )}
+            </button>
+            <AnimatePresence>
+              {showEmojiPicker && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="overflow-hidden"
                 >
-                  {e}
-                </button>
-              ))}
-            </div>
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    {EMOJIS.map((e) => (
+                      <button
+                        key={e}
+                        type="button"
+                        onClick={() => setEmoji(e)}
+                        className={`flex h-10 w-10 items-center justify-center rounded-lg text-xl transition-all border-2 ${
+                          emoji === e
+                            ? 'border-primary bg-primary/10 scale-110'
+                            : 'border-transparent bg-muted hover:bg-muted/80'
+                        }`}
+                      >
+                        {e}
+                      </button>
+                    ))}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+
+          {/* Optional dates */}
+          <div className="space-y-2">
+            <button
+              type="button"
+              onClick={() => setShowDates(!showDates)}
+              className="flex items-center gap-2 text-sm font-medium hover:text-primary transition-colors"
+            >
+              <CalendarDays className="h-3.5 w-3.5" />
+              <span>{t('groups.optionalDates')}</span>
+              {showDates ? (
+                <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" />
+              ) : (
+                <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+              )}
+            </button>
+            <AnimatePresence>
+              {showDates && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.25 }}
+                  className="overflow-hidden"
+                >
+                  <div className="space-y-3 p-3 bg-muted/30 rounded-xl border border-border">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <Label className="text-xs">{t('groups.startDate')}</Label>
+                        <Input
+                          type="date"
+                          value={startDate}
+                          onChange={(e) => setStartDate(e.target.value)}
+                          className="text-sm"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">{t('groups.endDate')}</Label>
+                        <Input
+                          type="date"
+                          value={endDate}
+                          onChange={(e) => setEndDate(e.target.value)}
+                          min={startDate || undefined}
+                          className="text-sm"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
 
           {/* Currency */}

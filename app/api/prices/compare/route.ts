@@ -31,10 +31,12 @@ export async function POST(req: NextRequest) {
       const items = receipt.items as any[]
       if (Array.isArray(items)) {
         for (const item of items) {
-          if (item.name && item.totalPrice) {
+          // Items stored by OCR use `price`; older entries may use `totalPrice` — support both
+          const itemPrice = item.price ?? item.totalPrice ?? null
+          if (item.name && itemPrice && Number(itemPrice) > 0) {
             allItems.push({
               name: item.name,
-              price: Number(item.totalPrice),
+              price: Number(itemPrice),
               vendor: receipt.vendor || 'Unknown',
               date: receipt.date || sinceStr,
             })
@@ -45,6 +47,7 @@ export async function POST(req: NextRequest) {
 
     if (allItems.length === 0) {
       return NextResponse.json({
+        error: 'no_receipts',
         comparisons: [],
         message: isPolish
           ? 'Brak paragonów do analizy. Zeskanuj paragony aby zobaczyć porównanie cen.'
@@ -92,18 +95,15 @@ export async function POST(req: NextRequest) {
       tip: '',
     }
 
-    // Try with web search first
+    // Try with web search first (Responses API – system prompt goes in `instructions`, no temperature)
     try {
-      const response = await (openai as any).responses.create({
+      const response = await openai.responses.create({
         model: 'gpt-4o',
         tools: [{ type: 'web_search_preview' }],
-        input: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
-        ],
-        temperature: 0.3,
-      })
-      const text = response.output_text || ''
+        instructions: systemPrompt,
+        input: userPrompt,
+      } as any)
+      const text = (response as any).output_text || ''
       const jsonMatch = text.match(/\{[\s\S]*\}/)
       if (jsonMatch) result = JSON.parse(jsonMatch[0])
     } catch {

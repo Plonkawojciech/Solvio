@@ -26,7 +26,7 @@ export default function Footer() {
 
           {/* Links */}
           <div className="flex items-center gap-5 text-xs text-muted-foreground">
-            <Link href="/sign-up" className="hover:text-foreground transition-colors">
+            <Link href="/login" className="hover:text-foreground transition-colors">
               {lang === 'pl' ? 'Utwórz konto' : 'Sign Up'}
             </Link>
             <Link href="/login" className="hover:text-foreground transition-colors">

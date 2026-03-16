@@ -2,16 +2,16 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useUser } from '@clerk/nextjs'
 import { LogoutButton } from './logout-button'
 import { Button } from './ui/button'
 import { ThemeSwitcher } from './theme-switcher'
 import { LanguageSwitcher } from './language-switcher'
 import { useTranslation } from '@/lib/i18n'
 import { Wallet } from 'lucide-react'
+import { useSession } from '@/lib/use-session'
 
 export default function Header() {
-  const { user, isLoaded } = useUser()
+  const { email, isLoaded } = useSession()
   const { t, lang } = useTranslation()
   const pathname = usePathname()
 
@@ -29,7 +29,7 @@ export default function Header() {
         </Link>
 
         {/* Nav links — only on marketing pages */}
-        {isMarketing && !user && (
+        {isMarketing && !email && (
           <nav className="hidden md:flex items-center gap-6 text-sm text-muted-foreground">
             <a href="#features" className="hover:text-foreground transition-colors">
               {lang === 'pl' ? 'Funkcje' : 'Features'}
@@ -42,7 +42,7 @@ export default function Header() {
 
         {/* Right side */}
         <div className="flex items-center gap-1.5 sm:gap-2 md:gap-3">
-          {isLoaded && user ? (
+          {isLoaded && email ? (
             <div className="flex items-center gap-1.5 sm:gap-2 md:gap-3">
               <Link href="/dashboard">
                 <Button variant="ghost" size="sm" className="hidden sm:inline-flex text-xs sm:text-sm">
@@ -50,7 +50,7 @@ export default function Header() {
                 </Button>
               </Link>
               <span className="hidden lg:inline text-sm text-muted-foreground truncate max-w-[180px]" suppressHydrationWarning>
-                {user.primaryEmailAddress?.emailAddress}
+                {email}
               </span>
               <LogoutButton />
             </div>
@@ -60,7 +60,7 @@ export default function Header() {
                 <Link href="/login" suppressHydrationWarning>{t('auth.signIn')}</Link>
               </Button>
               <Button asChild size="sm" className="text-xs sm:text-sm">
-                <Link href="/sign-up" suppressHydrationWarning>{t('auth.signUp')}</Link>
+                <Link href="/login" suppressHydrationWarning>{t('auth.signUp')}</Link>
               </Button>
             </div>
           )}

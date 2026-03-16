@@ -278,7 +278,7 @@ export function AddExpenseSheet({
 
   return (
     <Sheet open={isOpen} onOpenChange={handleClose}>
-      <SheetContent className="flex flex-col gap-0 p-0 sm:max-w-2xl">
+      <SheetContent className="w-full flex flex-col gap-0 p-0 sm:max-w-2xl">
         <SheetHeader className="p-6 border-b">
           <SheetTitle className="text-xl font-semibold" suppressHydrationWarning>{t('addExpense.title')}</SheetTitle>
           <SheetDescription suppressHydrationWarning>

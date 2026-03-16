@@ -182,9 +182,9 @@ Respond ONLY in JSON format (no markdown, no backticks):
     try {
       const webResponse = await openai.responses.create({
         model: 'gpt-4o',
-        tools: [{ type: 'web_search_preview' as any }],
+        tools: [{ type: 'web_search_preview' }],
         input: searchPrompt,
-      })
+      } as any)
       const rawText = (webResponse as any).output_text || ''
       // Extract JSON from the response
       const jsonMatch = rawText.match(/\{[\s\S]*\}/)

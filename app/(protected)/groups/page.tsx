@@ -7,8 +7,18 @@ import { useTranslation } from '@/lib/i18n'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Users, Plus, ArrowRight, Loader2, AlertCircle } from 'lucide-react'
+import {
+  Users,
+  Plus,
+  ArrowRight,
+  AlertCircle,
+  Sparkles,
+  Zap,
+  X,
+  Clock,
+} from 'lucide-react'
 import { NewGroupSheet } from '@/components/protected/groups/new-group-sheet'
+import { QuickSplitSheet } from '@/components/protected/groups/quick-split-sheet'
 
 const MEMBER_COLORS = [
   '#6366f1', '#ec4899', '#f59e0b', '#10b981',
@@ -26,6 +36,9 @@ interface Group {
   name: string
   emoji: string
   currency: string
+  mode: string
+  startDate: string | null
+  endDate: string | null
   totalBalance: number
   members: GroupMember[]
   createdAt: string
@@ -92,12 +105,24 @@ const cardVariants = {
   visible: { opacity: 1, y: 0, transition: { duration: 0.35 } },
 } as any
 
+const MODE_BADGE_STYLES: Record<string, string> = {
+  trip: 'bg-sky-50 dark:bg-sky-900/20 text-sky-700 dark:text-sky-300 border-sky-200 dark:border-sky-800',
+  household: 'bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800',
+}
+
+const MODE_EMOJI: Record<string, string> = {
+  trip: '✈️',
+  household: '🏠',
+}
+
 export default function GroupsPage() {
   const { t } = useTranslation()
   const [groups, setGroups] = useState<Group[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
   const [sheetOpen, setSheetOpen] = useState(false)
+  const [quickSplitOpen, setQuickSplitOpen] = useState(false)
+  const [tipDismissed, setTipDismissed] = useState(false)
 
   const fetchGroups = useCallback(async () => {
     setLoading(true)
@@ -118,6 +143,15 @@ export default function GroupsPage() {
     fetchGroups()
   }, [fetchGroups])
 
+  // Compute total unsettled debts across all groups
+  const totalUnsettled = groups.reduce((sum, g) => {
+    const balance = Math.abs(Number(g.totalBalance) || 0)
+    return sum + balance
+  }, 0)
+  const unsettledGroupCount = groups.filter(
+    (g) => Math.abs(Number(g.totalBalance) || 0) > 0
+  ).length
+
   return (
     <div className="space-y-6 max-w-3xl mx-auto">
       {/* Header */}
@@ -128,16 +162,50 @@ export default function GroupsPage() {
         className="flex items-center justify-between gap-4"
       >
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">{t('groups.title')}</h1>
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight">{t('groups.title')}</h1>
           <p className="text-muted-foreground text-sm mt-0.5">
-            {t('groups.emptyDesc')}
+            {t('groups.subtitle')}
           </p>
         </div>
-        <Button onClick={() => setSheetOpen(true)} className="shrink-0">
-          <Plus className="h-4 w-4 mr-2" />
-          {t('groups.newGroup')}
-        </Button>
+        <div className="flex items-center gap-2 shrink-0">
+          <Button
+            variant="outline"
+            onClick={() => setQuickSplitOpen(true)}
+            className="gap-2"
+          >
+            <Zap className="h-4 w-4" />
+            <span className="hidden sm:inline">{t('groups.quickSplit')}</span>
+          </Button>
+          <Button onClick={() => setSheetOpen(true)}>
+            <Plus className="h-4 w-4 mr-2" />
+            {t('groups.newGroup')}
+          </Button>
+        </div>
       </motion.div>
+
+      {/* AI tip banner — unsettled debts */}
+      {!loading && !error && unsettledGroupCount > 0 && !tipDismissed && (
+        <motion.div
+          initial={{ opacity: 0, y: -8 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="flex items-center gap-3 rounded-xl border border-violet-200 dark:border-violet-800 bg-violet-50/50 dark:bg-violet-900/10 p-3.5"
+        >
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-violet-100 dark:bg-violet-800/30">
+            <Sparkles className="h-4 w-4 text-violet-600 dark:text-violet-400" />
+          </div>
+          <p className="text-sm font-medium text-violet-700 dark:text-violet-300 flex-1">
+            {t('groups.unsettledDebts')}: {unsettledGroupCount}{' '}
+            {unsettledGroupCount === 1 ? t('groups.member') : t('groups.members')} —{' '}
+            {totalUnsettled.toFixed(2)} PLN
+          </p>
+          <button
+            onClick={() => setTipDismissed(true)}
+            className="p-1 rounded-md hover:bg-violet-200 dark:hover:bg-violet-800/40 text-violet-500 transition-colors shrink-0"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </motion.div>
+      )}
 
       {/* Content */}
       {loading ? (
@@ -183,10 +251,21 @@ export default function GroupsPage() {
               {t('groups.emptyDesc')}
             </p>
           </div>
-          <Button onClick={() => setSheetOpen(true)} size="lg">
-            <Plus className="h-4 w-4 mr-2" />
-            {t('groups.emptyAction')}
-          </Button>
+          <div className="flex items-center gap-3">
+            <Button
+              variant="outline"
+              onClick={() => setQuickSplitOpen(true)}
+              size="lg"
+              className="gap-2"
+            >
+              <Zap className="h-4 w-4" />
+              {t('groups.quickSplit')}
+            </Button>
+            <Button onClick={() => setSheetOpen(true)} size="lg">
+              <Plus className="h-4 w-4 mr-2" />
+              {t('groups.emptyAction')}
+            </Button>
+          </div>
         </motion.div>
       ) : (
         <AnimatePresence>
@@ -209,7 +288,18 @@ export default function GroupsPage() {
                           {group.emoji || '👥'}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="font-semibold truncate leading-tight">{group.name}</p>
+                          <div className="flex items-center gap-1.5">
+                            <p className="font-semibold truncate leading-tight">{group.name}</p>
+                            {group.mode && group.mode !== 'default' && (
+                              <span
+                                className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold border shrink-0 ${
+                                  MODE_BADGE_STYLES[group.mode] || ''
+                                }`}
+                              >
+                                {MODE_EMOJI[group.mode] || ''}
+                              </span>
+                            )}
+                          </div>
                           <p className="text-xs text-muted-foreground mt-0.5">
                             {group.members.length}{' '}
                             {group.members.length === 1
@@ -245,13 +335,13 @@ export default function GroupsPage() {
                             <p className="text-xs text-muted-foreground">{t('groups.balance')}</p>
                             <p
                               className={`text-sm font-semibold tabular-nums ${
-                                group.totalBalance > 0
+                                Number(group.totalBalance) > 0
                                   ? 'text-emerald-600 dark:text-emerald-400'
                                   : 'text-red-500 dark:text-red-400'
                               }`}
                             >
-                              {group.totalBalance > 0 ? '+' : ''}
-                              {group.currency} {Math.abs(group.totalBalance).toFixed(2)}
+                              {Number(group.totalBalance) > 0 ? '+' : ''}
+                              {group.currency} {Math.abs(Number(group.totalBalance)).toFixed(2)}
                             </p>
                           </div>
                         )}
@@ -265,10 +355,57 @@ export default function GroupsPage() {
         </AnimatePresence>
       )}
 
+      {/* Recent activity section */}
+      {!loading && !error && groups.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.3, duration: 0.3 }}
+          className="space-y-3"
+        >
+          <div className="flex items-center gap-2">
+            <Clock className="h-4 w-4 text-muted-foreground" />
+            <h3 className="text-sm font-semibold">{t('groups.recentActivity')}</h3>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            {groups
+              .filter((g) => Math.abs(Number(g.totalBalance) || 0) > 0)
+              .slice(0, 3)
+              .map((group) => (
+                <Link key={group.id} href={`/groups/${group.id}`}>
+                  <Card className="overflow-hidden hover:shadow-sm transition-shadow">
+                    <CardContent className="p-3">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-lg">{group.emoji || '👥'}</span>
+                        <span className="text-xs font-semibold truncate">{group.name}</span>
+                      </div>
+                      <p
+                        className={`text-sm font-bold tabular-nums ${
+                          Number(group.totalBalance) > 0
+                            ? 'text-emerald-600 dark:text-emerald-400'
+                            : 'text-red-500 dark:text-red-400'
+                        }`}
+                      >
+                        {Number(group.totalBalance) > 0 ? '+' : ''}
+                        {Math.abs(Number(group.totalBalance)).toFixed(2)} {group.currency}
+                      </p>
+                    </CardContent>
+                  </Card>
+                </Link>
+              ))}
+          </div>
+        </motion.div>
+      )}
+
       <NewGroupSheet
         open={sheetOpen}
         onOpenChange={setSheetOpen}
         onCreated={fetchGroups}
+      />
+
+      <QuickSplitSheet
+        open={quickSplitOpen}
+        onOpenChange={setQuickSplitOpen}
       />
     </div>
   )

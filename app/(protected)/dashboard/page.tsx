@@ -15,7 +15,6 @@ import { BudgetOverview } from '@/components/protected/dashboard/budget-overview
 import { AddExpenseTrigger } from '@/components/protected/dashboard/add-expense-trigger';
 import { ScanReceiptButton } from '@/components/protected/dashboard/scan-receipt-button';
 import { Button } from '@/components/ui/button';
-import { Progress } from '@/components/ui/progress';
 import Link from 'next/link';
 import { useTranslation } from '@/lib/i18n';
 
@@ -231,7 +230,7 @@ function DashboardEmpty({
             <Wallet className="h-7 w-7 text-primary" />
           </div>
         </div>
-        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight" suppressHydrationWarning>
+        <h1 className="text-xl sm:text-2xl font-bold tracking-tight" suppressHydrationWarning>
           {t('onboarding.title')}
         </h1>
         <p className="text-muted-foreground text-sm sm:text-base max-w-sm mx-auto" suppressHydrationWarning>
@@ -536,7 +535,7 @@ export default function ProtectedPage() {
           <CardHeader>
             <div className="flex items-center justify-between">
               <div>
-                <CardTitle className="text-2xl sm:text-3xl font-bold">{t('dashboard.totalSpent') || 'Total Spent'}</CardTitle>
+                <CardTitle className="text-xl sm:text-2xl font-bold">{t('dashboard.totalSpent') || 'Total Spent'}</CardTitle>
                 <CardDescription className="hidden sm:block">{t('dashboard.spendingOverview') || 'Your spending overview'}</CardDescription>
               </div>
               <Wallet className="h-6 w-6 sm:h-8 sm:w-8 text-muted-foreground" />
@@ -613,7 +612,7 @@ export default function ProtectedPage() {
                 <CardTitle className="text-sm font-medium text-muted-foreground">{card.label}</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className={`text-2xl font-bold tabular-nums${card.truncate ? ' truncate' : ''}`}>{card.value}</div>
+                <div className={`font-bold tabular-nums${card.truncate ? ' text-lg truncate' : ' text-2xl'}`} title={card.truncate ? String(card.value) : undefined}>{card.value}</div>
                 <p className="text-xs text-muted-foreground mt-1">{card.sub}</p>
               </CardContent>
             </Card>

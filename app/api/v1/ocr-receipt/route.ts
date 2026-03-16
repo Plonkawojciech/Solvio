@@ -679,7 +679,7 @@ export async function POST(req: NextRequest) {
   log('[OCR] ✅ Environment variables verified');
 
   let receiptId: string | null = null;
-  let userId: string | null = authUserId;
+  const userId: string | null = authUserId;
 
   try {
     // 1. Pobierz dane z formularza

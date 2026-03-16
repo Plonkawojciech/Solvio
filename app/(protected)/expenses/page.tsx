@@ -107,7 +107,7 @@ function SortIcon({ field, sortField, sortDir }: { field: SortField; sortField: 
 export default function ExpensesPage() {
   const { t, lang, mounted } = useTranslation()
 
-  const translateCategoryName = (categoryName: string): string => {
+  const translateCategoryName = useCallback((categoryName: string): string => {
     const categoryMap: Record<string, string> = {
       'Food': t('categories.food'),
       'Groceries': t('categories.groceries'),
@@ -121,7 +121,7 @@ export default function ExpensesPage() {
       'Other': t('categories.other'),
     }
     return categoryMap[categoryName] || categoryName
-  }
+  }, [t])
 
   const [expenses, setExpenses] = useState<Expense[]>([])
   const [loading, setLoading] = useState(true)
@@ -407,7 +407,7 @@ export default function ExpensesPage() {
   // ─── Selection helpers ───────────────────────────────────────────────────────
   const toggleExpenseSelection = (id: string) => {
     const s = new Set(selectedExpenseIds)
-    s.has(id) ? s.delete(id) : s.add(id)
+    if (s.has(id)) { s.delete(id) } else { s.add(id) }
     setSelectedExpenseIds(s)
   }
 
@@ -421,7 +421,7 @@ export default function ExpensesPage() {
 
   const toggleItemSelection = (index: number) => {
     const s = new Set(selectedItemIndices)
-    s.has(index) ? s.delete(index) : s.add(index)
+    if (s.has(index)) { s.delete(index) } else { s.add(index) }
     setSelectedItemIndices(s)
   }
 
@@ -1561,9 +1561,9 @@ export default function ExpensesPage() {
                   className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors"
                 >
                   {shareCopied ? (
-                    <><CheckCheck className="h-3.5 w-3.5" /> Copied!</>
+                    <><CheckCheck className="h-3.5 w-3.5" /> {t('expenses.linkCopied')}</>
                   ) : (
-                    <><Copy className="h-3.5 w-3.5" /> {lang === 'pl' ? 'Kopiuj link' : 'Copy share link'}</>
+                    <><Copy className="h-3.5 w-3.5" /> {t('expenses.copyLink')}</>
                   )}
                 </button>
                 <button
@@ -1571,7 +1571,7 @@ export default function ExpensesPage() {
                   className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md border text-sm font-medium hover:bg-muted transition-colors"
                 >
                   <QrCode className="h-3.5 w-3.5" />
-                  {lang === 'pl' ? 'Kod QR' : 'QR Code'}
+                  {t('expenses.qrCode')}
                 </button>
                 <a
                   href={`/receipt/${viewingReceiptId}`}
@@ -1580,7 +1580,7 @@ export default function ExpensesPage() {
                   className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md border text-sm font-medium hover:bg-muted transition-colors"
                 >
                   <Share2 className="h-3.5 w-3.5" />
-                  {lang === 'pl' ? 'Otwórz' : 'Open'}
+                  {t('expenses.openReceipt')}
                 </a>
               </div>
 
@@ -1594,8 +1594,8 @@ export default function ExpensesPage() {
                     height={150}
                     className="rounded-lg border p-2 bg-white"
                   />
-                  <p className="text-xs text-muted-foreground">
-                    {lang === 'pl' ? 'Zeskanuj, aby otworzyć paragon' : 'Scan to open receipt'}
+                  <p className="text-xs text-muted-foreground" suppressHydrationWarning>
+                    {t('expenses.scanQr')}
                   </p>
                 </div>
               )}

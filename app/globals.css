@@ -201,3 +201,14 @@
     margin-bottom: 0.25rem; /* mb-1 */
   }
 }
+
+/* Hide scrollbar but keep scrolling */
+@layer utilities {
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+}
