@@ -21,18 +21,12 @@ import {
   FileText,
   Home,
   Settings,
-  BrainCircuit,
   Wallet,
-  ShoppingCart,
   LogOut,
   Users,
-  Tag,
   Landmark,
-  Receipt,
   Building2,
-  Target,
   PiggyBank,
-  Trophy,
   type LucideIcon,
 } from "lucide-react"
 import { useTranslation } from '@/lib/i18n'
@@ -55,13 +49,7 @@ function getNavItems(isPersonal: boolean): NavItem[] {
       { key: 'expenses', href: '/expenses', icon: DollarSign },
       { key: 'groups', href: '/groups', icon: Users },
       { key: 'bank', href: '/bank', icon: Landmark },
-      { key: 'analysis', href: '/analysis', icon: BrainCircuit },
-      { key: 'audit', href: '/audit', icon: ShoppingCart },
-      { key: 'prices', href: '/prices', icon: Tag },
-      { key: 'goals', href: '/goals', icon: Target },
-      { key: 'budget', href: '/budget', icon: PiggyBank },
-      { key: 'challenges', href: '/challenges', icon: Trophy },
-      { key: 'reports', href: '/reports', icon: FileText },
+      { key: 'savings', href: '/savings', icon: PiggyBank },
       { key: 'settings', href: '/settings', icon: Settings },
     ]
   }
@@ -71,10 +59,7 @@ function getNavItems(isPersonal: boolean): NavItem[] {
     { key: 'expenses', href: '/expenses', icon: DollarSign },
     { key: 'invoices', href: '/invoices', icon: FileText },
     { key: 'bank', href: '/bank', icon: Landmark },
-    { key: 'vat', href: '/vat', icon: Receipt },
     { key: 'team', href: '/team', icon: Users },
-    { key: 'analysis', href: '/analysis', icon: BrainCircuit },
-    { key: 'reports', href: '/reports', icon: FileText },
     { key: 'settings', href: '/settings', icon: Settings },
   ]
 }

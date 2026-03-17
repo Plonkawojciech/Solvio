@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Home, DollarSign, Plus, Users, MoreHorizontal, FileText, Zap, type LucideIcon } from 'lucide-react'
+import { Home, DollarSign, Plus, Users, PiggyBank, FileText, Zap, type LucideIcon } from 'lucide-react'
 import { useTranslation } from '@/lib/i18n'
 import { useProductType } from '@/hooks/use-product-type'
 import { cn } from '@/lib/utils'
@@ -24,7 +24,7 @@ function getMobileNavItems(isPersonal: boolean): NavSlot[] {
       { href: '/expenses', icon: DollarSign, labelKey: 'nav.expenses' },
       null, // center FAB placeholder
       { href: '/groups', icon: Users, labelKey: 'nav.groups' },
-      { href: '/settings', icon: MoreHorizontal, labelKey: 'nav.settings' },
+      { href: '/savings', icon: PiggyBank, labelKey: 'nav.savings' },
     ]
   }
 
@@ -33,7 +33,7 @@ function getMobileNavItems(isPersonal: boolean): NavSlot[] {
     { href: '/expenses', icon: DollarSign, labelKey: 'nav.expenses' },
     null, // center FAB placeholder
     { href: '/invoices', icon: FileText, labelKey: 'nav.invoices' },
-    { href: '/settings', icon: MoreHorizontal, labelKey: 'nav.settings' },
+    { href: '/team', icon: Users, labelKey: 'nav.team' },
   ]
 }
 

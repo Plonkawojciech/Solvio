@@ -1316,6 +1316,51 @@ const translations = {
     'vat.inputDesc': 'VAT naliczony z zakupów',
     'vat.outputDesc': 'VAT należny ze sprzedaży',
     'vat.toReturn': 'Do zwrotu',
+
+    // Savings Hub
+    'nav.savings': 'Oszczędzanie',
+    'savings.title': 'Oszczędzanie',
+    'savings.subtitle': 'Cele, budżet i wyzwania',
+    'savings.tabs.goals': 'Cele',
+    'savings.tabs.budget': 'Budżet',
+    'savings.tabs.challenges': 'Wyzwania',
+    'savings.tabs.deals': 'Promocje',
+    'savings.totalSaved': 'Zaoszczędzone łącznie',
+    'savings.healthScore': 'Kondycja finansowa',
+    'savings.aiTip': 'Wskazówka AI',
+    'savings.aiTipText': 'Na podstawie Twoich wydatków, możesz zaoszczędzić więcej optymalizując kategorię zakupy spożywcze.',
+    'savings.goalsEmpty': 'Brak celów oszczędnościowych. Stwórz swój pierwszy!',
+    'savings.budgetEmpty': 'Brak budżetów. Dodaj budżety w ustawieniach.',
+    'savings.challengesEmpty': 'Brak aktywnych wyzwań. Rozpocznij nowe wyzwanie!',
+    'savings.dealsEmpty': 'Brak promocji. Sprawdź ponownie później.',
+    'savings.viewAll': 'Zobacz wszystko',
+    'savings.monthOverview': 'Przegląd miesiąca',
+    'savings.canIAfford': 'Czy stać mnie na...?',
+    'savings.activeChallenges': 'Aktywne wyzwania',
+    'savings.personalizedDeals': 'Spersonalizowane promocje',
+    'savings.loyaltyCards': 'Karty lojalnościowe',
+
+    // Settings — additional sections
+    'settings.reports': 'Raporty',
+    'settings.reportsDesc': 'Generuj raporty wydatków w formatach CSV, PDF lub DOCX',
+    'settings.generateReports': 'Generuj raporty',
+    'settings.loyaltyCards': 'Karty lojalnościowe',
+    'settings.loyaltyCardsDesc': 'Zarządzaj swoimi kartami sklepowymi i programami lojalnościowymi',
+    'settings.manageLoyalty': 'Zarządzaj kartami',
+    'settings.jpkExport': 'Eksport JPK',
+    'settings.jpkExportDesc': 'Eksportuj plik JPK_V7M do urzędu skarbowego',
+    'settings.exportJpk': 'Eksportuj JPK_V7M',
+    'settings.analysisInsights': 'Analiza i wglądy',
+    'settings.analysisInsightsDesc': 'Analiza AI Twoich wydatków i audyt zakupów',
+    'settings.openAnalysis': 'Otwórz analizę',
+
+    // Invoices — tabs
+    'invoices.tab.invoices': 'Faktury',
+    'invoices.tab.vat': 'VAT',
+
+    // Expenses — tabs
+    'expenses.tab.expenses': 'Wydatki',
+    'expenses.tab.approvals': 'Zatwierdzenia',
   },
   en: {
     // Common
@@ -2630,6 +2675,51 @@ const translations = {
     'vat.inputDesc': 'Input VAT from purchases',
     'vat.outputDesc': 'Output VAT from sales',
     'vat.toReturn': 'To refund',
+
+    // Savings Hub
+    'nav.savings': 'Savings',
+    'savings.title': 'Savings',
+    'savings.subtitle': 'Goals, budget & challenges',
+    'savings.tabs.goals': 'Goals',
+    'savings.tabs.budget': 'Budget',
+    'savings.tabs.challenges': 'Challenges',
+    'savings.tabs.deals': 'Deals',
+    'savings.totalSaved': 'Total saved',
+    'savings.healthScore': 'Financial health',
+    'savings.aiTip': 'AI Tip',
+    'savings.aiTipText': 'Based on your spending, you could save more by optimizing the groceries category.',
+    'savings.goalsEmpty': 'No savings goals yet. Create your first one!',
+    'savings.budgetEmpty': 'No budgets set. Add budgets in settings.',
+    'savings.challengesEmpty': 'No active challenges. Start a new one!',
+    'savings.dealsEmpty': 'No deals available. Check back later.',
+    'savings.viewAll': 'View all',
+    'savings.monthOverview': 'Month overview',
+    'savings.canIAfford': 'Can I afford...?',
+    'savings.activeChallenges': 'Active challenges',
+    'savings.personalizedDeals': 'Personalized deals',
+    'savings.loyaltyCards': 'Loyalty cards',
+
+    // Settings — additional sections
+    'settings.reports': 'Reports',
+    'settings.reportsDesc': 'Generate expense reports in CSV, PDF or DOCX format',
+    'settings.generateReports': 'Generate reports',
+    'settings.loyaltyCards': 'Loyalty Cards',
+    'settings.loyaltyCardsDesc': 'Manage your store cards and loyalty programs',
+    'settings.manageLoyalty': 'Manage cards',
+    'settings.jpkExport': 'JPK Export',
+    'settings.jpkExportDesc': 'Export JPK_V7M file for tax office',
+    'settings.exportJpk': 'Export JPK_V7M',
+    'settings.analysisInsights': 'Analysis & Insights',
+    'settings.analysisInsightsDesc': 'AI analysis of your spending and shopping audit',
+    'settings.openAnalysis': 'Open analysis',
+
+    // Invoices — tabs
+    'invoices.tab.invoices': 'Invoices',
+    'invoices.tab.vat': 'VAT',
+
+    // Expenses — tabs
+    'expenses.tab.expenses': 'Expenses',
+    'expenses.tab.approvals': 'Approvals',
   },
 }
 

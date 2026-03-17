@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useTranslation } from '@/lib/i18n'
+import { useProductType } from '@/hooks/use-product-type'
 import { Button } from '@/components/ui/button'
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -18,7 +19,11 @@ import {
   ReceiptText, AlertCircle, RefreshCw, Search, FilterX,
   ChevronUp, ChevronDown, ChevronsUpDown, Download,
   ChevronLeft, ChevronRight, Share2, QrCode, Copy, CheckCheck,
+  DollarSign, ClipboardCheck,
 } from 'lucide-react'
+import dynamic from 'next/dynamic'
+
+const LazyApprovalsPage = dynamic(() => import('../approvals/page'), { ssr: false })
 import { AddExpenseTrigger } from '@/components/protected/dashboard/add-expense-trigger'
 import { ScanReceiptButton } from '@/components/protected/dashboard/scan-receipt-button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -106,6 +111,8 @@ function SortIcon({ field, sortField, sortDir }: { field: SortField; sortField: 
 // ─── Main component ────────────────────────────────────────────────────────────
 export default function ExpensesPage() {
   const { t, lang, mounted } = useTranslation()
+  const { isBusiness } = useProductType()
+  const [activeExpenseTab, setActiveExpenseTab] = useState<'expenses' | 'approvals'>('expenses')
 
   const translateCategoryName = useCallback((categoryName: string): string => {
     const categoryMap: Record<string, string> = {
@@ -614,10 +621,62 @@ export default function ExpensesPage() {
     }
   }
 
+  // ─── Approvals tab for business ────────────────────────────────────────────
+  if (isBusiness && activeExpenseTab === 'approvals') {
+    return (
+      <main className="min-h-screen w-full p-2 sm:p-4 md:p-6 lg:p-10">
+        <div className="flex flex-col h-full space-y-4 sm:space-y-6 md:space-y-10">
+          {/* Tab bar */}
+          <div className="flex gap-1 p-1 bg-muted/50 rounded-lg w-fit">
+            <button
+              onClick={() => setActiveExpenseTab('expenses')}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-md text-sm font-medium transition-all text-muted-foreground hover:text-foreground"
+              suppressHydrationWarning
+            >
+              <DollarSign className="h-4 w-4" />
+              {t('expenses.tab.expenses')}
+            </button>
+            <button
+              onClick={() => setActiveExpenseTab('approvals')}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-md text-sm font-medium transition-all bg-background shadow-sm text-foreground"
+              suppressHydrationWarning
+            >
+              <ClipboardCheck className="h-4 w-4" />
+              {t('expenses.tab.approvals')}
+            </button>
+          </div>
+          <LazyApprovalsPage />
+        </div>
+      </main>
+    )
+  }
+
   // ─── Render ──────────────────────────────────────────────────────────────────
   return (
     <main className="min-h-screen w-full p-2 sm:p-4 md:p-6 lg:p-10">
       <div className="flex flex-col h-full space-y-4 sm:space-y-6 md:space-y-10">
+
+        {/* ── Business Tab Bar ── */}
+        {isBusiness && (
+          <div className="flex gap-1 p-1 bg-muted/50 rounded-lg w-fit">
+            <button
+              onClick={() => setActiveExpenseTab('expenses')}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-md text-sm font-medium transition-all bg-background shadow-sm text-foreground"
+              suppressHydrationWarning
+            >
+              <DollarSign className="h-4 w-4" />
+              {t('expenses.tab.expenses')}
+            </button>
+            <button
+              onClick={() => setActiveExpenseTab('approvals')}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-md text-sm font-medium transition-all text-muted-foreground hover:text-foreground"
+              suppressHydrationWarning
+            >
+              <ClipboardCheck className="h-4 w-4" />
+              {t('expenses.tab.approvals')}
+            </button>
+          </div>
+        )}
 
         {/* ── Header ── */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 sm:gap-6">

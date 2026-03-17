@@ -22,11 +22,14 @@ import {
 import {
   FileText, Search, Upload, AlertCircle, RefreshCw, FileUp, Calendar,
   Building2, CreditCard, Clock, AlertTriangle, ChevronLeft, Loader2,
-  Image as ImageIcon, Download, Eye,
+  Image as ImageIcon, Download, Eye, Receipt,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { InvoiceCard, type Invoice } from '@/components/protected/business/invoice-card'
 import { cn } from '@/lib/utils'
+import dynamic from 'next/dynamic'
+
+const LazyVatPage = dynamic(() => import('../vat/page'), { ssr: false })
 
 // i18n keys:
 // 'invoices.title' / 'invoices.description'
@@ -393,6 +396,9 @@ export default function InvoicesPage() {
   const [uploading, setUploading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  // Main tabs: Invoices | VAT
+  const [activeMainTab, setActiveMainTab] = useState<'invoices' | 'vat'>('invoices')
+
   const currency = 'PLN'
   const locale = lang === 'pl' ? 'pl-PL' : 'en-US'
 
@@ -475,6 +481,34 @@ export default function InvoicesPage() {
 
   if (!isBusiness) return null
 
+  // VAT tab — render standalone
+  if (activeMainTab === 'vat') {
+    return (
+      <div className="flex flex-col gap-4 sm:gap-6">
+        {/* Tab bar */}
+        <div className="flex gap-1 p-1 bg-muted/50 rounded-lg w-fit">
+          <button
+            onClick={() => setActiveMainTab('invoices')}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-md text-sm font-medium transition-all text-muted-foreground hover:text-foreground"
+            suppressHydrationWarning
+          >
+            <FileText className="h-4 w-4" />
+            {t('invoices.tab.invoices')}
+          </button>
+          <button
+            onClick={() => setActiveMainTab('vat')}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-md text-sm font-medium transition-all bg-background shadow-sm text-foreground"
+            suppressHydrationWarning
+          >
+            <Receipt className="h-4 w-4" />
+            {t('invoices.tab.vat')}
+          </button>
+        </div>
+        <LazyVatPage />
+      </div>
+    )
+  }
+
   if (loading) return <InvoicesSkeleton />
   if (error) return <InvoicesError onRetry={() => fetchData()} />
 
@@ -488,8 +522,30 @@ export default function InvoicesPage() {
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.35 }} className="flex flex-col gap-4 sm:gap-6">
-      {/* Header */}
+      {/* Tab bar */}
       <motion.div custom={0} initial="hidden" animate="show" variants={fadeUp}>
+        <div className="flex gap-1 p-1 bg-muted/50 rounded-lg w-fit">
+          <button
+            onClick={() => setActiveMainTab('invoices')}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-md text-sm font-medium transition-all bg-background shadow-sm text-foreground"
+            suppressHydrationWarning
+          >
+            <FileText className="h-4 w-4" />
+            {t('invoices.tab.invoices')}
+          </button>
+          <button
+            onClick={() => setActiveMainTab('vat')}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-md text-sm font-medium transition-all text-muted-foreground hover:text-foreground"
+            suppressHydrationWarning
+          >
+            <Receipt className="h-4 w-4" />
+            {t('invoices.tab.vat')}
+          </button>
+        </div>
+      </motion.div>
+
+      {/* Header */}
+      <motion.div custom={1} initial="hidden" animate="show" variants={fadeUp}>
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div>
             <h1 className="text-2xl sm:text-3xl font-bold tracking-tight" suppressHydrationWarning>{t('invoices.title')}</h1>

@@ -1,4 +1,17 @@
 # Solvio — Expense Tracking App
+---
+
+## 100% AI Codebase — Instrukcja dla agentów
+
+> Ten codebase jest w **100% pisany i utrzymywany przez agenty AI** (Claude opus-4.6 / sonnet) via Claude Code. Nie ma kodu pisanego ręcznie przez człowieka.
+>
+> **OBOWIĄZEK:** Po każdej zmianie w tym projekcie zaktualizuj `progress.md` w root projektu:
+> - Data (YYYY-MM-DD)
+> - Krótki opis co zmieniono i dlaczego
+> - Dotknięte pliki/moduły
+>
+> `progress.md` to semantyczny tracker historii projektu — git log rejestruje commity, ale `progress.md` daje kolejnym agentom pełny kontekst: co, dlaczego, jakie moduły.
+
 
 AI-powered expense tracking SaaS with receipt scanning, group splitting, price comparison, and financial reporting. Full PL/EN bilingual support.
 

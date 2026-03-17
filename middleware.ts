@@ -4,12 +4,12 @@ const PROTECTED = [
   '/dashboard', '/expenses', '/analysis', '/audit', '/reports', '/settings',
   '/groups', '/prices', '/invoices', '/vat', '/team',
   '/approvals', '/bank', '/loyalty', '/promotions', '/onboarding',
-  '/goals', '/budget', '/challenges',
+  '/goals', '/budget', '/challenges', '/savings',
 ]
 const SESSION_COOKIE = 'solvio_session'
 
 // Pages only for personal users — business users get redirected to /dashboard
-const PERSONAL_ONLY = ['/goals', '/budget', '/challenges', '/loyalty', '/promotions']
+const PERSONAL_ONLY = ['/goals', '/budget', '/challenges', '/loyalty', '/promotions', '/savings']
 // Pages only for business users — personal users get redirected to /dashboard
 const BUSINESS_ONLY = ['/invoices', '/vat', '/team', '/approvals']
 
