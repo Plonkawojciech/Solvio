@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useState, useCallback, useMemo } from 'react';
-import { motion } from 'framer-motion';
 import {
   Card, CardContent, CardDescription, CardHeader, CardTitle,
 } from '@/components/ui/card';
@@ -43,17 +42,17 @@ interface Budget {
 // ─── Loading skeleton ─────────────────────────────────────────────────────────
 function DashboardSkeleton() {
   return (
-    <div className="flex flex-col gap-4 sm:gap-6 animate-pulse">
+    <div className="flex flex-col gap-6 animate-pulse">
       {/* Hero card */}
-      <div className="rounded-xl border-2 bg-card p-6 space-y-4">
+      <div className="rounded-lg border bg-card p-6 space-y-4">
         <div className="flex items-center justify-between">
           <div className="space-y-2">
-            <div className="h-5 w-32 rounded bg-muted" />
+            <div className="h-4 w-32 rounded bg-muted" />
             <div className="h-3 w-48 rounded bg-muted" />
           </div>
           <div className="h-8 w-8 rounded bg-muted" />
         </div>
-        <div className="h-10 w-40 rounded bg-muted" />
+        <div className="h-8 w-40 rounded bg-muted" />
         <div className="h-3 w-56 rounded bg-muted" />
         <div className="flex gap-2">
           <div className="h-9 w-36 rounded-md bg-muted" />
@@ -63,20 +62,20 @@ function DashboardSkeleton() {
       </div>
 
       {/* Stat cards */}
-      <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
         {Array.from({ length: 4 }).map((_, i) => (
-          <div key={i} className="rounded-xl border bg-card p-4 space-y-3">
+          <div key={i} className="rounded-lg border bg-card p-6 space-y-3">
             <div className="h-3 w-24 rounded bg-muted" />
-            <div className="h-7 w-28 rounded bg-muted" />
+            <div className="h-6 w-28 rounded bg-muted" />
             <div className="h-2.5 w-20 rounded bg-muted" />
           </div>
         ))}
       </div>
 
       {/* Main grid */}
-      <div className="grid gap-4 sm:gap-6 grid-cols-1 lg:grid-cols-3">
-        <div className="lg:col-span-2 rounded-xl border bg-card p-6 space-y-3">
-          <div className="h-5 w-36 rounded bg-muted" />
+      <div className="grid gap-4 grid-cols-1 lg:grid-cols-3">
+        <div className="lg:col-span-2 rounded-lg border bg-card p-6 space-y-3">
+          <div className="h-4 w-36 rounded bg-muted" />
           <div className="h-3 w-48 rounded bg-muted" />
           <div className="space-y-2 pt-4">
             {Array.from({ length: 6 }).map((_, i) => (
@@ -90,16 +89,16 @@ function DashboardSkeleton() {
             ))}
           </div>
         </div>
-        <div className="rounded-xl border bg-card p-6 space-y-3">
-          <div className="h-5 w-32 rounded bg-muted" />
+        <div className="rounded-lg border bg-card p-6 space-y-3">
+          <div className="h-4 w-32 rounded bg-muted" />
           <div className="h-3 w-44 rounded bg-muted" />
           <div className="mx-auto mt-4 h-48 w-48 rounded-full bg-muted" />
         </div>
       </div>
 
       {/* Chart */}
-      <div className="rounded-xl border bg-card p-6 space-y-3">
-        <div className="h-5 w-40 rounded bg-muted" />
+      <div className="rounded-lg border bg-card p-6 space-y-3">
+        <div className="h-4 w-40 rounded bg-muted" />
         <div className="h-3 w-52 rounded bg-muted" />
         <div className="mt-4 h-64 rounded-lg bg-muted" />
       </div>
@@ -112,28 +111,23 @@ function DashboardError({ onRetry }: { onRetry: () => void }) {
   const { t } = useTranslation()
   return (
     <div className="flex items-center justify-center min-h-[400px]">
-      <motion.div
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ duration: 0.35 }}
-        className="flex flex-col items-center gap-4 text-center max-w-sm"
-      >
-        <div className="h-16 w-16 rounded-full bg-destructive/10 flex items-center justify-center">
-          <AlertCircle className="h-8 w-8 text-destructive" />
+      <div className="flex flex-col items-center gap-4 text-center max-w-sm">
+        <div className="h-14 w-14 rounded-full bg-destructive/10 flex items-center justify-center">
+          <AlertCircle className="h-7 w-7 text-destructive" />
         </div>
         <div className="space-y-1">
-          <h3 className="text-lg font-semibold" suppressHydrationWarning>
+          <h3 className="text-sm font-semibold" suppressHydrationWarning>
             {t('dashboard.failedLoad')}
           </h3>
           <p className="text-sm text-muted-foreground" suppressHydrationWarning>
             {t('dashboard.failedLoadDesc')}
           </p>
         </div>
-        <Button onClick={onRetry} variant="outline" className="gap-2" suppressHydrationWarning>
+        <Button onClick={onRetry} variant="outline" size="sm" className="gap-2" suppressHydrationWarning>
           <RefreshCw className="h-4 w-4" />
           {t('dashboard.tryAgain')}
         </Button>
-      </motion.div>
+      </div>
     </div>
   );
 }
@@ -147,19 +141,6 @@ function DashboardEmpty({
   fetchData: () => void;
 }) {
   const { t } = useTranslation()
-
-  const containerVariants = {
-    hidden: { opacity: 0 },
-    show: {
-      opacity: 1,
-      transition: { staggerChildren: 0.12, delayChildren: 0.1 },
-    },
-  }
-
-  const itemVariants = {
-    hidden: { opacity: 0, y: 28 },
-    show: { opacity: 1, y: 0, transition: { duration: 0.5, ease: [0.22, 1, 0.36, 1] as const } },
-  }
 
   const steps = [
     {
@@ -200,15 +181,15 @@ function DashboardEmpty({
     {
       badge: t('onboarding.step3.badge'),
       icon: BarChart3,
-      iconClass: 'text-violet-600 dark:text-violet-400',
-      ringClass: 'bg-violet-100 dark:bg-violet-950/50',
-      badgeClass: 'bg-violet-100 dark:bg-violet-950/50 text-violet-700 dark:text-violet-300',
+      iconClass: 'text-muted-foreground',
+      ringClass: 'bg-muted',
+      badgeClass: 'bg-muted text-muted-foreground',
       title: t('onboarding.step3.title'),
       desc: t('onboarding.step3.desc'),
       completed: false,
       action: (
         <Link href="/analysis">
-          <Button variant="ghost" size="sm" className="gap-1.5 text-violet-700 dark:text-violet-400 hover:text-violet-800 dark:hover:text-violet-300 px-3 opacity-50 cursor-not-allowed pointer-events-none">
+          <Button variant="ghost" size="sm" className="gap-1.5 text-muted-foreground px-3 opacity-50 cursor-not-allowed pointer-events-none">
             <Sparkles className="h-3.5 w-3.5" />
             <span suppressHydrationWarning>{t('onboarding.step3.action')}</span>
           </Button>
@@ -218,90 +199,83 @@ function DashboardEmpty({
   ]
 
   return (
-    <motion.div
-      variants={containerVariants}
-      initial="hidden"
-      animate="show"
-      className="w-full max-w-2xl mx-auto py-8 px-4 flex flex-col gap-8"
-    >
+    <div className="w-full max-w-2xl mx-auto py-8 px-4 flex flex-col gap-8">
       {/* Header */}
-      <motion.div variants={itemVariants} className="text-center space-y-3">
+      <div className="text-center space-y-3">
         <div className="flex items-center justify-center gap-2 mb-4">
-          <div className="h-14 w-14 rounded-2xl bg-primary/10 flex items-center justify-center shadow-sm">
-            <Wallet className="h-7 w-7 text-primary" />
+          <div className="h-12 w-12 rounded-lg bg-muted flex items-center justify-center">
+            <Wallet className="h-6 w-6 text-muted-foreground" />
           </div>
         </div>
-        <h1 className="text-xl sm:text-2xl font-bold tracking-tight" suppressHydrationWarning>
+        <h1 className="text-lg font-semibold tracking-tight" suppressHydrationWarning>
           {t('onboarding.title')}
         </h1>
-        <p className="text-muted-foreground text-sm sm:text-base max-w-sm mx-auto" suppressHydrationWarning>
+        <p className="text-sm text-muted-foreground max-w-sm mx-auto" suppressHydrationWarning>
           {t('onboarding.subtitle')}
         </p>
-      </motion.div>
+      </div>
 
       {/* Step cards */}
       <div className="flex flex-col gap-4">
         {steps.map((step, idx) => {
           const Icon = step.icon
           return (
-            <motion.div key={idx} variants={itemVariants}>
-              <div className={`relative rounded-xl border bg-card p-5 transition-all duration-200 ${step.completed ? 'border-emerald-200 dark:border-emerald-900/60' : 'hover:border-primary/30 hover:shadow-sm'}`}>
-                {/* Completion stripe */}
-                {step.completed && (
-                  <div className="absolute left-0 top-0 bottom-0 w-1 rounded-l-xl bg-emerald-500" />
-                )}
+            <div key={idx} className={`relative rounded-lg border bg-card p-5 ${step.completed ? 'border-emerald-200 dark:border-emerald-900/60' : ''}`}>
+              {/* Completion stripe */}
+              {step.completed && (
+                <div className="absolute left-0 top-0 bottom-0 w-0.5 rounded-l-lg bg-emerald-500" />
+              )}
 
-                <div className="flex items-start gap-4">
-                  {/* Step icon */}
-                  <div className={`shrink-0 h-10 w-10 rounded-xl flex items-center justify-center ${step.ringClass}`}>
-                    <Icon className={`h-5 w-5 ${step.iconClass}`} />
-                  </div>
+              <div className="flex items-start gap-4">
+                {/* Step icon */}
+                <div className={`shrink-0 h-10 w-10 rounded-lg flex items-center justify-center ${step.ringClass}`}>
+                  <Icon className={`h-5 w-5 ${step.iconClass}`} />
+                </div>
 
-                  <div className="flex-1 min-w-0 space-y-2">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${step.badgeClass}`} suppressHydrationWarning>
-                        {step.badge}
+                <div className="flex-1 min-w-0 space-y-2">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${step.badgeClass}`} suppressHydrationWarning>
+                      {step.badge}
+                    </span>
+                    {step.completed && (
+                      <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400 flex items-center gap-1" suppressHydrationWarning>
+                        <CheckCircle2 className="h-3.5 w-3.5" />
+                        {t('onboarding.categoriesReady')}
                       </span>
-                      {step.completed && (
-                        <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400 flex items-center gap-1" suppressHydrationWarning>
-                          <CheckCircle2 className="h-3.5 w-3.5" />
-                          {t('onboarding.categoriesReady')}
-                        </span>
-                      )}
-                    </div>
-
-                    <div>
-                      <h3 className="font-semibold text-sm sm:text-base" suppressHydrationWarning>
-                        {step.title}
-                      </h3>
-                      <p className="text-xs sm:text-sm text-muted-foreground mt-0.5 leading-relaxed" suppressHydrationWarning>
-                        {step.desc}
-                      </p>
-                    </div>
-
-                    {/* Action */}
-                    <div className="pt-1">
-                      {step.action}
-                    </div>
+                    )}
                   </div>
 
-                  {/* Step number */}
-                  <div className={`shrink-0 h-7 w-7 rounded-full flex items-center justify-center text-xs font-bold border-2 ${step.completed ? 'border-emerald-500 text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40' : 'border-muted text-muted-foreground'}`}>
-                    {idx + 1}
+                  <div>
+                    <h3 className="text-sm font-medium" suppressHydrationWarning>
+                      {step.title}
+                    </h3>
+                    <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed" suppressHydrationWarning>
+                      {step.desc}
+                    </p>
+                  </div>
+
+                  {/* Action */}
+                  <div className="pt-1">
+                    {step.action}
                   </div>
                 </div>
+
+                {/* Step number */}
+                <div className={`shrink-0 h-7 w-7 rounded-full flex items-center justify-center text-xs font-medium border ${step.completed ? 'border-emerald-500 text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40' : 'border-border text-muted-foreground'}`}>
+                  {idx + 1}
+                </div>
               </div>
-            </motion.div>
+            </div>
           )
         })}
       </div>
 
       {/* Footer */}
-      <motion.div variants={itemVariants} className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
+      <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
         <ShieldCheck className="h-3.5 w-3.5 shrink-0" />
         <span suppressHydrationWarning>{t('onboarding.privacy')}</span>
-      </motion.div>
-    </motion.div>
+      </div>
+    </div>
   );
 }
 
@@ -374,9 +348,7 @@ export default function ProtectedPage() {
 
   // ── Derived data ────────────────────────────────────────────────────────────
   const calculatedData = useMemo(() => {
-    // Don't compute while loading
     if (loading) return null;
-    // After loading, even if there are 0 categories/expenses, compute (just with empty data)
 
     const today = new Date();
     const currency = (settings?.currency || 'PLN').toUpperCase();
@@ -391,7 +363,6 @@ export default function ProtectedPage() {
       id: e.id,
       description: e.title,
       categoryId: e.categoryId,
-      // raw name for colour lookup in the table
       categoryRaw: e.categoryId ? (catById.get(e.categoryId)?.name || 'Other') : '',
       category: e.categoryId
         ? translateCategoryName(catById.get(e.categoryId)?.name || 'Other')
@@ -410,7 +381,6 @@ export default function ProtectedPage() {
       ? Math.max(...recentExpenses.map(e => e.amount))
       : 0;
 
-    // Category spending from expenses
     const spentByCatId = new Map<string, number>();
     for (const e of expenses) {
       const key = e.categoryId || 'other';
@@ -441,7 +411,6 @@ export default function ProtectedPage() {
     const budgetRemaining = totalBudget - totalSpent;
     const budgetProgress = totalBudget > 0 ? (totalSpent / totalBudget) * 100 : 0;
 
-    // Monthly chart (30 days)
     const monthlySpendingData = Array.from({ length: 30 }).map((_, i) => {
       const d = new Date(today);
       d.setDate(today.getDate() - (29 - i));
@@ -485,7 +454,6 @@ export default function ProtectedPage() {
     return <DashboardError onRetry={fetchData} />;
   }
 
-  // calculatedData is guaranteed non-null here (loading is false, no error)
   const {
     currency, locale, recentExpenses, totalSpent, totalTransactions, avgDaily, avgTransaction,
     mostExpensive, receiptsScanned, categorySpendingData, topCategory, budgetData,
@@ -501,7 +469,7 @@ export default function ProtectedPage() {
     }).format(amount);
   }
 
-  // Empty state: fetch succeeded but there are no expenses at all
+  // Empty state
   if (recentExpenses.length === 0) {
     return (
       <DashboardEmpty
@@ -510,14 +478,6 @@ export default function ProtectedPage() {
       />
     );
   }
-
-  const fadeUp = {
-    hidden: { opacity: 0, y: 24 },
-    show: (i: number) => ({
-      opacity: 1, y: 0,
-      transition: { duration: 0.5, delay: i * 0.08, ease: [0.22, 1, 0.36, 1] as const },
-    }),
-  };
 
   const budgetProgressColor =
     budgetProgress >= 100
@@ -529,111 +489,90 @@ export default function ProtectedPage() {
       : 'bg-emerald-500';
 
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.35 }} className="flex flex-col gap-4 sm:gap-6">
-      {/* Hero Section — Premium Gradient */}
-      <motion.div custom={0} initial="hidden" animate="show" variants={fadeUp}>
-        <div className="relative overflow-hidden rounded-2xl gradient-primary shadow-premium-xl">
-          {/* Decorative elements */}
-          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_rgba(255,255,255,0.15)_0%,_transparent_60%)]" />
-          <div className="absolute -top-24 -right-24 h-48 w-48 rounded-full bg-white/5 blur-2xl" />
-          <div className="absolute -bottom-16 -left-16 h-40 w-40 rounded-full bg-white/5 blur-2xl" />
-
-          <div className="relative p-6 sm:p-8 space-y-5 sm:space-y-6">
-            {/* Header row */}
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-lg sm:text-xl font-semibold text-white/90">{t('dashboard.totalSpent') || 'Total Spent'}</h2>
-                <p className="text-sm text-white/60 hidden sm:block">{t('dashboard.spendingOverview') || 'Your spending overview'}</p>
-              </div>
-              <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-xl bg-white/10 backdrop-blur-sm flex items-center justify-center">
-                <Wallet className="h-5 w-5 sm:h-6 sm:w-6 text-white/80" />
-              </div>
-            </div>
-
-            {/* Total amount — big and bold */}
+    <div className="flex flex-col gap-6">
+      {/* Hero Section — Clean summary card */}
+      <Card>
+        <div className="p-6 space-y-5">
+          {/* Header row */}
+          <div className="flex items-center justify-between">
             <div>
-              <div className="flex items-baseline gap-2 sm:gap-3">
-                <span className="text-4xl sm:text-5xl font-extrabold text-white tabular-nums tracking-tight">{formatAmount(totalSpent)}</span>
-              </div>
-              <p className="text-sm text-white/50 mt-1.5" suppressHydrationWarning>
-                {totalTransactions} {t('dashboard.transactions') || 'transactions'} · {formatAmount(avgDaily)}/{t('dashboard.day')}
-              </p>
+              <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium">{t('dashboard.totalSpent') || 'Total Spent'}</p>
+              <p className="text-sm text-muted-foreground hidden sm:block mt-0.5">{t('dashboard.spendingOverview') || 'Your spending overview'}</p>
             </div>
-
-            {totalBudget > 0 && (
-              <div className="space-y-2.5 bg-white/10 backdrop-blur-sm rounded-xl p-4">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-white/70">{t('dashboard.budgetProgress') || 'Budget Progress'}</span>
-                  <span className="font-medium">
-                    {budgetRemaining >= 0
-                      ? <span className="text-emerald-300">{formatAmount(budgetRemaining)} {t('dashboard.left') || 'left'}</span>
-                      : <span className="text-red-300">{formatAmount(Math.abs(budgetRemaining))} {t('dashboard.over') || 'over'}</span>
-                    }
-                  </span>
-                </div>
-                {/* Progress bar on gradient */}
-                <div className="relative h-2.5 w-full overflow-hidden rounded-full bg-white/15">
-                  <div
-                    className={`h-full rounded-full transition-all duration-700 ${
-                      budgetProgress >= 100
-                        ? 'bg-red-400'
-                        : budgetProgress >= 90
-                        ? 'bg-yellow-400'
-                        : budgetProgress >= 70
-                        ? 'bg-amber-300'
-                        : 'bg-emerald-400'
-                    }`}
-                    style={{ width: `${Math.min(budgetProgress, 100)}%` }}
-                  />
-                </div>
-                <p className="text-xs text-white/50" suppressHydrationWarning>
-                  {budgetProgress.toFixed(1)}% {t('dashboard.of')} {formatAmount(totalBudget)} {t('dashboard.budget') || 'budget'} {t('dashboard.used') || 'used'}
-                </p>
-              </div>
-            )}
-
-            <div className="flex flex-col sm:flex-row gap-2 pt-1">
-              <ScanReceiptButton onAction={fetchData} />
-              <AddExpenseTrigger onAction={fetchData} />
-              <Link href="/expenses" className="w-full sm:w-auto">
-                <Button variant="outline" size="default" className="w-full sm:w-auto text-xs sm:text-sm bg-white/10 border-white/20 text-white hover:bg-white/20 hover:text-white">
-                  {t('dashboard.viewAllExpenses') || 'View All Expenses'}
-                  <ArrowUpRight className="ml-2 h-4 w-4" />
-                </Button>
-              </Link>
+            <div className="h-9 w-9 rounded-lg bg-muted flex items-center justify-center">
+              <Wallet className="h-4 w-4 text-muted-foreground" />
             </div>
           </div>
+
+          {/* Total amount */}
+          <div>
+            <span className="text-3xl font-semibold tabular-nums tracking-tight">{formatAmount(totalSpent)}</span>
+            <p className="text-sm text-muted-foreground mt-1" suppressHydrationWarning>
+              {totalTransactions} {t('dashboard.transactions') || 'transactions'} · {formatAmount(avgDaily)}/{t('dashboard.day')}
+            </p>
+          </div>
+
+          {totalBudget > 0 && (
+            <div className="space-y-2 rounded-lg border p-4">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">{t('dashboard.budgetProgress') || 'Budget Progress'}</span>
+                <span className="font-medium tabular-nums">
+                  {budgetRemaining >= 0
+                    ? <span className="text-emerald-600 dark:text-emerald-400">{formatAmount(budgetRemaining)} {t('dashboard.left') || 'left'}</span>
+                    : <span className="text-red-600 dark:text-red-400">{formatAmount(Math.abs(budgetRemaining))} {t('dashboard.over') || 'over'}</span>
+                  }
+                </span>
+              </div>
+              {/* Progress bar */}
+              <div className="relative h-2 w-full overflow-hidden rounded-full bg-muted">
+                <div
+                  className={`h-full rounded-full transition-all duration-700 ${budgetProgressColor}`}
+                  style={{ width: `${Math.min(budgetProgress, 100)}%` }}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground tabular-nums" suppressHydrationWarning>
+                {budgetProgress.toFixed(1)}% {t('dashboard.of')} {formatAmount(totalBudget)} {t('dashboard.budget') || 'budget'} {t('dashboard.used') || 'used'}
+              </p>
+            </div>
+          )}
+
+          <div className="flex flex-col sm:flex-row gap-2 pt-1">
+            <ScanReceiptButton onAction={fetchData} />
+            <AddExpenseTrigger onAction={fetchData} />
+            <Link href="/expenses" className="w-full sm:w-auto">
+              <Button variant="outline" size="default" className="w-full sm:w-auto text-sm">
+                {t('dashboard.viewAllExpenses') || 'View All Expenses'}
+                <ArrowUpRight className="ml-2 h-4 w-4" />
+              </Button>
+            </Link>
+          </div>
         </div>
-      </motion.div>
+      </Card>
 
       {/* Metric Cards */}
-      <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
         {[
           { label: t('dashboard.receiptsScanned') || 'Receipts Scanned', value: receiptsScanned, sub: t('dashboard.aiProcessed') || 'AI processed' },
           { label: t('dashboard.biggestPurchase') || 'Biggest Purchase', value: formatAmount(mostExpensive), sub: t('dashboard.largestTransaction') || 'Largest transaction' },
           { label: t('dashboard.avgTransaction') || 'Avg Transaction', value: formatAmount(avgTransaction), sub: t('dashboard.averagePerTransaction') || 'Average per transaction' },
           { label: t('dashboard.topCategory') || 'Top Category', value: topCategory, sub: t('dashboard.highestSpending') || 'Highest spending', truncate: true },
         ].map((card, i) => (
-          <motion.div key={i} custom={i + 1} initial="hidden" animate="show" variants={fadeUp}>
-            <Card className="h-full hover:shadow-md transition-shadow duration-200">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm font-medium text-muted-foreground">{card.label}</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className={`font-bold tabular-nums${card.truncate ? ' text-lg truncate' : ' text-2xl'}`} title={card.truncate ? String(card.value) : undefined}>{card.value}</div>
-                <p className="text-xs text-muted-foreground mt-1">{card.sub}</p>
-              </CardContent>
-            </Card>
-          </motion.div>
+          <Card key={i}>
+            <div className="p-6">
+              <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium">{card.label}</p>
+              <div className={`mt-2 font-semibold tabular-nums${card.truncate ? ' text-base truncate' : ' text-xl'}`} title={card.truncate ? String(card.value) : undefined}>{card.value}</div>
+              <p className="text-xs text-muted-foreground mt-1">{card.sub}</p>
+            </div>
+          </Card>
         ))}
       </div>
 
       {/* Main Content Grid */}
-      <motion.div custom={5} initial="hidden" animate="show" variants={fadeUp} className="grid gap-4 sm:gap-6 grid-cols-1 lg:grid-cols-3">
+      <div className="grid gap-4 grid-cols-1 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <Activity className="h-5 w-5" />
+              <Activity className="h-4 w-4 text-muted-foreground" />
               {t('dashboard.recentActivity') || 'Recent Activity'}
             </CardTitle>
             <CardDescription>{t('dashboard.latestTransactions') || 'Latest transactions'}</CardDescription>
@@ -658,7 +597,7 @@ export default function ProtectedPage() {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <Target className="h-5 w-5" />
+              <Target className="h-4 w-4 text-muted-foreground" />
               {t('dashboard.topCategories') || 'Top Categories'}
             </CardTitle>
             <CardDescription>{t('dashboard.whereMoneyGoes') || 'Where your money goes'}</CardDescription>
@@ -679,7 +618,7 @@ export default function ProtectedPage() {
                   {categorySpendingData.map((cat, idx) => (
                     <div key={idx} className="flex items-center justify-between text-sm">
                       <span className="text-muted-foreground">{cat.name}</span>
-                      <span className="font-medium tabular-nums">{formatAmount(cat.total)}</span>
+                      <span className="font-medium font-mono tabular-nums">{formatAmount(cat.total)}</span>
                     </div>
                   ))}
                 </div>
@@ -687,46 +626,42 @@ export default function ProtectedPage() {
             )}
           </CardContent>
         </Card>
-      </motion.div>
+      </div>
 
       {/* Category Budgets */}
       {budgetData.length > 0 && (
-        <motion.div custom={6} initial="hidden" animate="show" variants={fadeUp}>
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Target className="h-5 w-5" />
-                {t('dashboard.categoryBudgets') || 'Category Budgets'}
-              </CardTitle>
-              <CardDescription>{t('dashboard.trackSpending') || 'Track your spending by category'}</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <BudgetOverview key={`budget-${lastUpdate}`} data={budgetData} currency={currency} />
-            </CardContent>
-          </Card>
-        </motion.div>
-      )}
-
-      {/* Monthly Spending Trend */}
-      <motion.div custom={7} initial="hidden" animate="show" variants={fadeUp}>
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <TrendingUp className="h-5 w-5" />
-              {t('dashboard.monthlySpending') || 'Monthly Spending'}
+              <Target className="h-4 w-4 text-muted-foreground" />
+              {t('dashboard.categoryBudgets') || 'Category Budgets'}
             </CardTitle>
-            <CardDescription>{t('dashboard.dailyExpenses') || 'Daily expenses over the last 30 days'}</CardDescription>
+            <CardDescription>{t('dashboard.trackSpending') || 'Track your spending by category'}</CardDescription>
           </CardHeader>
-          <CardContent className="pl-2">
-            <MonthlySpendingChart
-              key={`monthly-${lastUpdate}`}
-              data={monthlySpendingData}
-              currency={currency}
-              categories={chartCategories}
-            />
+          <CardContent>
+            <BudgetOverview key={`budget-${lastUpdate}`} data={budgetData} currency={currency} />
           </CardContent>
         </Card>
-      </motion.div>
-    </motion.div>
+      )}
+
+      {/* Monthly Spending Trend */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <TrendingUp className="h-4 w-4 text-muted-foreground" />
+            {t('dashboard.monthlySpending') || 'Monthly Spending'}
+          </CardTitle>
+          <CardDescription>{t('dashboard.dailyExpenses') || 'Daily expenses over the last 30 days'}</CardDescription>
+        </CardHeader>
+        <CardContent className="pl-2">
+          <MonthlySpendingChart
+            key={`monthly-${lastUpdate}`}
+            data={monthlySpendingData}
+            currency={currency}
+            categories={chartCategories}
+          />
+        </CardContent>
+      </Card>
+    </div>
   );
 }

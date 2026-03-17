@@ -84,23 +84,19 @@ export function AppSidebar() {
   return (
     <Sidebar>
       <SidebarHeader className="border-b border-sidebar-border p-4">
-        <Link href="/dashboard" className="flex items-center gap-3 font-bold text-lg group">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl gradient-primary text-white shadow-colored transition-transform duration-200 group-hover:scale-105">
+        <Link href="/dashboard" className="flex items-center gap-3 group">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
             {isBusiness ? (
-              <Building2 className="h-4.5 w-4.5" />
+              <Building2 className="h-4 w-4" />
             ) : (
-              <Wallet className="h-4.5 w-4.5" />
+              <Wallet className="h-4 w-4" />
             )}
           </div>
           <div className="flex flex-col">
-            <span className="leading-tight tracking-tight">Solvio</span>
+            <span className="text-sm font-semibold leading-tight tracking-tight">Solvio</span>
             <span
               suppressHydrationWarning
-              className={`text-[10px] font-semibold uppercase tracking-wider leading-none ${
-                isBusiness
-                  ? 'text-blue-400'
-                  : 'text-emerald-400'
-              }`}
+              className="text-[10px] font-medium uppercase tracking-wider leading-none text-muted-foreground"
             >
               {t(`nav.${isPersonal ? 'personal' : 'business'}`)}
             </span>
@@ -120,7 +116,7 @@ export function AppSidebar() {
                 return (
                   <SidebarMenuItem key={item.href}>
                     <SidebarMenuButton asChild isActive={isActive}>
-                      <Link href={item.href} className={`flex items-center gap-2 transition-all duration-200 ${isActive ? 'border-l-2 border-primary pl-2 font-semibold' : ''}`}>
+                      <Link href={item.href} className="flex items-center gap-2">
                         <item.icon className="h-4 w-4" />
                         <span suppressHydrationWarning>{t(`nav.${item.key}`)}</span>
                       </Link>
@@ -140,13 +136,13 @@ export function AppSidebar() {
         <div className="h-px bg-sidebar-border" />
 
         {/* User info */}
-        <div className="flex items-center gap-3 px-2 py-2 rounded-xl hover:bg-white/5 transition-colors duration-200">
-          <div className="h-9 w-9 shrink-0 rounded-full overflow-hidden gradient-primary flex items-center justify-center shadow-sm">
-            <span className="text-xs font-bold text-white">{initials}</span>
+        <div className="flex items-center gap-3 px-2 py-2 rounded-lg">
+          <div className="h-8 w-8 shrink-0 rounded-full bg-muted flex items-center justify-center">
+            <span className="text-xs font-medium text-muted-foreground">{initials}</span>
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold truncate leading-tight">{displayName}</p>
-            {email && <p className="text-[11px] text-muted-foreground truncate mt-0.5">{email}</p>}
+            <p className="text-sm font-medium truncate leading-tight">{displayName}</p>
+            {email && <p className="text-xs text-muted-foreground truncate mt-0.5">{email}</p>}
           </div>
         </div>
 
@@ -159,7 +155,6 @@ export function AppSidebar() {
         {/* Keyboard shortcuts hint */}
         <KeyboardShortcutsButton
           onClick={() => {
-            // Dispatch a synthetic '?' keydown so KeyboardShortcuts handles it
             document.dispatchEvent(
               new KeyboardEvent('keydown', { key: '?', bubbles: true })
             )
@@ -170,7 +165,7 @@ export function AppSidebar() {
         <Button
           variant="ghost"
           size="sm"
-          className="w-full justify-start text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+          className="w-full justify-start text-muted-foreground hover:text-destructive hover:bg-destructive/10"
           onClick={handleSignOut}
         >
           <LogOut className="h-4 w-4 mr-2" />

@@ -47,25 +47,19 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
-
-  /* Premium accent tokens */
-  --color-accent-gold: hsl(var(--accent-gold));
-  --color-accent-emerald: hsl(var(--accent-emerald));
-  --color-accent-violet: hsl(var(--accent-violet));
 }
+
 @layer base {
   :root {
-    /* Paleta (niebieski, fiolet, turkus) - zostaje bez zmian */
-    --chart-1: 220 85% 60%;  /* Główny Niebieski */
-    --chart-2: 190 70% 65%;  /* Turkus/Cyjan */
-    --chart-3: 260 75% 65%;  /* Fiolet */
-    --chart-4: 210 80% 70%;  /* Jaśniejszy Niebieski */
-    --chart-5: 200 75% 55%;  /* Ciemniejszy Turkus */
-    --chart-6: 270 80% 70%;  /* Jaśniejszy Fiolet */
+    /* Chart colors — professional, muted palette */
+    --chart-1: 221 83% 53%;
+    --chart-2: 142 76% 36%;
+    --chart-3: 262 83% 58%;
+    --chart-4: 24 95% 53%;
+    --chart-5: 350 89% 60%;
+    --chart-6: 199 89% 48%;
 
-    /* 👇 POPRAWKA: Przywrócono mapowanie dla Dashboardu 👇 
-       Twój `page.tsx` używa tych zmiennych.
-    */
+    /* Dashboard chart variable mapping */
     --color-groceries: hsl(var(--chart-1));
     --color-transport: hsl(var(--chart-2));
     --color-food: hsl(var(--chart-3));
@@ -75,115 +69,102 @@
   }
 
   .dark {
-    /* Wersja dla trybu ciemnego - zostaje bez zmian */
-    --chart-1: 220 85% 65%;  
-    --chart-2: 190 70% 70%;  
-    --chart-3: 260 75% 70%;  
-    --chart-4: 210 80% 75%;  
-    --chart-5: 200 75% 60%;  
-    --chart-6: 270 80% 75%;  
+    --chart-1: 221 83% 60%;
+    --chart-2: 142 76% 42%;
+    --chart-3: 262 83% 65%;
+    --chart-4: 24 95% 58%;
+    --chart-5: 350 89% 65%;
+    --chart-6: 199 89% 55%;
   }
 }
 
 /* === LIGHT THEME === */
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    --background: 0 0% 99%;
+    --foreground: 240 10% 3.9%;
 
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card-foreground: 240 10% 3.9%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
+    --popover-foreground: 240 10% 3.9%;
 
-    --primary: 222 84% 48%;        /* Deeper, richer blue */
-    --primary-foreground: 210 40% 98%;
+    --primary: 240 5.9% 10%;
+    --primary-foreground: 0 0% 98%;
 
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 240 4.8% 95.9%;
+    --secondary-foreground: 240 5.9% 10%;
 
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
+    --muted: 240 4.8% 95.9%;
+    --muted-foreground: 240 3.8% 46.1%;
 
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
+    --accent: 240 4.8% 95.9%;
+    --accent-foreground: 240 5.9% 10%;
 
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 98%;
 
-    --border: 220 13% 88%;         /* Slightly more visible */
-    --input: 220 13% 88%;
-    --ring: 222 84% 48%;
+    --border: 240 5.9% 90%;
+    --input: 240 5.9% 90%;
+    --ring: 240 5% 64.9%;
 
-    --radius: 0.65rem;
+    --radius: 0.5rem;
 
-    /* Premium accent colors */
-    --accent-gold: 38 92% 50%;
-    --accent-emerald: 160 84% 39%;
-    --accent-violet: 263 70% 50%;
-    --shadow-color: 222 35% 20%;
-
-    /* Sidebar (dark premium) */
-    --sidebar: hsl(222 47% 8%);         /* Near-black with blue tint */
-    --sidebar-foreground: hsl(210 40% 96%);
-    --sidebar-primary: hsl(222 84% 55%);
-    --sidebar-primary-foreground: hsl(var(--primary-foreground));
-    --sidebar-accent: hsl(222 84% 55% / 0.15);
-    --sidebar-accent-foreground: hsl(222 84% 55%);
-    --sidebar-border: hsl(222 20% 18%);
-    --sidebar-ring: hsl(var(--ring));
+    /* Sidebar: light, clean */
+    --sidebar: hsl(0 0% 98%);
+    --sidebar-foreground: hsl(240 10% 3.9%);
+    --sidebar-primary: hsl(240 5.9% 10%);
+    --sidebar-primary-foreground: hsl(0 0% 98%);
+    --sidebar-accent: hsl(240 4.8% 95.9%);
+    --sidebar-accent-foreground: hsl(240 5.9% 10%);
+    --sidebar-border: hsl(240 5.9% 90%);
+    --sidebar-ring: hsl(240 5% 64.9%);
   }
 
   /* === DARK THEME === */
   .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
+    --background: 240 10% 3.9%;
+    --foreground: 0 0% 98%;
 
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
+    --card: 240 10% 3.9%;
+    --card-foreground: 0 0% 98%;
 
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
+    --popover: 240 10% 3.9%;
+    --popover-foreground: 0 0% 98%;
 
-    --primary: 222 84% 60%;
-    --primary-foreground: 222.2 47.4% 11.2%;
+    --primary: 0 0% 98%;
+    --primary-foreground: 240 5.9% 10%;
 
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
+    --secondary: 240 3.7% 15.9%;
+    --secondary-foreground: 0 0% 98%;
 
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
+    --muted: 240 3.7% 15.9%;
+    --muted-foreground: 240 5% 64.9%;
 
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
+    --accent: 240 3.7% 15.9%;
+    --accent-foreground: 0 0% 98%;
 
     --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
+    --destructive-foreground: 0 85.7% 97.3%;
 
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 222 84% 60%;
+    --border: 240 3.7% 15.9%;
+    --input: 240 3.7% 15.9%;
+    --ring: 240 4.9% 83.9%;
 
-    /* Premium accent colors (dark) */
-    --accent-gold: 38 92% 50%;
-    --accent-emerald: 160 84% 39%;
-    --accent-violet: 263 70% 60%;
-    --shadow-color: 222 35% 8%;
-
-    /* Sidebar (dark) */
-    --sidebar: hsl(222 47% 5%);
-    --sidebar-foreground: hsl(210 40% 98%);
-    --sidebar-primary: hsl(var(--primary));
-    --sidebar-primary-foreground: hsl(var(--primary-foreground));
-    --sidebar-accent: hsl(var(--primary) / 0.25);
-    --sidebar-accent-foreground: hsl(var(--primary));
-    --sidebar-border: hsl(222 20% 12%);
-    --sidebar-ring: hsl(var(--ring));
+    /* Sidebar: dark, clean */
+    --sidebar: hsl(240 10% 5%);
+    --sidebar-foreground: hsl(0 0% 98%);
+    --sidebar-primary: hsl(0 0% 98%);
+    --sidebar-primary-foreground: hsl(240 5.9% 10%);
+    --sidebar-accent: hsl(240 3.7% 15.9%);
+    --sidebar-accent-foreground: hsl(0 0% 98%);
+    --sidebar-border: hsl(240 3.7% 15.9%);
+    --sidebar-ring: hsl(240 4.9% 83.9%);
   }
 }
 
-/* zgodność z Tailwind v3 */
+/* zgodnosc z Tailwind v3 */
 @layer base {
   *,
   ::before,
@@ -196,26 +177,25 @@
   * {
     @apply border-border outline-ring/50;
   }
-  
+
   body {
     @apply bg-background text-foreground;
   }
 
-  /* Stylizowanie domyślnego tooltipa Recharts - zostaje bez zmian */
+  /* Recharts tooltip */
   .recharts-default-tooltip {
     background-color: var(--color-popover) !important;
     color: var(--color-popover-foreground) !important;
     border: 1px solid var(--color-border) !important;
     border-radius: var(--radius-md) !important;
     padding: 0.5rem 0.75rem !important;
-    box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+    box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
   }
-  
-  /* Styl dla etykiety w tooltipie (np. "Oct 27") */
+
   .recharts-tooltip-label {
     color: var(--color-muted-foreground) !important;
-    font-size: 0.875rem; /* text-sm */
-    margin-bottom: 0.25rem; /* mb-1 */
+    font-size: 0.875rem;
+    margin-bottom: 0.25rem;
   }
 }
 
@@ -225,7 +205,6 @@
     scroll-behavior: smooth;
   }
 
-  /* Faster taps on mobile — remove 300ms delay highlight */
   button, a, [role="button"], input, select, textarea {
     -webkit-tap-highlight-color: transparent;
     touch-action: manipulation;
@@ -263,51 +242,16 @@
     display: none;
   }
 
-  /* GPU-accelerated transform hint — use sparingly on animated elements */
   .will-change-transform {
     will-change: transform;
   }
 
-  /* Touch optimization for scrollable containers */
   .touch-manipulation {
     touch-action: manipulation;
   }
 
-  /* Content visibility for off-screen sections — huge paint savings */
   .content-auto {
     content-visibility: auto;
     contain-intrinsic-size: auto 500px;
-  }
-
-  /* ── Premium gradients & shadows ── */
-  .gradient-primary {
-    background: linear-gradient(135deg, hsl(var(--primary)), hsl(222 84% 38%));
-  }
-  .gradient-gold {
-    background: linear-gradient(135deg, hsl(38 92% 50%), hsl(28 90% 45%));
-  }
-  .gradient-subtle {
-    background: linear-gradient(135deg, hsl(var(--background)), hsl(220 14% 96%));
-  }
-  .gradient-glass {
-    background: linear-gradient(135deg, rgba(255,255,255,0.08), rgba(255,255,255,0.02));
-  }
-  .shadow-premium {
-    box-shadow: 0 4px 16px rgba(0,0,0,0.08), 0 1px 4px rgba(0,0,0,0.04);
-  }
-  .shadow-premium-hover {
-    box-shadow: 0 8px 30px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.06);
-  }
-  .shadow-premium-xl {
-    box-shadow: 0 16px 48px rgba(0,0,0,0.15), 0 4px 12px rgba(0,0,0,0.08);
-  }
-  .shadow-colored {
-    box-shadow: 0 8px 24px hsl(var(--primary) / 0.2);
-  }
-  .text-gradient {
-    background: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--accent-violet)));
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
   }
 }

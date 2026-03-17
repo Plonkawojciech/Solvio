@@ -8,7 +8,7 @@ import { LanguageSwitcher } from '@/components/language-switcher'
 
 export function AppMobileHeader() {
   return (
-    <header className="md:hidden sticky top-0 z-50 w-full border-b border-border/50 bg-background/80 backdrop-blur-xl shadow-sm">
+    <header className="md:hidden sticky top-0 z-50 w-full border-b bg-background">
       <div className="flex items-center justify-between px-3 h-14">
         {/* Hamburger trigger */}
         <SidebarTrigger className="h-9 w-9" />
@@ -16,9 +16,9 @@ export function AppMobileHeader() {
         {/* Logo / app name — centered */}
         <Link
           href="/dashboard"
-          className="absolute left-1/2 -translate-x-1/2 flex items-center gap-2 font-bold text-base"
+          className="absolute left-1/2 -translate-x-1/2 flex items-center gap-2 text-sm font-semibold"
         >
-          <div className="flex h-7 w-7 items-center justify-center rounded-lg gradient-primary text-white shadow-sm">
+          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary text-primary-foreground">
             <Wallet className="h-3.5 w-3.5" />
           </div>
           <span className="truncate">Solvio</span>

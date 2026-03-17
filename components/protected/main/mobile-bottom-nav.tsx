@@ -48,11 +48,10 @@ export function MobileBottomNav() {
 
   return (
     <>
-      <nav className="fixed bottom-0 left-0 right-0 z-50 md:hidden bg-background/95 backdrop-blur-md border-t border-border/50">
+      <nav className="fixed bottom-0 left-0 right-0 z-50 md:hidden bg-background border-t">
         <div className="flex items-center justify-around h-16 px-2 pb-[env(safe-area-inset-bottom)]">
           {navItems.map((item, i) => {
             if (!item) {
-              // On groups pages, FAB opens Quick Split; otherwise navigates to expenses
               if (isOnGroupsPage) {
                 return (
                   <button
@@ -62,8 +61,8 @@ export function MobileBottomNav() {
                     className="flex flex-col items-center justify-center -mt-5"
                     aria-label={t('groups.quickSplit' as any)}
                   >
-                    <div className="h-12 w-12 rounded-full bg-primary text-primary-foreground shadow-lg shadow-primary/30 flex items-center justify-center">
-                      <Zap className="h-6 w-6" />
+                    <div className="h-11 w-11 rounded-full bg-primary text-primary-foreground shadow-sm flex items-center justify-center">
+                      <Zap className="h-5 w-5" />
                     </div>
                   </button>
                 )
@@ -76,8 +75,8 @@ export function MobileBottomNav() {
                   className="flex flex-col items-center justify-center -mt-5"
                   aria-label="Scan receipt"
                 >
-                  <div className="h-12 w-12 rounded-full bg-primary text-primary-foreground shadow-lg shadow-primary/30 flex items-center justify-center">
-                    <Plus className="h-6 w-6" />
+                  <div className="h-11 w-11 rounded-full bg-primary text-primary-foreground shadow-sm flex items-center justify-center">
+                    <Plus className="h-5 w-5" />
                   </div>
                 </Link>
               )
@@ -93,11 +92,11 @@ export function MobileBottomNav() {
                 href={item.href}
                 className={cn(
                   'flex flex-col items-center justify-center gap-1 flex-1 min-h-[44px] py-2 rounded-lg transition-colors',
-                  isActive ? 'text-primary' : 'text-muted-foreground'
+                  isActive ? 'text-foreground' : 'text-muted-foreground'
                 )}
               >
-                <Icon className="h-6 w-6" />
-                <span className="text-[11px] font-medium leading-none">
+                <Icon className="h-5 w-5" />
+                <span className="text-[10px] font-medium leading-none">
                   {t(item.labelKey as Parameters<typeof t>[0])}
                 </span>
               </Link>
