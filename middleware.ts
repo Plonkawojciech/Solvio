@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 
 const PROTECTED = [
   '/dashboard', '/expenses', '/analysis', '/audit', '/reports', '/settings',
-  '/groups', '/prices', '/invoices', '/vat', '/team', '/departments',
+  '/groups', '/prices', '/invoices', '/vat', '/team',
   '/approvals', '/bank', '/loyalty', '/promotions', '/onboarding',
   '/goals', '/budget', '/challenges',
 ]

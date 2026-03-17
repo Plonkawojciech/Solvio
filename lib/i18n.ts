@@ -1281,6 +1281,34 @@ const translations = {
     'health.fair': 'Średnie',
     'health.poor': 'Słabe',
     'health.calculating': 'Obliczanie...',
+
+    // Approval Card
+    'approval.approve': 'Zatwierdź',
+    'approval.reject': 'Odrzuć',
+    'approval.addNotes': 'Dodaj uwagi',
+    'approval.hideNotes': 'Ukryj uwagi',
+    'approval.notesPlaceholder': 'Opcjonalne uwagi...',
+    'approval.reviewedBy': 'Sprawdzone przez',
+    'approval.reviewedAt': 'Data przeglądu',
+    'approval.viewReceipt': 'Zobacz paragon',
+    'approval.status.pending': 'Oczekujące',
+    'approval.status.approved': 'Zatwierdzone',
+    'approval.status.rejected': 'Odrzucone',
+
+    // Invoice Card
+    'invoice.due': 'Termin płatności',
+
+    // Team Member Card
+    'team.edit': 'Edytuj',
+    'team.inactive': 'Nieaktywny',
+    'team.noLimit': 'Brak limitu',
+    'team.spendingUsed': 'Wykorzystano',
+    'team.you': 'Ty',
+
+    // VAT Summary Card
+    'vat.inputDesc': 'VAT naliczony z zakupów',
+    'vat.outputDesc': 'VAT należny ze sprzedaży',
+    'vat.toReturn': 'Do zwrotu',
   },
   en: {
     // Common
@@ -2560,6 +2588,34 @@ const translations = {
     'health.fair': 'Fair',
     'health.poor': 'Poor',
     'health.calculating': 'Calculating...',
+
+    // Approval Card
+    'approval.approve': 'Approve',
+    'approval.reject': 'Reject',
+    'approval.addNotes': 'Add notes',
+    'approval.hideNotes': 'Hide notes',
+    'approval.notesPlaceholder': 'Optional notes...',
+    'approval.reviewedBy': 'Reviewed by',
+    'approval.reviewedAt': 'Reviewed at',
+    'approval.viewReceipt': 'View receipt',
+    'approval.status.pending': 'Pending',
+    'approval.status.approved': 'Approved',
+    'approval.status.rejected': 'Rejected',
+
+    // Invoice Card
+    'invoice.due': 'Due date',
+
+    // Team Member Card
+    'team.edit': 'Edit',
+    'team.inactive': 'Inactive',
+    'team.noLimit': 'No limit',
+    'team.spendingUsed': 'Spent',
+    'team.you': 'You',
+
+    // VAT Summary Card
+    'vat.inputDesc': 'Input VAT from purchases',
+    'vat.outputDesc': 'Output VAT from sales',
+    'vat.toReturn': 'To refund',
   },
 }
 
