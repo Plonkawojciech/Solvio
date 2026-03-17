@@ -19,8 +19,9 @@ export async function POST(
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
 
-  const { amount, note } = body
-  if (!amount || amount <= 0) {
+  const { amount: rawAmount, note } = body
+  const amount = typeof rawAmount === 'string' ? parseFloat(rawAmount) : Number(rawAmount)
+  if (!amount || isNaN(amount) || amount <= 0) {
     return NextResponse.json({ error: 'Amount must be positive' }, { status: 400 })
   }
 

@@ -147,6 +147,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'expenseId required' }, { status: 400 })
     }
 
+    // Validate UUID format
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+    if (!uuidRegex.test(body.expenseId)) {
+      return NextResponse.json({ error: 'Invalid expenseId format' }, { status: 400 })
+    }
+
     // Get user's company
     const memberResult = await db.select({ companyId: companyMembers.companyId })
       .from(companyMembers)

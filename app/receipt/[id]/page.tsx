@@ -13,11 +13,15 @@ export async function generateMetadata({
   params: Promise<{ id: string }>
 }): Promise<Metadata> {
   const { id } = await params
-  const [receipt] = await db.select().from(receipts).where(eq(receipts.id, id))
-  if (!receipt) return { title: 'Receipt not found — Solvio' }
-  return {
-    title: `${receipt.vendor || 'Receipt'} — Solvio`,
-    description: `Shared receipt from ${receipt.vendor || 'a store'}${receipt.date ? ` on ${receipt.date}` : ''}`,
+  try {
+    const [receipt] = await db.select().from(receipts).where(eq(receipts.id, id))
+    if (!receipt) return { title: 'Receipt not found — Solvio' }
+    return {
+      title: `${receipt.vendor || 'Receipt'} — Solvio`,
+      description: `Shared receipt from ${receipt.vendor || 'a store'}${receipt.date ? ` on ${receipt.date}` : ''}`,
+    }
+  } catch {
+    return { title: 'Receipt not found — Solvio' }
   }
 }
 
@@ -62,7 +66,13 @@ export default async function SharedReceiptPage({
   params: Promise<{ id: string }>
 }) {
   const { id } = await params
-  const [receipt] = await db.select().from(receipts).where(eq(receipts.id, id))
+  let receipt
+  try {
+    const [r] = await db.select().from(receipts).where(eq(receipts.id, id))
+    receipt = r
+  } catch {
+    notFound()
+  }
   if (!receipt) notFound()
 
   const items: ReceiptItem[] = Array.isArray(receipt.items)

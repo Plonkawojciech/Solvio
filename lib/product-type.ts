@@ -21,13 +21,22 @@ export async function getOnboardingStatus(userId: string): Promise<boolean> {
 }
 
 export async function setProductType(userId: string, productType: ProductType, companyName?: string, nip?: string) {
-  await db.update(userSettings)
-    .set({
+  await db.insert(userSettings)
+    .values({
+      userId,
       productType,
       companyName: companyName || null,
       nip: nip || null,
       onboardingComplete: true,
-      updatedAt: new Date(),
     })
-    .where(eq(userSettings.userId, userId))
+    .onConflictDoUpdate({
+      target: userSettings.userId,
+      set: {
+        productType,
+        companyName: companyName || null,
+        nip: nip || null,
+        onboardingComplete: true,
+        updatedAt: new Date(),
+      },
+    })
 }
