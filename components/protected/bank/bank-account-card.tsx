@@ -93,7 +93,7 @@ export function BankAccountCard({
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, delay: index * 0.08, ease: [0.22, 1, 0.36, 1] as const }}
     >
-      <Card className="overflow-hidden hover:shadow-md transition-shadow duration-200">
+      <Card className="overflow-hidden hover:shadow-md hover:-translate-y-0.5 transition-all duration-300">
         <CardContent className="p-5">
           <div className="flex items-start justify-between gap-3">
             <div className="flex items-center gap-3">

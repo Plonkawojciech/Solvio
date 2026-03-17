@@ -57,7 +57,7 @@ export function ChallengeCard({ challenge, index, onCheckIn, onDelete, currency 
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, delay: index * 0.08, ease: [0.22, 1, 0.36, 1] }}
     >
-      <Card className="h-full overflow-hidden hover:shadow-md transition-shadow border-border/60 relative group">
+      <Card className="h-full overflow-hidden hover:shadow-md hover:-translate-y-0.5 transition-all duration-300 border-border/60 relative group">
         <CardContent className="p-4 flex flex-col gap-3">
           {/* Header */}
           <div className="flex items-start justify-between gap-2">

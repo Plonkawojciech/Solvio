@@ -67,7 +67,7 @@ export function SavingsGoalCard({ goal, index, onAddFunds, onDelete, currency }:
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, delay: index * 0.08, ease: [0.22, 1, 0.36, 1] }}
     >
-      <Card className="h-full overflow-hidden hover:shadow-md transition-shadow border-border/60 relative group">
+      <Card className="h-full overflow-hidden hover:shadow-md hover:-translate-y-0.5 transition-all duration-300 border-border/60 relative group">
         {/* Color accent bar */}
         <div className="absolute top-0 left-0 right-0 h-1 rounded-t-lg" style={{ backgroundColor: color }} />
 

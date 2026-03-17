@@ -934,13 +934,16 @@ export default function ExpensesPage() {
               ) : (
                 <>
                   {/* ── Mobile: Card view ── */}
-                  <div className="block sm:hidden space-y-3 overflow-y-auto max-h-[60vh]">
-                    {pagedExpenses.map((expense, idx) => (
+                  <motion.div
+                    className="block sm:hidden space-y-3 overflow-y-auto max-h-[60vh]"
+                    variants={{ hidden: {}, visible: { transition: { staggerChildren: 0.05 } } }}
+                    initial="hidden"
+                    animate="visible"
+                  >
+                    {pagedExpenses.map((expense) => (
                       <motion.div
                         key={expense.id}
-                        initial={{ opacity: 0, y: 8 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: idx * 0.03 }}
+                        variants={{ hidden: { opacity: 0, y: 8 }, visible: { opacity: 1, y: 0, transition: { duration: 0.3 } } }}
                         className={`border rounded-lg p-3 transition-colors ${
                           selectedExpense?.id === expense.id
                             ? 'bg-muted/40 border-primary'
@@ -1049,7 +1052,7 @@ export default function ExpensesPage() {
                         </div>
                       </motion.div>
                     ))}
-                  </div>
+                  </motion.div>
 
                   {/* ── Desktop: Table view ── */}
                   <div className="hidden sm:block overflow-y-auto max-h-[60vh]">
@@ -1102,13 +1105,13 @@ export default function ExpensesPage() {
                       </TableHeader>
                       <TableBody>
                         <AnimatePresence initial={false}>
-                          {pagedExpenses.map((expense) => (
+                          {pagedExpenses.map((expense, idx) => (
                             <motion.tr
                               key={expense.id}
-                              initial={{ opacity: 0 }}
-                              animate={{ opacity: 1 }}
+                              initial={{ opacity: 0, y: 8 }}
+                              animate={{ opacity: 1, y: 0 }}
                               exit={{ opacity: 0 }}
-                              transition={{ duration: 0.15 }}
+                              transition={{ duration: 0.3, delay: idx * 0.05 }}
                               className={`border-b transition-colors ${
                                 selectedExpense?.id === expense.id
                                   ? 'bg-muted/40'

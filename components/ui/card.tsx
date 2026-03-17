@@ -14,8 +14,9 @@ function Card({ className, onDrag, onDragStart, onDragEnd, ...props }: React.Com
       }}
       transition={{ duration: 0.25, ease: 'easeOut' }}
       className={cn(
-        'relative flex flex-col gap-6 rounded-2xl border border-border/60 bg-card/80 backdrop-blur-sm text-card-foreground shadow-sm transition-all duration-200',
-        'hover:border-primary/40 hover:shadow-md hover:bg-card/90',
+        'relative flex flex-col gap-6 rounded-2xl border border-border/70 bg-card/80 backdrop-blur-sm text-card-foreground shadow-premium transition-all duration-300',
+        'before:absolute before:inset-x-0 before:top-0 before:h-[2px] before:rounded-t-2xl before:bg-gradient-to-r before:from-primary/60 before:via-primary/20 before:to-transparent before:opacity-0 before:transition-opacity before:duration-300',
+        'hover:border-primary/40 hover:shadow-premium-hover hover:bg-card/90 hover:before:opacity-100',
         className
       )}
       {...(props as any)}

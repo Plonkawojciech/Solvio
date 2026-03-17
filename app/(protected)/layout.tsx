@@ -7,6 +7,7 @@ import { ensureUserSeeded } from '@/lib/db/seed-user'
 import { AppMobileHeader } from '@/components/protected/main/app-mobile-header'
 import { KeyboardShortcuts } from '@/components/protected/main/keyboard-shortcuts'
 import { MobileBottomNav } from '@/components/protected/main/mobile-bottom-nav'
+import { NavProgress } from '@/components/protected/main/nav-progress'
 import { getProductType, getOnboardingStatus } from '@/lib/product-type'
 import { ProductTypeProvider } from '@/hooks/use-product-type'
 
@@ -32,6 +33,7 @@ export default async function ProtectedLayout({ children }: { children: React.Re
   return (
     <ProductTypeProvider productType={productType}>
       <SidebarProvider>
+        <NavProgress />
         <div className="flex flex-col min-h-screen w-full overflow-x-hidden">
           {/* Mobile-only sticky top header with logo + sidebar trigger */}
           <AppMobileHeader />

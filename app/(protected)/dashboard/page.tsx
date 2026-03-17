@@ -530,73 +530,80 @@ export default function ProtectedPage() {
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.35 }} className="flex flex-col gap-4 sm:gap-6">
-      {/* Hero Section */}
+      {/* Hero Section — Premium Gradient */}
       <motion.div custom={0} initial="hidden" animate="show" variants={fadeUp}>
-        <Card className="border-2">
-          <CardHeader>
+        <div className="relative overflow-hidden rounded-2xl gradient-primary shadow-premium-xl">
+          {/* Decorative elements */}
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_rgba(255,255,255,0.15)_0%,_transparent_60%)]" />
+          <div className="absolute -top-24 -right-24 h-48 w-48 rounded-full bg-white/5 blur-2xl" />
+          <div className="absolute -bottom-16 -left-16 h-40 w-40 rounded-full bg-white/5 blur-2xl" />
+
+          <div className="relative p-6 sm:p-8 space-y-5 sm:space-y-6">
+            {/* Header row */}
             <div className="flex items-center justify-between">
               <div>
-                <CardTitle className="text-xl sm:text-2xl font-bold">{t('dashboard.totalSpent') || 'Total Spent'}</CardTitle>
-                <CardDescription className="hidden sm:block">{t('dashboard.spendingOverview') || 'Your spending overview'}</CardDescription>
+                <h2 className="text-lg sm:text-xl font-semibold text-white/90">{t('dashboard.totalSpent') || 'Total Spent'}</h2>
+                <p className="text-sm text-white/60 hidden sm:block">{t('dashboard.spendingOverview') || 'Your spending overview'}</p>
               </div>
-              <Wallet className="h-6 w-6 sm:h-8 sm:w-8 text-muted-foreground" />
+              <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-xl bg-white/10 backdrop-blur-sm flex items-center justify-center">
+                <Wallet className="h-5 w-5 sm:h-6 sm:w-6 text-white/80" />
+              </div>
             </div>
-          </CardHeader>
-          <CardContent className="space-y-4 sm:space-y-6">
+
+            {/* Total amount — big and bold */}
             <div>
-              <p className="text-sm text-muted-foreground mb-1">{t('dashboard.totalSpent') || 'Total Spent'}</p>
               <div className="flex items-baseline gap-2 sm:gap-3">
-                <span className="text-3xl sm:text-4xl font-bold tabular-nums">{formatAmount(totalSpent)}</span>
+                <span className="text-4xl sm:text-5xl font-extrabold text-white tabular-nums tracking-tight">{formatAmount(totalSpent)}</span>
               </div>
-              <p className="text-xs text-muted-foreground mt-1" suppressHydrationWarning>
+              <p className="text-sm text-white/50 mt-1.5" suppressHydrationWarning>
                 {totalTransactions} {t('dashboard.transactions') || 'transactions'} · {formatAmount(avgDaily)}/{t('dashboard.day')}
               </p>
             </div>
 
             {totalBudget > 0 && (
-              <div className="space-y-2">
+              <div className="space-y-2.5 bg-white/10 backdrop-blur-sm rounded-xl p-4">
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">{t('dashboard.budgetProgress') || 'Budget Progress'}</span>
+                  <span className="text-white/70">{t('dashboard.budgetProgress') || 'Budget Progress'}</span>
                   <span className="font-medium">
                     {budgetRemaining >= 0
-                      ? <span className="text-emerald-600 dark:text-emerald-400">{formatAmount(budgetRemaining)} {t('dashboard.left') || 'left'}</span>
-                      : <span className="text-red-600 dark:text-red-400">{formatAmount(Math.abs(budgetRemaining))} {t('dashboard.over') || 'over'}</span>
+                      ? <span className="text-emerald-300">{formatAmount(budgetRemaining)} {t('dashboard.left') || 'left'}</span>
+                      : <span className="text-red-300">{formatAmount(Math.abs(budgetRemaining))} {t('dashboard.over') || 'over'}</span>
                     }
                   </span>
                 </div>
-                {/* Color-coded progress bar */}
-                <div className={`relative h-2.5 w-full overflow-hidden rounded-full ${
-                  budgetProgress >= 100
-                    ? 'bg-red-100 dark:bg-red-950/40'
-                    : budgetProgress >= 90
-                    ? 'bg-yellow-100 dark:bg-yellow-950/40'
-                    : budgetProgress >= 70
-                    ? 'bg-amber-100 dark:bg-amber-950/40'
-                    : 'bg-emerald-100 dark:bg-emerald-950/40'
-                }`}>
+                {/* Progress bar on gradient */}
+                <div className="relative h-2.5 w-full overflow-hidden rounded-full bg-white/15">
                   <div
-                    className={`h-full rounded-full transition-all duration-700 ${budgetProgressColor}`}
+                    className={`h-full rounded-full transition-all duration-700 ${
+                      budgetProgress >= 100
+                        ? 'bg-red-400'
+                        : budgetProgress >= 90
+                        ? 'bg-yellow-400'
+                        : budgetProgress >= 70
+                        ? 'bg-amber-300'
+                        : 'bg-emerald-400'
+                    }`}
                     style={{ width: `${Math.min(budgetProgress, 100)}%` }}
                   />
                 </div>
-                <p className="text-xs text-muted-foreground" suppressHydrationWarning>
+                <p className="text-xs text-white/50" suppressHydrationWarning>
                   {budgetProgress.toFixed(1)}% {t('dashboard.of')} {formatAmount(totalBudget)} {t('dashboard.budget') || 'budget'} {t('dashboard.used') || 'used'}
                 </p>
               </div>
             )}
 
-            <div className="flex flex-col sm:flex-row gap-2 pt-2">
+            <div className="flex flex-col sm:flex-row gap-2 pt-1">
               <ScanReceiptButton onAction={fetchData} />
               <AddExpenseTrigger onAction={fetchData} />
               <Link href="/expenses" className="w-full sm:w-auto">
-                <Button variant="outline" size="default" className="w-full sm:w-auto text-xs sm:text-sm">
+                <Button variant="outline" size="default" className="w-full sm:w-auto text-xs sm:text-sm bg-white/10 border-white/20 text-white hover:bg-white/20 hover:text-white">
                   {t('dashboard.viewAllExpenses') || 'View All Expenses'}
                   <ArrowUpRight className="ml-2 h-4 w-4" />
                 </Button>
               </Link>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       </motion.div>
 
       {/* Metric Cards */}

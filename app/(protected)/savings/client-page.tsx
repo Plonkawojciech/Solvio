@@ -131,7 +131,7 @@ function GoalMiniCard({ goal, currency, locale }: { goal: SavingsGoal; currency:
     new Intl.NumberFormat(locale, { style: 'currency', currency, minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(v)
 
   return (
-    <div className="rounded-xl border bg-card p-3.5 hover:shadow-md transition-shadow">
+    <div className="rounded-xl border bg-card p-3.5 hover:shadow-md hover:-translate-y-0.5 transition-all duration-300">
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">
           <span className="text-lg">{goal.emoji || '🎯'}</span>
@@ -198,7 +198,7 @@ function ChallengeMiniCard({ challenge }: { challenge: Challenge }) {
   const daysLeft = Math.max(0, Math.ceil((new Date(challenge.endDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
 
   return (
-    <div className="rounded-xl border bg-card p-3.5 hover:shadow-md transition-shadow">
+    <div className="rounded-xl border bg-card p-3.5 hover:shadow-md hover:-translate-y-0.5 transition-all duration-300">
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">
           <span className="text-lg">{challenge.emoji || '💪'}</span>
@@ -475,11 +475,18 @@ export default function SavingsHub() {
                 </CardContent>
               </Card>
             ) : (
-              <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+              <motion.div
+                className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"
+                variants={{ hidden: {}, visible: { transition: { staggerChildren: 0.05 } } }}
+                initial="hidden"
+                animate="visible"
+              >
                 {goals.slice(0, 6).map(goal => (
-                  <GoalMiniCard key={goal.id} goal={goal} currency={currency} locale={locale} />
+                  <motion.div key={goal.id} variants={{ hidden: { opacity: 0, y: 8 }, visible: { opacity: 1, y: 0, transition: { duration: 0.3 } } }}>
+                    <GoalMiniCard goal={goal} currency={currency} locale={locale} />
+                  </motion.div>
                 ))}
-              </div>
+              </motion.div>
             )}
           </motion.div>
         )}
@@ -550,11 +557,18 @@ export default function SavingsHub() {
                     {t('savings.budgetEmpty')}
                   </p>
                 ) : (
-                  <div className="divide-y">
+                  <motion.div
+                    className="divide-y"
+                    variants={{ hidden: {}, visible: { transition: { staggerChildren: 0.05 } } }}
+                    initial="hidden"
+                    animate="visible"
+                  >
                     {budgetWithAmounts.slice(0, 5).map(cat => (
-                      <BudgetMiniRow key={cat.id} cat={cat} currency={currency} locale={locale} />
+                      <motion.div key={cat.id} variants={{ hidden: { opacity: 0, y: 8 }, visible: { opacity: 1, y: 0, transition: { duration: 0.3 } } }}>
+                        <BudgetMiniRow cat={cat} currency={currency} locale={locale} />
+                      </motion.div>
                     ))}
-                  </div>
+                  </motion.div>
                 )}
               </CardContent>
             </Card>
@@ -602,11 +616,18 @@ export default function SavingsHub() {
                 </CardContent>
               </Card>
             ) : (
-              <div className="grid gap-3 grid-cols-1 sm:grid-cols-2">
+              <motion.div
+                className="grid gap-3 grid-cols-1 sm:grid-cols-2"
+                variants={{ hidden: {}, visible: { transition: { staggerChildren: 0.05 } } }}
+                initial="hidden"
+                animate="visible"
+              >
                 {activeChallenges.slice(0, 4).map(ch => (
-                  <ChallengeMiniCard key={ch.id} challenge={ch} />
+                  <motion.div key={ch.id} variants={{ hidden: { opacity: 0, y: 8 }, visible: { opacity: 1, y: 0, transition: { duration: 0.3 } } }}>
+                    <ChallengeMiniCard challenge={ch} />
+                  </motion.div>
                 ))}
-              </div>
+              </motion.div>
             )}
           </motion.div>
         )}
