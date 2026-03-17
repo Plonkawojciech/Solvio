@@ -716,6 +716,13 @@ const translations = {
     'product.business': 'Firmowy',
     'product.personalDesc': 'Kontroluj wydatki domowe, skanuj paragony i oszczędzaj na zakupach.',
     'product.businessDesc': 'Zarządzaj finansami firmy, fakturami VAT i zespołem w jednym miejscu.',
+    'product.switchedToPersonal': 'Przełączono na Solvio Personal',
+    'product.switchedToBusiness': 'Przełączono na Solvio Business',
+    'product.switchedDesc': 'Nawigacja i funkcje zostały zaktualizowane.',
+    'product.switchFailed': 'Nie udało się przełączyć. Spróbuj ponownie.',
+    'product.tapToSwitch': 'Kliknij aby przełączyć',
+    'product.personalShort': 'Wydatki osobiste i oszczędzanie',
+    'product.businessShort': 'Finanse firmy i faktury',
 
     // Onboarding additional
     'onboarding.selectPlan': 'Wybierz',
@@ -2023,6 +2030,13 @@ const translations = {
     'product.business': 'Business',
     'product.personalDesc': 'Control household expenses, scan receipts and save on groceries.',
     'product.businessDesc': 'Manage company finances, VAT invoices and your team in one place.',
+    'product.switchedToPersonal': 'Switched to Solvio Personal',
+    'product.switchedToBusiness': 'Switched to Solvio Business',
+    'product.switchedDesc': 'Navigation and features have been updated.',
+    'product.switchFailed': 'Failed to switch. Try again.',
+    'product.tapToSwitch': 'Tap to switch',
+    'product.personalShort': 'Personal expenses & savings',
+    'product.businessShort': 'Company finances & invoices',
 
     // Onboarding additional
     'onboarding.selectPlan': 'Select',

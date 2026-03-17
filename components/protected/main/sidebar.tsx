@@ -40,6 +40,7 @@ import { Button } from '@/components/ui/button'
 import { ThemeToggle } from '@/components/ui/theme-toggle'
 import { KeyboardShortcutsButton } from '@/components/protected/main/keyboard-shortcuts'
 import { LanguageSwitcher } from '@/components/language-switcher'
+import { ProductSwitcher } from '@/components/protected/main/product-switcher'
 
 interface NavItem {
   key: string
@@ -148,6 +149,11 @@ export function AppSidebar() {
       </SidebarContent>
 
       <SidebarFooter className="p-3 border-t space-y-2">
+        {/* Product switcher (Personal ↔ Business) */}
+        <ProductSwitcher />
+
+        <div className="h-px bg-border/50" />
+
         {/* User info */}
         <div className="flex items-center gap-2.5 px-1 py-1 rounded-lg hover:bg-muted/50 transition-colors">
           <div className="h-8 w-8 shrink-0 rounded-full overflow-hidden bg-primary/10 flex items-center justify-center">
