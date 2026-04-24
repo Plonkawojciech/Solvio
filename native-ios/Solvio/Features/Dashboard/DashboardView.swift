@@ -735,35 +735,52 @@ final class DashboardViewModel: ObservableObject {
         isLoading = true
         if display == nil { errorMessage = nil }
         defer { isLoading = false }
-        do {
-            #if DEBUG
-            print("[Dashboard] Fetching (since=all)…")
-            #endif
-            let raw = try await DashboardRepo.fetch()
 
-            totalReceipts = raw.receiptsCount
-            totalExpenses = raw.expenses.count
+        // Retry up to 2 times for transient errors (Neon cold start, timeouts)
+        let maxAttempts = 3
+        var lastError: Error?
+        for attempt in 1...maxAttempts {
+            do {
+                #if DEBUG
+                print("[Dashboard] Fetching (since=all) attempt \(attempt)/\(maxAttempts)…")
+                #endif
+                let raw = try await DashboardRepo.fetch()
 
-            #if DEBUG
-            print("[Dashboard] Got \(raw.expenses.count) expenses, \(raw.categories.count) categories, receiptsCount=\(raw.receiptsCount)")
-            #endif
-            let built = await Task.detached { DashboardDisplay.build(from: raw) }.value
-            display = built
-            errorMessage = nil
-            #if DEBUG
-            print("[Dashboard] Display built OK: total=\(built.totalSpent) txns=\(built.totalTransactions)")
-            #endif
-        } catch {
-            #if DEBUG
-            print("[Dashboard] load FAILED: \(error)")
-            if let api = error as? ApiError, case let .decoding(inner) = api {
-                print("[Dashboard] decoding detail: \(inner)")
+                totalReceipts = raw.receiptsCount
+                totalExpenses = raw.expenses.count
+
+                #if DEBUG
+                print("[Dashboard] Got \(raw.expenses.count) expenses, \(raw.categories.count) categories, receiptsCount=\(raw.receiptsCount)")
+                #endif
+                let built = await Task.detached { DashboardDisplay.build(from: raw) }.value
+                display = built
+                errorMessage = nil
+                #if DEBUG
+                print("[Dashboard] Display built OK: total=\(built.totalSpent) txns=\(built.totalTransactions)")
+                #endif
+                return
+            } catch {
+                lastError = error
+                #if DEBUG
+                print("[Dashboard] attempt \(attempt) FAILED: \(error)")
+                if let api = error as? ApiError, case let .decoding(inner) = api {
+                    print("[Dashboard] decoding detail: \(inner)")
+                }
+                #endif
+                // Only retry on retryable errors (timeout, server 5xx, no connection)
+                if let api = error as? ApiError, api.isRetryable, attempt < maxAttempts {
+                    try? await Task.sleep(nanoseconds: UInt64(attempt) * 1_000_000_000) // 1s, 2s
+                    continue
+                }
+                break
             }
-            #endif
+        }
+        // All attempts exhausted
+        if let lastError {
             if display == nil {
-                errorMessage = error.localizedDescription
+                errorMessage = lastError.localizedDescription
             } else {
-                toast?.error(error.localizedDescription)
+                toast?.error(lastError.localizedDescription)
             }
         }
     }
