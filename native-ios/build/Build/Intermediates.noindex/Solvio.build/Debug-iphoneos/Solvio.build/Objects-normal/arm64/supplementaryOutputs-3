@@ -1,0 +1,23 @@
+{
+  "/Users/wojciechplonka/Programo/solvio/native-ios/Solvio/Core/Formatters.swift" : {
+    "const-values" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/Formatters.swiftconstvalues",
+    "dependencies" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/Formatters.d",
+    "diagnostics" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/Formatters.dia",
+    "object" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/Formatters.o",
+    "swift-dependencies" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/Formatters.swiftdeps"
+  },
+  "/Users/wojciechplonka/Programo/solvio/native-ios/Solvio/Features/Auth/LoginView.swift" : {
+    "const-values" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/LoginView.swiftconstvalues",
+    "dependencies" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/LoginView.d",
+    "diagnostics" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/LoginView.dia",
+    "object" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/LoginView.o",
+    "swift-dependencies" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/LoginView.swiftdeps"
+  },
+  "/Users/wojciechplonka/Programo/solvio/native-ios/Solvio/Features/Groups/GroupSettlementsView.swift" : {
+    "const-values" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/GroupSettlementsView.swiftconstvalues",
+    "dependencies" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/GroupSettlementsView.d",
+    "diagnostics" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/GroupSettlementsView.dia",
+    "object" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/GroupSettlementsView.o",
+    "swift-dependencies" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/GroupSettlementsView.swiftdeps"
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "/Users/wojciechplonka/Programo/solvio/native-ios/Solvio/Core/UI/NBComponents.swift" : {
+    "const-values" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/NBComponents.swiftconstvalues",
+    "dependencies" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/NBComponents.d",
+    "diagnostics" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/NBComponents.dia",
+    "object" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/NBComponents.o",
+    "swift-dependencies" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/NBComponents.swiftdeps"
+  },
+  "/Users/wojciechplonka/Programo/solvio/native-ios/Solvio/Features/Prices/PricesView.swift" : {
+    "const-values" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/PricesView.swiftconstvalues",
+    "dependencies" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/PricesView.d",
+    "diagnostics" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/PricesView.dia",
+    "object" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/PricesView.o",
+    "swift-dependencies" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/PricesView.swiftdeps"
+  },
+  "/Users/wojciechplonka/Programo/solvio/native-ios/Solvio/Features/Receipts/ReceiptDetailView.swift" : {
+    "const-values" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/ReceiptDetailView.swiftconstvalues",
+    "dependencies" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/ReceiptDetailView.d",
+    "diagnostics" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/ReceiptDetailView.dia",
+    "object" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/ReceiptDetailView.o",
+    "swift-dependencies" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/ReceiptDetailView.swiftdeps"
+  },
+  "/Users/wojciechplonka/Programo/solvio/native-ios/Solvio/Features/Receipts/ReceiptsListView.swift" : {
+    "const-values" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/ReceiptsListView.swiftconstvalues",
+    "dependencies" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/ReceiptsListView.d",
+    "diagnostics" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/ReceiptsListView.dia",
+    "object" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/ReceiptsListView.o",
+    "swift-dependencies" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/ReceiptsListView.swiftdeps"
+  },
+  "/Users/wojciechplonka/Programo/solvio/native-ios/Solvio/Features/Reports/ReportsView.swift" : {
+    "const-values" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/ReportsView.swiftconstvalues",
+    "dependencies" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/ReportsView.d",
+    "diagnostics" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/ReportsView.dia",
+    "object" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/ReportsView.o",
+    "swift-dependencies" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/ReportsView.swiftdeps"
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "/Users/wojciechplonka/Programo/solvio/native-ios/Solvio/Core/AppConfig.swift" : {
+    "const-values" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/DerivedData/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/AppConfig.swiftconstvalues",
+    "dependencies" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/DerivedData/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/AppConfig.d",
+    "diagnostics" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/DerivedData/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/AppConfig.dia",
+    "object" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/DerivedData/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/AppConfig.o",
+    "swift-dependencies" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/DerivedData/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/AppConfig.swiftdeps"
+  },
+  "/Users/wojciechplonka/Programo/solvio/native-ios/Solvio/Core/AppLocale.swift" : {
+    "const-values" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/DerivedData/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/AppLocale.swiftconstvalues",
+    "dependencies" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/DerivedData/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/AppLocale.d",
+    "diagnostics" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/DerivedData/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/AppLocale.dia",
+    "object" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/DerivedData/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/AppLocale.o",
+    "swift-dependencies" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/DerivedData/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/AppLocale.swiftdeps"
+  },
+  "/Users/wojciechplonka/Programo/solvio/native-ios/Solvio/Core/AppRouter.swift" : {
+    "const-values" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/DerivedData/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/AppRouter.swiftconstvalues",
+    "dependencies" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/DerivedData/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/AppRouter.d",
+    "diagnostics" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/DerivedData/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/AppRouter.dia",
+    "object" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/DerivedData/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/AppRouter.o",
+    "swift-dependencies" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/DerivedData/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/AppRouter.swiftdeps"
+  },
+  "/Users/wojciechplonka/Programo/solvio/native-ios/Solvio/Core/AppTheme.swift" : {
+    "const-values" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/DerivedData/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/AppTheme.swiftconstvalues",
+    "dependencies" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/DerivedData/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/AppTheme.d",
+    "diagnostics" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/DerivedData/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/AppTheme.dia",
+    "object" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/DerivedData/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/AppTheme.o",
+    "swift-dependencies" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/DerivedData/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/AppTheme.swiftdeps"
+  },
+  "/Users/wojciechplonka/Programo/solvio/native-ios/Solvio/Core/Network/ApiClient.swift" : {
+    "const-values" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/DerivedData/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/ApiClient.swiftconstvalues",
+    "dependencies" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/DerivedData/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/ApiClient.d",
+    "diagnostics" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/DerivedData/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/ApiClient.dia",
+    "object" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/DerivedData/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/ApiClient.o",
+    "swift-dependencies" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/DerivedData/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/ApiClient.swiftdeps"
+  },
+  "/Users/wojciechplonka/Programo/solvio/native-ios/Solvio/Features/Analysis/AnalysisView.swift" : {
+    "const-values" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/DerivedData/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/AnalysisView.swiftconstvalues",
+    "dependencies" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/DerivedData/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/AnalysisView.d",
+    "diagnostics" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/DerivedData/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/AnalysisView.dia",
+    "object" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/DerivedData/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/AnalysisView.o",
+    "swift-dependencies" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/DerivedData/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/AnalysisView.swiftdeps"
+  }
+}

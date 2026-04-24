@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>logFormatVersion</key>
+	<integer>12</integer>
+	<key>logs</key>
+	<dict>
+		<key>6AD32FBF-7389-4072-9E29-7CFE23004A39</key>
+		<dict>
+			<key>className</key>
+			<string>IDECommandLineBuildLog</string>
+			<key>documentTypeString</key>
+			<string>&lt;nil&gt;</string>
+			<key>domainType</key>
+			<string>Xcode.IDEActivityLogDomainType.BuildLog</string>
+			<key>fileName</key>
+			<string>6AD32FBF-7389-4072-9E29-7CFE23004A39.xcactivitylog</string>
+			<key>hasPrimaryLog</key>
+			<true/>
+			<key>primaryObservable</key>
+			<dict>
+				<key>highLevelStatus</key>
+				<string>S</string>
+				<key>totalNumberOfAnalyzerIssues</key>
+				<integer>0</integer>
+				<key>totalNumberOfErrors</key>
+				<integer>0</integer>
+				<key>totalNumberOfTestFailures</key>
+				<integer>0</integer>
+				<key>totalNumberOfWarnings</key>
+				<integer>0</integer>
+			</dict>
+			<key>schemeIdentifier-containerName</key>
+			<string>Solvio project</string>
+			<key>schemeIdentifier-schemeName</key>
+			<string>Solvio</string>
+			<key>schemeIdentifier-sharedScheme</key>
+			<integer>1</integer>
+			<key>signature</key>
+			<string>Cleaning project Solvio with scheme Solvio and configuration Debug</string>
+			<key>timeStartedRecording</key>
+			<real>798706424.92387605</real>
+			<key>timeStoppedRecording</key>
+			<real>798706425.21000302</real>
+			<key>title</key>
+			<string>Cleaning project Solvio with scheme Solvio and configuration Debug</string>
+			<key>uniqueIdentifier</key>
+			<string>6AD32FBF-7389-4072-9E29-7CFE23004A39</string>
+		</dict>
+	</dict>
+</dict>
+</plist>

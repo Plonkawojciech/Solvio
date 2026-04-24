@@ -1,0 +1,37 @@
+{
+  "/Users/wojciechplonka/Programo/solvio/native-ios/Solvio/Core/L10n.swift" : {
+    "const-values" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/DerivedData/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/L10n.swiftconstvalues",
+    "dependencies" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/DerivedData/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/L10n.d",
+    "diagnostics" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/DerivedData/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/L10n.dia",
+    "object" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/DerivedData/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/L10n.o",
+    "swift-dependencies" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/DerivedData/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/L10n.swiftdeps"
+  },
+  "/Users/wojciechplonka/Programo/solvio/native-ios/Solvio/Features/Groups/GroupDetailView.swift" : {
+    "const-values" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/DerivedData/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/GroupDetailView.swiftconstvalues",
+    "dependencies" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/DerivedData/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/GroupDetailView.d",
+    "diagnostics" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/DerivedData/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/GroupDetailView.dia",
+    "object" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/DerivedData/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/GroupDetailView.o",
+    "swift-dependencies" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/DerivedData/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/GroupDetailView.swiftdeps"
+  },
+  "/Users/wojciechplonka/Programo/solvio/native-ios/Solvio/Features/Groups/GroupReceiptsView.swift" : {
+    "const-values" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/DerivedData/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/GroupReceiptsView.swiftconstvalues",
+    "dependencies" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/DerivedData/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/GroupReceiptsView.d",
+    "diagnostics" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/DerivedData/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/GroupReceiptsView.dia",
+    "object" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/DerivedData/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/GroupReceiptsView.o",
+    "swift-dependencies" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/DerivedData/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/GroupReceiptsView.swiftdeps"
+  },
+  "/Users/wojciechplonka/Programo/solvio/native-ios/Solvio/Features/Groups/GroupSettlementsView.swift" : {
+    "const-values" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/DerivedData/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/GroupSettlementsView.swiftconstvalues",
+    "dependencies" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/DerivedData/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/GroupSettlementsView.d",
+    "diagnostics" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/DerivedData/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/GroupSettlementsView.dia",
+    "object" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/DerivedData/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/GroupSettlementsView.o",
+    "swift-dependencies" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/DerivedData/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/GroupSettlementsView.swiftdeps"
+  },
+  "/Users/wojciechplonka/Programo/solvio/native-ios/Solvio/Features/Groups/GroupsListView.swift" : {
+    "const-values" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/DerivedData/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/GroupsListView.swiftconstvalues",
+    "dependencies" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/DerivedData/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/GroupsListView.d",
+    "diagnostics" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/DerivedData/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/GroupsListView.dia",
+    "object" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/DerivedData/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/GroupsListView.o",
+    "swift-dependencies" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/DerivedData/Build/Intermediates.noindex/Solvio.build/Debug-iphoneos/Solvio.build/Objects-normal/arm64/GroupsListView.swiftdeps"
+  }
+}

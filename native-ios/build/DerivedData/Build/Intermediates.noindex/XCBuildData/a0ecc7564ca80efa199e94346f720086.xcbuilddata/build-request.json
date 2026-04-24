@@ -1,0 +1,70 @@
+{
+  "buildCommand" : {
+    "command" : "build",
+    "skipDependencies" : false,
+    "style" : "buildOnly"
+  },
+  "configuredTargets" : [
+    {
+      "guid" : "b082f73d4cd9cefce40aa65ae3ea81ca05d7c470ad164f40c1d2bd32efecda41"
+    }
+  ],
+  "containerPath" : "/Users/wojciechplonka/Programo/solvio/native-ios/Solvio.xcodeproj",
+  "continueBuildingAfterErrors" : false,
+  "dependencyScope" : "workspace",
+  "enableIndexBuildArena" : false,
+  "hideShellScriptEnvironment" : false,
+  "parameters" : {
+    "action" : "build",
+    "activeArchitecture" : "undefined_arch",
+    "activeRunDestination" : {
+      "disableOnlyActiveArch" : true,
+      "platform" : "iphoneos",
+      "sdk" : "iphoneos26.2",
+      "sdkVariant" : "iphoneos",
+      "supportedArchitectures" : [
+        "armv4t",
+        "armv5",
+        "armv6",
+        "armv7",
+        "armv7f",
+        "armv7s",
+        "armv7k",
+        "arm64",
+        "arm64e"
+      ],
+      "targetArchitecture" : "undefined_arch"
+    },
+    "arenaInfo" : {
+      "buildIntermediatesPath" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/DerivedData/Build/Intermediates.noindex",
+      "buildProductsPath" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/DerivedData/Build/Products",
+      "derivedDataPath" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/DerivedData",
+      "indexDataStoreFolderPath" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/DerivedData/Index.noindex/DataStore",
+      "indexEnableDataStore" : true,
+      "indexPCHPath" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/DerivedData/Index.noindex/PrecompiledHeaders",
+      "pchPath" : "/Users/wojciechplonka/Programo/solvio/native-ios/build/DerivedData/Build/Intermediates.noindex/PrecompiledHeaders"
+    },
+    "configurationName" : "Debug",
+    "overrides" : {
+      "commandLine" : {
+        "table" : {
+
+        }
+      },
+      "synthesized" : {
+        "table" : {
+          "ACTION" : "build",
+          "ENABLE_PREVIEWS" : "NO",
+          "ENABLE_XOJIT_PREVIEWS" : "YES",
+          "ONLY_ACTIVE_ARCH" : "YES"
+        }
+      }
+    }
+  },
+  "schemeCommand" : "launch",
+  "showNonLoggedProgress" : true,
+  "useDryRun" : false,
+  "useImplicitDependencies" : true,
+  "useLegacyBuildLocations" : false,
+  "useParallelTargets" : true
+}

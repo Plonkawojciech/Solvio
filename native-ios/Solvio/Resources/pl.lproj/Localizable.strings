@@ -1,0 +1,3 @@
+/* Solvio — Polish localisation. Strings live primarily in Swift code;
+   this file is kept as a CFBundleLocalizations anchor. */
+"app.name" = "Solvio";

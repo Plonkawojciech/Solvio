@@ -1,0 +1,58 @@
+name: Solvio
+options:
+  bundleIdPrefix: com.programo
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+  developmentLanguage: pl
+  groupSortPosition: top
+settings:
+  base:
+    DEVELOPMENT_TEAM: "H7DS3ZG67S"
+    SWIFT_VERSION: "5.9"
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+    IPHONEOS_DEPLOYMENT_TARGET: "16.0"
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    SWIFT_TREAT_WARNINGS_AS_ERRORS: NO
+    GCC_TREAT_WARNINGS_AS_ERRORS: NO
+    CODE_SIGN_STYLE: Automatic
+targets:
+  Solvio:
+    type: application
+    platform: iOS
+    deploymentTarget: "16.0"
+    sources:
+      - path: Solvio
+        excludes:
+          - "Resources/Info.plist"
+    resources:
+      - path: Solvio/Resources/Assets.xcassets
+      - path: Solvio/Resources/pl.lproj
+      - path: Solvio/Resources/en.lproj
+    info:
+      path: Solvio/Resources/Info.plist
+      properties:
+        CFBundleDisplayName: Solvio
+        CFBundleShortVersionString: "1.0.0"
+        CFBundleVersion: "1"
+        CFBundleDevelopmentRegion: pl
+        CFBundleLocalizations:
+          - pl
+          - en
+        UILaunchScreen:
+          UIColorName: LaunchBackground
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        NSCameraUsageDescription: "Solvio potrzebuje kamery do skanowania paragonów (OCR)."
+        NSPhotoLibraryUsageDescription: "Solvio potrzebuje dostępu do zdjęć aby przesłać paragon do analizy."
+        NSPhotoLibraryAddUsageDescription: "Solvio może zapisywać wygenerowane raporty i e-paragony do Twojej galerii."
+        ITSAppUsesNonExemptEncryption: false
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: false
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.programo.solvio
+        TARGETED_DEVICE_FAMILY: "1,2"
+        GENERATE_INFOPLIST_FILE: NO
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
