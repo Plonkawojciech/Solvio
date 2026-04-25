@@ -764,6 +764,11 @@ struct PriceComparisonResponse: Decodable {
 struct PriceCompareBody: Encodable {
     let lang: String?
     let currency: String?
+    /// Set to `true` from the refresh button on the Products card to
+    /// bypass the 24 h server-side cache. Auto-prefetch from
+    /// `loadAll()` always sends `false` so cached payloads return in
+    /// ~50 ms.
+    let force: Bool?
 }
 
 // MARK: - Shopping Advisor
@@ -974,6 +979,14 @@ struct PromoOffer: Decodable, Identifiable, Hashable {
     let validUntil: String?
     let category: String?
     let matchesPurchases: Bool?
+    /// Optional URL to the chain's official weekly leaflet (e.g.
+    /// `https://www.lidl.pl/c/gazetka-promocyjna/...`). Backend backfills
+    /// this from a static map when the AI didn't return one.
+    let leafletUrl: String?
+    /// Optional direct deep-link to the specific product/promo page if
+    /// the AI was confident enough to provide one. Often null — leaflet
+    /// URL is the safer fallback.
+    let dealUrl: String?
 }
 
 struct WeeklySummary: Decodable, Hashable {

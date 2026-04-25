@@ -516,7 +516,7 @@ async function categorizeAndTranslateItems(
   cats: Array<{ id: string; name: string }>,
   rawText: string
 ): Promise<{
-  items: Array<{ name: string; nameTranslated: string | null; quantity: number | null; price: number | null; category_id: string | null }>;
+  items: Array<{ name: string; nameClean: string | null; nameTranslated: string | null; quantity: number | null; price: number | null; category_id: string | null }>;
   detectedLanguage: string;
 }> {
   const detectedLanguage = detectLanguage(rawText);
@@ -526,14 +526,14 @@ async function categorizeAndTranslateItems(
   if (!ai) {
     console.warn('[GPT] AI client not available - no AZURE_OPENAI_* or OPENAI_API_KEY configured?');
     return {
-      items: items.map(item => ({ ...item, nameTranslated: null, category_id: null })),
+      items: items.map(item => ({ ...item, nameClean: null, nameTranslated: null, category_id: null })),
       detectedLanguage,
     };
   }
 
   if (!cats.length || items.length === 0) {
     return {
-      items: items.map(item => ({ ...item, nameTranslated: null, category_id: null })),
+      items: items.map(item => ({ ...item, nameClean: null, nameTranslated: null, category_id: null })),
       detectedLanguage,
     };
   }
@@ -549,21 +549,42 @@ async function categorizeAndTranslateItems(
 
     log(`[GPT] Language: ${detectedLanguage}, needsTranslation: ${needsTranslation}`);
 
+    // Bumped max_tokens 800 → 1400 because we now ask for an extra
+    // "cleaned" field per item (full readable Polish name expanded
+    // from the truncated POS abbreviation). Without the bump, the
+    // response can be cut off mid-JSON for receipts with 10+ items.
     const completion = await ai.client.chat.completions.create({
       model: ai.model,
       temperature: 0,
-      max_tokens: 800,
+      max_tokens: 1400,
       response_format: { type: 'json_object' },
       messages: [
         {
           role: 'system',
-          content: `You categorize receipt items. Product names may be truncated or abbreviated — infer intent.
+          content: `You clean up, categorize, and (if needed) translate receipt items.
+
+Polish supermarket POS systems truncate product names to 16-24 characters and concatenate words without spaces (e.g. "ChlezytnOrkisz", "WodaMin Cisow", "JogPitTruskBakoma"). Your job is to expand each abbreviation back into the full, properly-formatted Polish (or original-language) product name.
 
 CATEGORIES (name: UUID):
 ${categoryMap}
 
-RULES:
-- Return {"items":[{"en":"translation or null","catId":"uuid"}]} with one entry per product, in order.
+OUTPUT — return STRICTLY this JSON shape:
+{"items":[{"cleaned":"full readable name","en":"english translation or null","catId":"uuid or null"}]}
+One entry per product, in input order. No extra commentary.
+
+CLEANED NAME RULES:
+- Expand truncated/concatenated words into proper Polish (or original language) names with correct spaces, diacritics, and capitalisation.
+- "ChlezytnOrkisz" → "Chleb żytnio-orkiszowy"
+- "WodaMin Cisow" → "Woda mineralna Cisowianka"
+- "JogPitTruskBakoma" → "Jogurt pitny truskawkowy Bakoma"
+- "MlekoLacWyb 2%" → "Mleko Łaciate wyborowe 2%"
+- Preserve brand names exactly (Bakoma, Łaciate, Cisowianka, etc.).
+- Sentence case ("Chleb żytni" not "CHLEB ŻYTNI" not "chleb żytni").
+- Keep package size / fat percentage if present (1L, 500g, 2%).
+- If the name is already clean and readable, just normalise capitalisation and return it.
+- If you genuinely cannot guess what the abbreviation means, set "cleaned" to a normalised version of the original (sentence case, no other changes) — never invent products.
+
+CATEGORY RULES:
 - Use the UUID, not the category name.
 - null catId if no category fits.
 - Supermarket groceries (milk, bread, meat, vegetables) → category containing "groceries"/"spożywcze"/"zakupy"
@@ -584,14 +605,14 @@ ${langNote}`,
     const result = completion.choices[0]?.message?.content?.trim() ?? null;
     if (!result) {
       return {
-        items: items.map(item => ({ ...item, nameTranslated: null, category_id: null })),
+        items: items.map(item => ({ ...item, nameClean: null, nameTranslated: null, category_id: null })),
         detectedLanguage,
       };
     }
 
     const jsonStr = result;
 
-    let parsed: Array<{ en: string | null; catId: string | null }> = [];
+    let parsed: Array<{ cleaned?: string | null; en: string | null; catId: string | null }> = [];
     try {
       const raw = JSON.parse(jsonStr);
       parsed = Array.isArray(raw) ? raw : (Array.isArray(raw?.items) ? raw.items : []);
@@ -603,27 +624,34 @@ ${langNote}`,
     }
 
     // Pad/trim to match items length
-    while (parsed.length < items.length) parsed.push({ en: null, catId: null });
+    while (parsed.length < items.length) parsed.push({ cleaned: null, en: null, catId: null });
     parsed = parsed.slice(0, items.length);
 
     const resultItems = items.map((item, idx) => {
-      const p = parsed[idx] || { en: null, catId: null };
+      const p = parsed[idx] || { cleaned: null, en: null, catId: null };
       const validCatId = p.catId && validCategories.some(c => c.id === p.catId) ? p.catId : null;
+      // Trust the AI's cleaned name as long as it's a non-empty string
+      // that's reasonably close in length to the original (rejects
+      // hallucinations where the model rewrites the receipt).
+      const rawCleaned = (p.cleaned || '').trim();
+      const cleaned = rawCleaned.length >= 2 && rawCleaned.length <= 80 ? rawCleaned : null;
       return {
         ...item,
+        nameClean: cleaned,
         nameTranslated: p.en || null,
         category_id: validCatId,
       };
     });
 
     const assignedCount = resultItems.filter(r => r.category_id !== null).length;
-    log(`[GPT] ✅ categorizeAndTranslate: ${assignedCount}/${items.length} categorized, lang=${detectedLanguage}`);
+    const cleanedCount = resultItems.filter(r => r.nameClean !== null).length;
+    log(`[GPT] ✅ categorizeAndTranslate: ${assignedCount}/${items.length} categorized, ${cleanedCount}/${items.length} cleaned, lang=${detectedLanguage}`);
 
     return { items: resultItems, detectedLanguage };
   } catch (error) {
     console.error('[GPT] ❌ categorizeAndTranslateItems error:', error);
     return {
-      items: items.map(item => ({ ...item, nameTranslated: null, category_id: null })),
+      items: items.map(item => ({ ...item, nameClean: null, nameTranslated: null, category_id: null })),
       detectedLanguage,
     };
   }
@@ -914,7 +942,7 @@ export async function POST(req: NextRequest) {
 
         log(`[File ${i + 1}] [Duplicate Check] No active duplicates found`);
 
-        const categorizedItems = categorizationResult?.items ?? items.map(item => ({ ...item, nameTranslated: null, category_id: null }));
+        const categorizedItems = categorizationResult?.items ?? items.map(item => ({ ...item, nameClean: null, nameTranslated: null, category_id: null }));
         const detectedLang = categorizationResult?.detectedLanguage ?? 'en';
 
         log(`[File ${i + 1}] Parallel GPT done (merchant="${finalMerchant}", lang=${detectedLang})`);

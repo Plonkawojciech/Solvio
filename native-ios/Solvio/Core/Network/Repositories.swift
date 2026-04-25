@@ -329,12 +329,15 @@ enum LoyaltyRepo {
 // MARK: - Prices
 
 enum PricesRepo {
-    /// `/api/prices/compare` only reads `lang` + `currency` from the body;
-    /// the product list comes from the user's scanned receipts server-side.
-    static func compare(lang: String? = nil, currency: String? = nil) async throws -> PriceComparisonResponse {
+    /// `/api/prices/compare` only reads `lang` + `currency` (+ optional
+    /// `force`) from the body; the product list comes from the user's
+    /// scanned receipts server-side. `force` bypasses the 24 h backend
+    /// cache — used by the refresh button on the Products card. Default
+    /// `false` lets cached payloads return in ~50 ms.
+    static func compare(lang: String? = nil, currency: String? = nil, force: Bool = false) async throws -> PriceComparisonResponse {
         try await ApiClient.shared.post(
             "/api/prices/compare",
-            body: PriceCompareBody(lang: lang, currency: currency)
+            body: PriceCompareBody(lang: lang, currency: currency, force: force)
         )
     }
 }
@@ -345,13 +348,15 @@ enum AuditRepo {
     struct Body: Encodable {
         let lang: String?
         let currency: String?
+        let force: Bool?
     }
 
     /// Returns the full audit result object directly (no wrapper).
-    static func generate(lang: String? = nil, currency: String? = nil) async throws -> AuditResult {
+    /// `force = true` bypasses the 6 h backend cache.
+    static func generate(lang: String? = nil, currency: String? = nil, force: Bool = false) async throws -> AuditResult {
         try await ApiClient.shared.post(
             "/api/audit/generate",
-            body: Body(lang: lang, currency: currency)
+            body: Body(lang: lang, currency: currency, force: force)
         )
     }
 }

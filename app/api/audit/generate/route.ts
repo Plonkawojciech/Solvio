@@ -8,6 +8,8 @@ import { GROCERY_STORES } from '@/lib/stores'
 
 interface ReceiptItem {
   name: string
+  nameClean?: string | null
+  nameTranslated?: string | null
   price?: number
   quantity?: number
   category_id?: string
@@ -22,11 +24,35 @@ interface ProductEntry {
   dates: string[]
 }
 
+// Module-level in-memory cache. Mirror of /api/personal/promotions and
+// /api/prices/compare: the Savings hub auto-loads audit on tab entry,
+// so caching prevents a 15-25s spinner on every visit. 6h TTL — audit
+// summarises last 30 days and changes slowly.
+// Keyed by `${userId}:${lang}:${currency}` so identical payloads dedupe.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const auditCache = new Map<string, { result: any; expiresAt: number }>()
+const AUDIT_TTL_MS = 6 * 60 * 60 * 1000
+
 export async function POST(request: Request) {
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  // RATE LIMIT: 5 requests per hour per userId
+  const { lang = 'en', currency = 'PLN', force = false } = await request.json().catch(() => ({}))
+  const isPolish = lang === 'pl'
+
+  // Serve cached payload if still warm.
+  const cacheKey = `${userId}:${lang}:${currency}`
+  if (!force) {
+    const cached = auditCache.get(cacheKey)
+    if (cached && cached.expiresAt > Date.now()) {
+      return NextResponse.json(cached.result, {
+        headers: { 'X-Cache': 'HIT', 'Cache-Control': 'private, max-age=300' },
+      })
+    }
+  }
+
+  // Rate-limit only when we *would* hit the AI (cache miss).
+  // 5 requests / hour / userId.
   const rl = rateLimit(`ai:audit:${userId}`, { maxRequests: 5, windowMs: 60 * 60 * 1000 })
   if (!rl.allowed) {
     return NextResponse.json(
@@ -34,9 +60,6 @@ export async function POST(request: Request) {
       { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } },
     )
   }
-
-  const { lang = 'en', currency = 'PLN' } = await request.json().catch(() => ({}))
-  const isPolish = lang === 'pl'
 
   // Fetch last 30 days receipts + expenses
   const since = new Date()
@@ -81,8 +104,12 @@ export async function POST(request: Request) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const items: ReceiptItem[] = Array.isArray(receipt.items) ? receipt.items : (receipt.items as any).items || []
       for (const item of items) {
-        if (!item.name || !item.price || item.price <= 0) continue
-        const key = item.name.toLowerCase().trim()
+        // Prefer AI-cleaned name → translated → raw OCR. Cleaned names
+        // dedupe better (different POS-truncations of the same product
+        // collapse) and give the audit AI a real product to reason about.
+        const displayName = item.nameClean || item.nameTranslated || item.name
+        if (!displayName || !item.price || item.price <= 0) continue
+        const key = displayName.toLowerCase().trim()
         const existing = productMap.get(key)
         if (existing) {
           existing.totalPaid += item.price * (item.quantity || 1)
@@ -91,7 +118,7 @@ export async function POST(request: Request) {
           existing.dates.push(receipt.date || '')
         } else {
           productMap.set(key, {
-            name: item.name,
+            name: displayName,
             totalPaid: item.price * (item.quantity || 1),
             count: item.quantity || 1,
             avgPrice: item.price,
@@ -253,7 +280,7 @@ Respond ONLY in JSON format (no markdown, no backticks):
       ? `W ostatnich 30 dniach wydałeś ${totalSpent.toFixed(2)} ${currency} w ${transactionCount} transakcjach. Twoje główne kategorie to ${topCats}. Możesz potencjalnie zaoszczędzić ${saving} ${currency} robiąc zakupy w ${bestStoreText}. ${webData.topTip || 'Sprawdzaj gazetki promocyjne przed zakupami!'}`
       : `Over the last 30 days you spent ${totalSpent.toFixed(2)} ${currency} across ${transactionCount} transactions. Your top categories are ${topCats}. You could potentially save ${saving} ${currency} by shopping at ${bestStoreText}. ${webData.topTip || 'Check weekly flyers before shopping!'}`
 
-    return NextResponse.json({
+    const payload = {
       period: { from: sinceStr, to: new Date().toISOString().slice(0, 10) },
       totalSpent,
       transactionCount,
@@ -269,8 +296,23 @@ Respond ONLY in JSON format (no markdown, no backticks):
       topTip: webData.topTip || null,
       aiSummary,
       webSearchUsed: true,
+    }
+
+    // Cache for 6h so subsequent tab entries are instant.
+    auditCache.set(cacheKey, { result: payload, expiresAt: Date.now() + AUDIT_TTL_MS })
+
+    return NextResponse.json(payload, {
+      headers: { 'X-Cache': 'MISS', 'Cache-Control': 'private, max-age=300' },
     })
   } catch (err) {
+    // If AI failed but we have a stale cached audit, return that
+    // instead of forcing the user to wait. Stale beats blank.
+    const stale = auditCache.get(cacheKey)
+    if (stale) {
+      return NextResponse.json(stale.result, {
+        headers: { 'X-Cache': 'STALE', 'Cache-Control': 'private, max-age=60' },
+      })
+    }
     // Full fallback - return basic stats without AI
     return NextResponse.json({
       period: { from: sinceStr, to: new Date().toISOString().slice(0, 10) },

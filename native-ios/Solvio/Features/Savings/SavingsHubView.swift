@@ -933,15 +933,68 @@ struct SavingsHubView: View {
                 }
                 Spacer()
             }
-            if let until = offer.validUntil {
-                Text(String(format: locale.t("savings.validUntilFmt"), Fmt.dayMonth(until)))
-                    .font(AppFont.caption)
-                    .foregroundColor(Theme.mutedForeground)
+            // Validity row — show "from – until" when both are present
+            // (gives the user the full window the deal applies for),
+            // fall back to "until X" otherwise. The full range matters
+            // because leaflet promotions typically last 7 days; if the
+            // user opens the app on day 5 and only sees "until day 7"
+            // they don't know the price wasn't already that low for
+            // the past 5 days.
+            validityLine(for: offer)
+            // Link buttons for the official chain leaflet and (when AI
+            // provided one) a direct deep-link to the deal page. Tapping
+            // either opens the URL in Safari via the system handler.
+            if offer.leafletUrl != nil || offer.dealUrl != nil {
+                HStack(spacing: 8) {
+                    if let leaflet = offer.leafletUrl, let url = URL(string: leaflet) {
+                        Link(destination: url) {
+                            Label(locale.t("savings.openLeaflet"), systemImage: "newspaper")
+                                .font(AppFont.caption)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .background(Theme.accent)
+                                .foregroundColor(Theme.foreground)
+                                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+                        }
+                    }
+                    if let deal = offer.dealUrl, let url = URL(string: deal) {
+                        Link(destination: url) {
+                            Label(locale.t("savings.openDeal"), systemImage: "link")
+                                .font(AppFont.caption)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .background(Theme.foreground)
+                                .foregroundColor(Theme.background)
+                                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+                        }
+                    }
+                    Spacer()
+                }
+                .padding(.top, 4)
             }
         }
         .padding(Theme.Spacing.sm)
         .frame(maxWidth: .infinity, alignment: .leading)
         .nbCard(radius: Theme.Radius.md, shadow: Theme.Shadow.sm)
+    }
+
+    /// Renders the deal validity line. Three cases:
+    /// - both `validFrom` and `validUntil` → "Promocja: 22 kwi – 28 kwi"
+    /// - only `validUntil` → "Ważna do 28 kwi"
+    /// - nothing → empty view (still a valid SwiftUI return type)
+    @ViewBuilder
+    private func validityLine(for offer: PromoOffer) -> some View {
+        if let from = offer.validFrom, let until = offer.validUntil {
+            Text(String(format: locale.t("savings.validRangeFmt"),
+                        Fmt.dayMonth(from),
+                        Fmt.dayMonth(until)))
+                .font(AppFont.caption)
+                .foregroundColor(Theme.mutedForeground)
+        } else if let until = offer.validUntil {
+            Text(String(format: locale.t("savings.validUntilFmt"), Fmt.dayMonth(until)))
+                .font(AppFont.caption)
+                .foregroundColor(Theme.mutedForeground)
+        }
     }
 
     private func weeklySummaryCard(_ s: WeeklySummary) -> some View {
@@ -1073,15 +1126,23 @@ final class SavingsHubViewModel: ObservableObject {
         isPromotionsLoading = store.promotionsLoading && store.promotions == nil
     }
 
-    /// Loads everything the planner / deals tabs need on first appear.
-    /// Products + Stores are deliberately NOT loaded here — they hit
-    /// LLM endpoints with non-trivial latency, so we wait for an explicit
-    /// user tap on the "Compare prices" / "Generate audit" CTAs.
+    /// Loads everything every Savings tab needs on first appear.
+    ///
+    /// Products + Stores hit LLM endpoints (10-25 s on cache miss) so
+    /// they used to wait for an explicit user tap. Wojtek wanted them
+    /// auto-prefetched: `/api/prices/compare` now caches 24 h and
+    /// `/api/audit/generate` caches 6 h, so the first visit eats the
+    /// AI call but everything after is instant. We fire all five slices
+    /// in parallel — price + audit run in the background while the
+    /// user is staring at the planner / deals, so by the time they
+    /// switch tabs the data is already there.
     func loadAll() async {
         await withTaskGroup(of: Void.self) { group in
             group.addTask { await self.loadBudget() }
             group.addTask { await self.loadFinancialHealth() }
             group.addTask { await self.loadPromotions() }
+            group.addTask { await self.loadPriceComparison() }
+            group.addTask { await self.loadAudit() }
         }
         hasLoadedOnce = true
     }
@@ -1108,8 +1169,9 @@ final class SavingsHubViewModel: ObservableObject {
         syncFromStore()
     }
 
-    /// Fire when the user taps "Compare prices" on the Products tab.
-    /// Always force-refreshes — there's no cached state here.
+    /// Fetches AI price comparison. Auto-fired from `loadAll()` on tab
+    /// entry; refresh button on the Products card calls with `force: true`.
+    /// Backend caches 24 h, so cold call after first visit is ~50 ms.
     func loadPriceComparison(force: Bool = false) async {
         if isPriceLoading { return }
         isPriceLoading = true
@@ -1117,17 +1179,22 @@ final class SavingsHubViewModel: ObservableObject {
         defer { isPriceLoading = false }
         do {
             let lang = locale?.language.rawValue ?? "pl"
-            priceResult = try await PricesRepo.compare(lang: lang, currency: currency)
+            priceResult = try await PricesRepo.compare(lang: lang, currency: currency, force: force)
         } catch ApiError.cancelled {
             // User left the tab — no toast.
         } catch let api as ApiError {
-            priceError = friendlyMessage(for: api)
+            // Don't show error if we already have data on screen — user
+            // shouldn't see a "couldn't load" banner over content that's
+            // visible. Background prefetch failure is silent.
+            if priceResult == nil { priceError = friendlyMessage(for: api) }
         } catch {
-            priceError = locale?.t("errors.unknown") ?? error.localizedDescription
+            if priceResult == nil { priceError = locale?.t("errors.unknown") ?? error.localizedDescription }
         }
     }
 
-    /// Fire when the user taps "Generate audit" on the Stores tab.
+    /// Fetches AI shopping audit. Auto-fired from `loadAll()` on tab
+    /// entry; refresh button on the Stores card calls with `force: true`.
+    /// Backend caches 6 h.
     func loadAudit(force: Bool = false) async {
         if isAuditLoading { return }
         isAuditLoading = true
@@ -1135,13 +1202,13 @@ final class SavingsHubViewModel: ObservableObject {
         defer { isAuditLoading = false }
         do {
             let lang = locale?.language.rawValue ?? "pl"
-            auditResult = try await AuditRepo.generate(lang: lang, currency: currency)
+            auditResult = try await AuditRepo.generate(lang: lang, currency: currency, force: force)
         } catch ApiError.cancelled {
             // ignore
         } catch let api as ApiError {
-            auditError = friendlyMessage(for: api)
+            if auditResult == nil { auditError = friendlyMessage(for: api) }
         } catch {
-            auditError = locale?.t("errors.unknown") ?? error.localizedDescription
+            if auditResult == nil { auditError = locale?.t("errors.unknown") ?? error.localizedDescription }
         }
     }
 

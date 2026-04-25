@@ -8,6 +8,28 @@ import { PRICE_COMPARE_STORES } from '@/lib/stores'
 
 const STORES = PRICE_COMPARE_STORES
 
+// Static map of store → main weekly leaflet URL. The AI rarely knows
+// current /promocje URLs for sure; the canonical chain landing page is
+// safer than letting the model invent broken links. Used both inside
+// the prompt (so the AI gets a hint) and as a backfill in withIds when
+// the AI returns null/missing leafletUrl.
+const LEAFLET_URLS: Record<string, string> = {
+  'Lidl': 'https://www.lidl.pl/c/gazetka-promocyjna/s10005637',
+  'Biedronka': 'https://www.biedronka.pl/pl/gazetki',
+  'Kaufland': 'https://www.kaufland.pl/oferta/aktualna-oferta-tygodniowa.html',
+  'Auchan': 'https://www.auchan.pl/pl/oferta-tygodnia.html',
+  'Carrefour': 'https://www.carrefour.pl/promocje',
+  'Tesco': 'https://www.tesco.pl/gazetka',
+  'Netto': 'https://www.netto.pl/gazetka',
+  'Aldi': 'https://www.aldi.pl/gazetka.html',
+  'Dino': 'https://grupadino.pl/gazetki/',
+  'Stokrotka': 'https://www.stokrotka.pl/gazetka',
+  'Polomarket': 'https://www.polomarket.pl/oferta-handlowa/gazetki',
+  'Żabka': 'https://www.zabka.pl/promocje',
+  'Rossmann': 'https://www.rossmann.pl/promocje',
+  'Hebe': 'https://www.hebe.pl/promocje',
+}
+
 // Module-level in-memory cache. Survives across warm requests on the
 // same Vercel function instance (~5min idle). Cold starts re-compute,
 // but that's still much better than always re-running a 15-30s AI call.
@@ -75,24 +97,40 @@ export async function POST(request: Request) {
         .limit(30),
     ])
 
-    // Extract item names from JSONB receipts.items
+    // Extract item names from JSONB receipts.items. Prefer AI-cleaned
+    // names (`nameClean`) over the raw POS-truncated form so the AI is
+    // matching promotions against real product names like "Chleb żytnio-
+    // orkiszowy" rather than "ChlezytnOrkisz".
     const purchaseHistory = recentReceipts.flatMap(r => {
-      const items = Array.isArray(r.items) ? r.items as Array<{ name?: string; nameTranslated?: string }> : []
-      return items.map(i => i.nameTranslated || i.name).filter(Boolean)
+      const items = Array.isArray(r.items) ? r.items as Array<{ name?: string; nameClean?: string; nameTranslated?: string }> : []
+      return items.map(i => i.nameClean || i.nameTranslated || i.name).filter(Boolean)
     }).slice(0, 25) as string[]
     const vendorHistory = recentExpenses.map(e => e.vendor).filter(Boolean)
     const uniqueVendors = [...new Set(vendorHistory)]
+
+    // Date hints for the AI — without these, it sometimes returns
+    // 2024 dates from training data, which look stale to the user.
+    const today = new Date()
+    const todayStr = today.toISOString().slice(0, 10)
+    const weekAhead = new Date(today)
+    weekAhead.setDate(today.getDate() + 7)
+    const weekAheadStr = weekAhead.toISOString().slice(0, 10)
+
+    const leafletHints = STORES.map(s => `${s}: ${LEAFLET_URLS[s] || `(brak linku — wpisz null)`}`).join('\n')
 
     // Use OpenAI to search for current promotions
     const prompt = isPolish
       ? `Jesteś ekspertem od polskich promocji spożywczych. Na podstawie historii zakupów użytkownika, zaproponuj TYPOWE promocje i oszczędności w tych sklepach: ${STORES.join(', ')}.
 
-WAŻNE: To są sugestie oparte na typowych cenach i promocjach. Nie masz dostępu do bieżących gazetek.
+WAŻNE: To są sugestie oparte na typowych cenach i promocjach. Nie masz dostępu do bieżących gazetek — daty validFrom/validUntil mają mieścić się W BIEŻĄCYM TYGODNIU (od ${todayStr} do ${weekAheadStr}), bo gazetki sieci handlowych są tygodniowe.
 
 Historia zakupów użytkownika (produkty które kupuje):
 ${purchaseHistory.join(', ')}
 
 Sklepy w których kupuje: ${uniqueVendors.join(', ')}
+
+LINKI DO GAZETEK (użyj ich jako "leafletUrl" — to oficjalne strony z gazetkami, NIE wymyślaj innych URL-i):
+${leafletHints}
 
 Zwróć DOKŁADNIE w formacie JSON (tylko JSON, bez markdown):
 {
@@ -100,30 +138,41 @@ Zwróć DOKŁADNIE w formacie JSON (tylko JSON, bez markdown):
     {
       "id": "unikalne-id",
       "store": "nazwa sklepu",
-      "productName": "nazwa produktu",
+      "productName": "pełna, czytelna nazwa produktu (np. \\"Chleb żytnio-orkiszowy\\", nie \\"ChlezytnOrkisz\\")",
       "regularPrice": 5.99,
       "promoPrice": 3.49,
       "discount": "-42%",
       "currency": "${currency}",
-      "validFrom": "2026-03-16",
-      "validUntil": "2026-03-22",
+      "validFrom": "${todayStr}",
+      "validUntil": "${weekAheadStr}",
       "category": "kategoria produktu",
-      "matchesPurchases": true
+      "matchesPurchases": true,
+      "leafletUrl": "https://...",
+      "dealUrl": null
     }
   ],
   "personalizedDeals": [...te same pola, ale tylko produkty pasujące do historii zakupów...],
   "totalPotentialSavings": 45.50
 }
 
+ZASADY:
+- "leafletUrl" → użyj URL-a z mapy powyżej dla danego sklepu, lub null jeśli sklep nie ma w mapie.
+- "dealUrl" → konkretny link do produktu/promocji jeśli go znasz (np. lidl.pl/p/produkt-xxx); jeśli nie jesteś pewien, daj null.
+- "validUntil" NIGDY nie może być w przeszłości (przed ${todayStr}).
+- Nazwy produktów muszą być pełne i czytelne po polsku, nie skróty z paragonu.
+
 Zwróć 15-25 typowych promocji. Oznacz matchesPurchases=true dla produktów podobnych do historii zakupów.`
       : `You are a Polish grocery promotion expert. Based on the user's purchase history, suggest TYPICAL promotions and savings at these stores: ${STORES.join(', ')}.
 
-IMPORTANT: These are suggestions based on typical prices and promotions. You do not have access to current leaflets.
+IMPORTANT: These are suggestions based on typical prices and promotions. You do not have access to current leaflets — validFrom/validUntil dates must fall within THIS WEEK (from ${todayStr} to ${weekAheadStr}), because retail leaflets are weekly.
 
 User's purchase history (products they buy):
 ${purchaseHistory.join(', ')}
 
 Stores they shop at: ${uniqueVendors.join(', ')}
+
+LEAFLET LINKS (use these as "leafletUrl" — official chain leaflet pages, do NOT invent other URLs):
+${leafletHints}
 
 Return EXACTLY in JSON format (only JSON, no markdown):
 {
@@ -131,20 +180,28 @@ Return EXACTLY in JSON format (only JSON, no markdown):
     {
       "id": "unique-id",
       "store": "store name",
-      "productName": "product name",
+      "productName": "full readable product name (e.g. \\"Rye-spelt bread\\", not \\"ChlezytnOrkisz\\")",
       "regularPrice": 5.99,
       "promoPrice": 3.49,
       "discount": "-42%",
       "currency": "${currency}",
-      "validFrom": "2026-03-16",
-      "validUntil": "2026-03-22",
+      "validFrom": "${todayStr}",
+      "validUntil": "${weekAheadStr}",
       "category": "product category",
-      "matchesPurchases": true
+      "matchesPurchases": true,
+      "leafletUrl": "https://...",
+      "dealUrl": null
     }
   ],
   "personalizedDeals": [...same fields, but only products matching purchase history...],
   "totalPotentialSavings": 45.50
 }
+
+RULES:
+- "leafletUrl" → use the URL from the map above for that store, or null if store not listed.
+- "dealUrl" → specific product/promo link if you know it (e.g. lidl.pl/p/product-xxx); if unsure, return null.
+- "validUntil" must NEVER be in the past (before ${todayStr}).
+- Product names must be full, readable, in correct Polish — never POS-truncated abbreviations.
 
 Return 8-12 typical promotions. Mark matchesPurchases=true for products similar to purchase history.`
 
@@ -170,15 +227,29 @@ Return 8-12 typical promotions. Mark matchesPurchases=true for products similar 
       result = { promotions: [], personalizedDeals: [], totalPotentialSavings: 0 }
     }
 
-    // Add IDs if missing
+    // Add IDs if missing + backfill leafletUrl from the static map when
+    // the AI returned null. We only fall back if the model didn't
+    // provide a URL itself — but if it did, we accept it as-is. Also
+    // forward dealUrl untouched so the iOS card can render an "open
+    // deal" link when the AI knows a specific URL.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const withIds = (arr: any[]) =>
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (arr || []).map((p: any, i: number) => ({
-        ...p,
-        id: p.id || `promo-${Date.now()}-${i}`,
-        currency: p.currency || currency,
-      }))
+      (arr || []).map((p: any, i: number) => {
+        const storeName = typeof p.store === 'string' ? p.store : ''
+        // Try exact match first, then case-insensitive, then partial.
+        const fallbackLeaflet = LEAFLET_URLS[storeName]
+          || Object.entries(LEAFLET_URLS).find(([k]) => k.toLowerCase() === storeName.toLowerCase())?.[1]
+          || Object.entries(LEAFLET_URLS).find(([k]) => storeName.toLowerCase().includes(k.toLowerCase()))?.[1]
+          || null
+        return {
+          ...p,
+          id: p.id || `promo-${Date.now()}-${i}`,
+          currency: p.currency || currency,
+          leafletUrl: p.leafletUrl || fallbackLeaflet,
+          dealUrl: p.dealUrl || null,
+        }
+      })
 
     // Try to get latest weekly summary
     let weeklySummary = null

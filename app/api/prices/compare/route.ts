@@ -11,13 +11,42 @@ import { z } from 'zod'
 const PriceCompareSchema = z.object({
   lang: z.enum(['pl', 'en']).optional().default('en'),
   currency: z.string().length(3).optional().default('PLN'),
+  force: z.boolean().optional().default(false),
 })
+
+// Module-level in-memory cache. Mirror of /api/personal/promotions:
+// the savings hub now auto-loads this endpoint on tab entry, so without
+// caching every visit would burn 10-15s + an AI call. Prices change
+// slowly (weekly leaflets), so a 24h TTL is fine.
+// Keyed by `${userId}:${lang}:${currency}` so identical payloads dedupe.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const priceCache = new Map<string, { result: any; expiresAt: number }>()
+const PRICE_TTL_MS = 24 * 60 * 60 * 1000
 
 export async function POST(req: NextRequest) {
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  // RATE LIMIT: 20 requests per hour per userId
+  const rawBody = await req.json().catch(() => ({}))
+  const parsedReq = PriceCompareSchema.safeParse(rawBody)
+  const { lang, currency, force } = parsedReq.success ? parsedReq.data : { lang: 'en' as const, currency: 'PLN', force: false }
+  const isPolish = lang === 'pl'
+
+  // Serve cached payload if still warm. Saves 10-15s + an AI call.
+  // Auto-load on tab entry means this runs every time the user opens
+  // Savings — without cache that's a 10-15s spinner per tap.
+  const cacheKey = `${userId}:${lang}:${currency}`
+  if (!force) {
+    const cached = priceCache.get(cacheKey)
+    if (cached && cached.expiresAt > Date.now()) {
+      return NextResponse.json(cached.result, {
+        headers: { 'X-Cache': 'HIT', 'Cache-Control': 'private, max-age=300' },
+      })
+    }
+  }
+
+  // Rate-limit only when we *would* hit the AI (cache miss).
+  // 20 requests / hour / userId.
   const rl = rateLimit(`ai:prices:${userId}`, { maxRequests: 20, windowMs: 60 * 60 * 1000 })
   if (!rl.allowed) {
     return NextResponse.json(
@@ -27,10 +56,6 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const rawBody = await req.json().catch(() => ({}))
-    const parsedReq = PriceCompareSchema.safeParse(rawBody)
-    const { lang, currency } = parsedReq.success ? parsedReq.data : { lang: 'en' as const, currency: 'PLN' }
-    const isPolish = lang === 'pl'
 
     // Get user's recent receipt items (last 60 days)
     const since = new Date()
@@ -48,7 +73,11 @@ export async function POST(req: NextRequest) {
       .orderBy(desc(receipts.date))
       .limit(30)
 
-    // Collect all items from receipts
+    // Collect all items from receipts. Prefer the AI-cleaned product
+    // name (`nameClean`) over the raw OCR string — POS systems truncate
+    // names like "ChlezytnOrkisz" and the cleaned form ("Chleb żytnio-
+    // orkiszowy") gives the price-comparison AI something it can
+    // actually search for. Falls back to nameTranslated → name.
     const allItems: Array<{ name: string; price: number; vendor: string; date: string }> = []
     for (const receipt of recentReceipts) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -57,9 +86,10 @@ export async function POST(req: NextRequest) {
         for (const item of items) {
           // Items stored by OCR use `price`; older entries may use `totalPrice` — support both
           const itemPrice = item.price ?? item.totalPrice ?? null
-          if (item.name && itemPrice && Number(itemPrice) > 0) {
+          const displayName = item.nameClean || item.nameTranslated || item.name
+          if (displayName && itemPrice && Number(itemPrice) > 0) {
             allItems.push({
-              name: item.name,
+              name: displayName,
               price: Number(itemPrice),
               vendor: receipt.vendor || 'Unknown',
               date: receipt.date || sinceStr,
@@ -199,7 +229,7 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    return NextResponse.json({
+    const payload = {
       comparisons: result.comparisons || [],
       totalPotentialSavings: result.totalPotentialSavings || 0,
       summary: result.summary || '',
@@ -207,9 +237,25 @@ export async function POST(req: NextRequest) {
       tip: result.tip || '',
       productsAnalyzed: topProducts.length,
       isEstimated,
+    }
+
+    // Cache for 24h so the next tab entry is instant. Tied to
+    // userId+lang+currency; changing any of those triggers a recompute.
+    priceCache.set(cacheKey, { result: payload, expiresAt: Date.now() + PRICE_TTL_MS })
+
+    return NextResponse.json(payload, {
+      headers: { 'X-Cache': 'MISS', 'Cache-Control': 'private, max-age=300' },
     })
   } catch (err) {
     console.error('[prices/compare POST]', err)
+    // If AI failed but we have a stale cache, serve it instead of 500.
+    // Better to show stale prices than block the screen.
+    const stale = priceCache.get(cacheKey)
+    if (stale) {
+      return NextResponse.json(stale.result, {
+        headers: { 'X-Cache': 'STALE', 'Cache-Control': 'private, max-age=60' },
+      })
+    }
     return NextResponse.json(
       { error: 'Operation failed' },
       { status: 500 },
