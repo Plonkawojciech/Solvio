@@ -88,12 +88,6 @@ const nextConfig: NextConfig = {
         ],
       },
       {
-        source: '/manifest.json',
-        headers: [
-          { key: 'Cache-Control', value: 'public, max-age=86400, stale-while-revalidate=604800' },
-        ],
-      },
-      {
         source: '/:path*.ico',
         headers: [
           { key: 'Cache-Control', value: 'public, max-age=2592000, immutable' },

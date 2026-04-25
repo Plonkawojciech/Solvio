@@ -1,12 +1,15 @@
 import type { Metadata, Viewport } from "next"
 import { Inter, JetBrains_Mono } from "next/font/google"
 import { ThemeProvider } from "next-themes"
-import { ServiceWorkerRegister } from "@/components/sw-register"
 import "./globals.css"
 
 const defaultUrl = process.env.NEXT_PUBLIC_APP_URL ||
   (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000")
 
+// Web is desktop-only — the mobile experience lives in `native-ios/`. We
+// intentionally do NOT register a service worker, expose a manifest, or
+// advertise "Add to Home Screen" / `appleWebApp` capability. iOS users
+// install the native app from the App Store; web is a back-office surface.
 export const metadata: Metadata = {
   metadataBase: new URL(defaultUrl),
   title: {
@@ -26,18 +29,8 @@ export const metadata: Metadata = {
     title: "Solvio — Smart finance for humans",
     description: "AI-powered expense tracking with receipt scanning.",
   },
-  manifest: "/manifest.json",
-  appleWebApp: {
-    capable: true,
-    statusBarStyle: "black-translucent",
-    title: "Solvio",
-  },
   icons: {
-    icon: [
-      { url: "/icon.svg", type: "image/svg+xml" },
-      { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
-    ],
-    apple: "/apple-touch-icon.png",
+    icon: "/favicon.ico",
   },
   formatDetection: {
     telephone: false,
@@ -75,7 +68,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className={`${inter.variable} ${jetbrainsMono.variable} antialiased`}>
         <ThemeProvider attribute="class" defaultTheme="light" enableSystem disableTransitionOnChange>
           {children}
-          <ServiceWorkerRegister />
         </ThemeProvider>
       </body>
     </html>
