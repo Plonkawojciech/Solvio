@@ -795,6 +795,34 @@ final class AppDataStore: ObservableObject {
         )
     }
 
+    /// Re-insert previously-removed expenses (for undo flows). Dedups by id
+    /// in case the dashboard already pulled them back, and preserves the
+    /// existing sort by date+createdAt.
+    func restoreExpensesOptimistic(_ restored: [Expense]) {
+        guard let d = dashboard, !restored.isEmpty else { return }
+        let existingIds = Set(d.expenses.map { $0.id })
+        let newOnes = restored.filter { !existingIds.contains($0.id) }
+        guard !newOnes.isEmpty else { return }
+        let merged = (newOnes + d.expenses).sorted { lhs, rhs in
+            let ld = String(lhs.date.prefix(10))
+            let rd = String(rhs.date.prefix(10))
+            if ld != rd { return ld > rd }
+            return (lhs.createdAt ?? "") > (rhs.createdAt ?? "")
+        }
+        dashboard = DashboardResponse(
+            categories: d.categories,
+            settings: d.settings,
+            budgets: d.budgets,
+            expenses: merged,
+            prevExpenses: d.prevExpenses,
+            receiptsCount: d.receiptsCount,
+            monthIncome: d.monthIncome,
+            savingsTarget: d.savingsTarget,
+            prevTotal: d.prevTotal,
+            prevByCategory: d.prevByCategory
+        )
+    }
+
     func upsertReceiptOptimistic(_ receipt: Receipt) {
         if let idx = receipts.firstIndex(where: { $0.id == receipt.id }) {
             receipts[idx] = receipt
@@ -807,6 +835,17 @@ final class AppDataStore: ObservableObject {
     /// the user deletes from detail. Mirrors `removeExpensesOptimistic`.
     func removeReceiptOptimistic(id: String) {
         receipts.removeAll { $0.id == id }
+    }
+
+    /// Re-insert a removed receipt at the original position (or at the top
+    /// if no position is provided). Used by undo flows after a swipe-delete.
+    func restoreReceiptOptimistic(_ receipt: Receipt, at index: Int? = nil) {
+        guard !receipts.contains(where: { $0.id == receipt.id }) else { return }
+        if let idx = index, idx >= 0, idx <= receipts.count {
+            receipts.insert(receipt, at: idx)
+        } else {
+            receipts.insert(receipt, at: 0)
+        }
     }
 
     // MARK: - Invalidation

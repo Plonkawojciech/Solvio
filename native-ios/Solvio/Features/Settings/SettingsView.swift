@@ -31,7 +31,7 @@ struct SettingsView: View {
                 )
 
                 if vm.isLoading && vm.bundle == nil {
-                    NBLoadingCard()
+                    NBSkeletonList(rows: 4)
                 } else if let message = vm.errorMessage, vm.bundle == nil {
                     // Only block the screen with an error when we have
                     // nothing cached. Otherwise keep the existing settings

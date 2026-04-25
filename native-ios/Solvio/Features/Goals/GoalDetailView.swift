@@ -15,7 +15,8 @@ struct GoalDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: Theme.Spacing.md) {
                 if vm.isLoading && vm.goal == nil {
-                    NBLoadingCard()
+                    NBSkeletonHero()
+                    NBSkeletonList(rows: 3)
                 } else if let message = vm.errorMessage, vm.goal == nil {
                     NBErrorCard(message: message) { Task { await vm.load(id: goalId, locale: locale) } }
                 } else if let g = vm.goal {

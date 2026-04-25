@@ -14,7 +14,17 @@ struct ShoppingAdvisorView: View {
                 header
                 generateCard
                 if isLoading && result == nil {
-                    NBLoadingCard()
+                    NBProgressCard(
+                        title: locale.t("advisor.runningTitle"),
+                        stages: [
+                            locale.t("progress.preparingRequest"),
+                            locale.t("progress.aggregating"),
+                            locale.t("progress.contactingAI"),
+                            locale.t("progress.formattingResults"),
+                            locale.t("progress.almostDone"),
+                        ],
+                        estimatedSeconds: 15
+                    )
                 }
                 if let msg = errorMessage, result == nil {
                     NBErrorCard(message: msg) { Task { await run() } }

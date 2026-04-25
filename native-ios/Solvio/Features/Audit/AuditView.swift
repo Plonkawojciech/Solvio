@@ -18,7 +18,17 @@ struct AuditView: View {
                 header
                 generateCard
                 if isLoading && result == nil {
-                    NBLoadingCard()
+                    NBProgressCard(
+                        title: locale.t("audit.runningTitle"),
+                        stages: [
+                            locale.t("progress.preparingRequest"),
+                            locale.t("progress.scanningWeb"),
+                            locale.t("progress.matchingProducts"),
+                            locale.t("progress.findingDeals"),
+                            locale.t("progress.almostDone"),
+                        ],
+                        estimatedSeconds: 18
+                    )
                 }
                 if let msg = errorMessage, result == nil {
                     NBErrorCard(message: msg) { Task { await run() } }

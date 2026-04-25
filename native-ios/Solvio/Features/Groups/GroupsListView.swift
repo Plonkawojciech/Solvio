@@ -230,7 +230,7 @@ struct GroupsListView: View {
     private var content: some View {
         if isLoading && groups.isEmpty {
             Section {
-                NBLoadingCard()
+                NBSkeletonList(rows: 4)
                     .padding(.horizontal, Theme.Spacing.md)
             }
             .listRowBackground(Color.clear)

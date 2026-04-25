@@ -24,7 +24,16 @@ struct NearbyStoresView: View {
                 if locationManager.authStatus == .denied || locationManager.authStatus == .restricted {
                     locationDeniedCard
                 } else if isLoading && stores.isEmpty {
-                    NBLoadingCard()
+                    NBProgressCard(
+                        title: locale.t("nearby.runningTitle"),
+                        stages: [
+                            locale.t("progress.locatingStores"),
+                            locale.t("progress.crunchingData"),
+                            locale.t("progress.formattingResults"),
+                            locale.t("progress.almostDone")
+                        ],
+                        estimatedSeconds: 8
+                    )
                 } else if let msg = errorMessage, stores.isEmpty {
                     NBErrorCard(message: msg) { Task { await search() } }
                 } else if stores.isEmpty && !isLoading {

@@ -22,7 +22,7 @@ struct CategoriesManagerView: View {
                 VStack(alignment: .leading, spacing: Theme.Spacing.md) {
                     NBScreenHeader(eyebrow: locale.t("categories.headerEyebrow"), title: locale.t("categories.headerTitle"), subtitle: String(format: locale.t("categories.totalFmt"), vm.categories.count))
                     if vm.isLoading && vm.categories.isEmpty {
-                        NBLoadingCard()
+                        NBSkeletonList(rows: 6)
                     } else if let message = vm.errorMessage, vm.categories.isEmpty {
                         // Same rule as the rest of the app: error card only
                         // when there's nothing cached. Refresh failures stay

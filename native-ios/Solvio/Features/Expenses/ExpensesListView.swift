@@ -33,6 +33,11 @@ struct ExpensesListView: View {
     @State private var showBulkDeleteConfirm = false
     @State private var activePanel: TopPanel = .none
 
+    /// Undo-window task for delete commits. Holding it on the view lets the
+    /// undo button cancel the in-flight commit; bulk + swipe-delete share the
+    /// same slot so a second delete supersedes the first.
+    @State private var pendingDeleteCommit: Task<Void, Never>? = nil
+
     enum TopPanel { case none, filters, sort }
     enum DateRange: Hashable { case all, thisMonth, last30, thisYear }
     enum SortField: Hashable { case date, amount, title, vendor }
@@ -101,19 +106,11 @@ struct ExpensesListView: View {
         ) { e in
             Button(locale.t("common.cancel"), role: .cancel) {}
             Button(locale.t("common.delete"), role: .destructive) {
-                Task {
-                    // Optimistic UI: drop the row instantly, refresh in bg.
-                    store.removeExpensesOptimistic(ids: [e.id])
-                    do {
-                        try await ExpensesRepo.delete(ids: [e.id])
-                        toast.success(locale.t("toast.deleted"))
-                        store.didMutateExpenses()
-                    } catch {
-                        toast.error(locale.t("toast.error"), description: error.localizedDescription)
-                        // Force-refresh to restore the optimistically-dropped row.
-                        store.didMutateExpenses()
-                    }
-                }
+                // Snapshot the row, drop it locally, schedule the commit
+                // behind a 5 s undo toast — same pattern as bulk delete.
+                let snapshot = [e]
+                store.removeExpensesOptimistic(ids: [e.id])
+                scheduleDeleteCommit(ids: [e.id], snapshot: snapshot)
             }
         } message: { _ in
             Text(locale.t("expenses.deleteConfirmMsg"))
@@ -422,42 +419,62 @@ struct ExpensesListView: View {
 
     // MARK: - Amount range filter
 
+    /// True when both bounds parse and `from > to` — a never-matching range.
+    private var amountRangeInverted: Bool {
+        let fromV = Double(amountFrom.replacingOccurrences(of: ",", with: "."))
+        let toV   = Double(amountTo.replacingOccurrences(of: ",", with: "."))
+        guard let f = fromV, let t = toV else { return false }
+        return f > t
+    }
+
     private var amountRangeRow: some View {
-        HStack(spacing: Theme.Spacing.xs) {
-            TextField(locale.t("expenses.amountFrom"), text: $amountFrom)
-                .keyboardType(.decimalPad)
-                .font(AppFont.body)
-                .padding(.horizontal, Theme.Spacing.sm)
-                .frame(height: 40)
-                .background(Theme.card)
-                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
-                .overlay(
-                    RoundedRectangle(cornerRadius: Theme.Radius.md)
-                        .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
-                )
-            Text("–")
-                .font(AppFont.body)
-                .foregroundColor(Theme.mutedForeground)
-            TextField(locale.t("expenses.amountTo"), text: $amountTo)
-                .keyboardType(.decimalPad)
-                .font(AppFont.body)
-                .padding(.horizontal, Theme.Spacing.sm)
-                .frame(height: 40)
-                .background(Theme.card)
-                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
-                .overlay(
-                    RoundedRectangle(cornerRadius: Theme.Radius.md)
-                        .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
-                )
-            if !amountFrom.isEmpty || !amountTo.isEmpty {
-                Button {
-                    amountFrom = ""
-                    amountTo = ""
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundColor(Theme.mutedForeground)
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: Theme.Spacing.xs) {
+                TextField(locale.t("expenses.amountFrom"), text: $amountFrom)
+                    .keyboardType(.decimalPad)
+                    .font(AppFont.body)
+                    .padding(.horizontal, Theme.Spacing.sm)
+                    .frame(height: 40)
+                    .background(Theme.card)
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Theme.Radius.md)
+                            .stroke(amountRangeInverted ? Theme.destructive : Theme.foreground, lineWidth: Theme.Border.widthThin)
+                    )
+                Text("–")
+                    .font(AppFont.body)
+                    .foregroundColor(Theme.mutedForeground)
+                TextField(locale.t("expenses.amountTo"), text: $amountTo)
+                    .keyboardType(.decimalPad)
+                    .font(AppFont.body)
+                    .padding(.horizontal, Theme.Spacing.sm)
+                    .frame(height: 40)
+                    .background(Theme.card)
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Theme.Radius.md)
+                            .stroke(amountRangeInverted ? Theme.destructive : Theme.foreground, lineWidth: Theme.Border.widthThin)
+                    )
+                if !amountFrom.isEmpty || !amountTo.isEmpty {
+                    Button {
+                        amountFrom = ""
+                        amountTo = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundColor(Theme.mutedForeground)
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
+            }
+            if amountRangeInverted {
+                HStack(spacing: 4) {
+                    Image(systemName: "exclamationmark.circle.fill")
+                        .font(.system(size: 11))
+                        .foregroundColor(Theme.destructive)
+                    Text(locale.t("validation.amountRange"))
+                        .font(AppFont.caption)
+                        .foregroundColor(Theme.destructive)
+                }
             }
         }
     }
@@ -524,7 +541,7 @@ struct ExpensesListView: View {
     private var content: some View {
         if isLoading && expenses.isEmpty {
             Section {
-                NBLoadingCard()
+                NBSkeletonList(rows: 6)
                     .padding(.horizontal, Theme.Spacing.md)
             }
             .listRowBackground(Color.clear)
@@ -686,18 +703,49 @@ struct ExpensesListView: View {
         let ids = Array(selectedIds)
         guard !ids.isEmpty else { return }
         let idSet = Set(ids)
-        // Optimistic: clear the selection + drop the rows immediately so the
-        // UI feels instant. A failed delete will trigger a refresh that
-        // restores the rows.
+        // Snapshot for the undo window — we don't want to recreate via API,
+        // we just defer the destructive call until the toast expires.
+        let snapshot = expenses.filter { idSet.contains($0.id) }
         selectedIds.removeAll()
         store.removeExpensesOptimistic(ids: idSet)
-        do {
-            try await ExpensesRepo.delete(ids: ids)
-            toast.success(locale.t("toast.deleted"))
-            store.didMutateExpenses()
-        } catch {
-            toast.error(locale.t("toast.error"), description: error.localizedDescription)
-            store.didMutateExpenses()
+        scheduleDeleteCommit(ids: ids, snapshot: snapshot)
+    }
+
+    /// Show a 5 s undo toast and defer the destructive `ExpensesRepo.delete`
+    /// to the end of the window. Tapping undo cancels the task and restores
+    /// the snapshot. Used by both bulk-delete and swipe-delete.
+    private func scheduleDeleteCommit(ids: [String], snapshot: [Expense]) {
+        // Cancel any earlier commit so a rapid second delete supersedes
+        // the first one (the first batch becomes permanent immediately).
+        pendingDeleteCommit?.cancel()
+
+        let label = snapshot.count == 1
+            ? locale.t("common.itemDeleted")
+            : "\(snapshot.count) \(locale.t("common.itemsDeleted"))"
+
+        toast.undoable(label, undoLabel: locale.t("common.undo")) {
+            pendingDeleteCommit?.cancel()
+            pendingDeleteCommit = nil
+            store.restoreExpensesOptimistic(snapshot)
+        }
+
+        pendingDeleteCommit = Task {
+            // Sleep matches the toast's 5 s undo window. If the user taps
+            // undo, the task is cancelled before this returns.
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            if Task.isCancelled { return }
+            do {
+                try await ExpensesRepo.delete(ids: ids)
+                store.didMutateExpenses()
+            } catch {
+                // Server-side delete failed AFTER the user passed up undo.
+                // Put the rows back and tell them.
+                await MainActor.run {
+                    store.restoreExpensesOptimistic(snapshot)
+                    toast.error(locale.t("toast.error"), description: error.localizedDescription)
+                }
+            }
+            pendingDeleteCommit = nil
         }
     }
 

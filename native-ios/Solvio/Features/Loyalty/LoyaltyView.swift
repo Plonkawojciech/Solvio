@@ -37,7 +37,7 @@ struct LoyaltyView: View {
 
                 if isLoading && cards.isEmpty {
                     Section {
-                        NBLoadingCard()
+                        NBSkeletonList(rows: 4)
                             .padding(.horizontal, Theme.Spacing.md)
                     }
                     .listRowBackground(Color.clear)

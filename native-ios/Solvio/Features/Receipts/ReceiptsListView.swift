@@ -26,6 +26,10 @@ struct ReceiptsListView: View {
     @State private var showSourcePicker = false
     @State private var pendingDelete: Receipt?
 
+    /// Deferred-delete commit task — see `scheduleReceiptDelete(_:)`. Holding
+    /// it on the view lets the undo button cancel the in-flight commit.
+    @State private var pendingDeleteCommit: Task<Void, Never>? = nil
+
     var body: some View {
         List {
             Section {
@@ -96,18 +100,37 @@ struct ReceiptsListView: View {
             pickedItems = []
             Task {
                 var images: [UIImage] = []
+                var failures = 0
+                // Walk the picked items individually so a single bad asset
+                // (HEIC corruption, iCloud-not-yet-downloaded, etc.) doesn't
+                // wipe out the whole batch.
                 for item in captured {
-                    if let data = try? await item.loadTransferable(type: Data.self),
-                       let ui = UIImage(data: data) {
-                        images.append(ui)
+                    do {
+                        if let data = try await item.loadTransferable(type: Data.self),
+                           let ui = UIImage(data: data) {
+                            images.append(ui)
+                        } else {
+                            failures += 1
+                        }
+                    } catch {
+                        failures += 1
                     }
                 }
-                guard !images.isEmpty else { return }
-                scanQueue.enqueue(images)
-                if images.count == 1 {
-                    toast.success(locale.t("scanQueue.batchSavedSingle"))
-                } else {
-                    toast.success(String(format: locale.t("scanQueue.batchSaved"), images.count))
+                if !images.isEmpty {
+                    scanQueue.enqueue(images)
+                    if images.count == 1 {
+                        toast.success(locale.t("scanQueue.batchSavedSingle"))
+                    } else {
+                        toast.success(String(format: locale.t("scanQueue.batchSaved"), images.count))
+                    }
+                }
+                if failures > 0 {
+                    // Tell the user some assets dropped — silent fail used
+                    // to leave them wondering why nothing happened.
+                    toast.error(
+                        locale.t("toast.error"),
+                        description: "\(failures) \(locale.t("receipts.imageLoadFailed"))"
+                    )
                 }
             }
         }
@@ -118,7 +141,7 @@ struct ReceiptsListView: View {
         ) {
             Button(locale.t("common.delete"), role: .destructive) {
                 if let r = pendingDelete {
-                    Task { await deleteReceipt(id: r.id) }
+                    scheduleReceiptDelete(r)
                 }
                 pendingDelete = nil
             }
@@ -147,21 +170,37 @@ struct ReceiptsListView: View {
         }
     }
 
-    private func deleteReceipt(id: String) async {
-        // Optimistic — drop the row from the list cache so the swipe
-        // animation lands on a row that's actually gone, instead of
-        // showing the receipt for the duration of the network round-trip.
-        // didMutateReceipts() below either confirms the deletion or
-        // restores the row when the server rejects it.
-        store.removeReceiptOptimistic(id: id)
-        do {
-            try await ReceiptsRepo.delete(id: id)
-            store.didMutateReceipts()
-            toast.success(locale.t("toast.deleted"))
-        } catch {
-            toast.error(locale.t("toast.error"), description: error.localizedDescription)
-            // Rollback — refresh restores the row that we optimistically removed.
-            store.didMutateReceipts()
+    /// Snapshot the receipt + its index, drop it locally, and schedule the
+    /// destructive `ReceiptsRepo.delete` to fire after a 5 s undo window.
+    /// Tapping "Cofnij" on the toast cancels the commit and reinserts the
+    /// row at its original position.
+    private func scheduleReceiptDelete(_ r: Receipt) {
+        let idx = store.receipts.firstIndex(where: { $0.id == r.id })
+        store.removeReceiptOptimistic(id: r.id)
+
+        // Cancel any earlier in-flight commit so a rapid second delete
+        // supersedes the first.
+        pendingDeleteCommit?.cancel()
+
+        toast.undoable(locale.t("common.itemDeleted"), undoLabel: locale.t("common.undo")) {
+            pendingDeleteCommit?.cancel()
+            pendingDeleteCommit = nil
+            store.restoreReceiptOptimistic(r, at: idx)
+        }
+
+        pendingDeleteCommit = Task {
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            if Task.isCancelled { return }
+            do {
+                try await ReceiptsRepo.delete(id: r.id)
+                store.didMutateReceipts()
+            } catch {
+                await MainActor.run {
+                    store.restoreReceiptOptimistic(r, at: idx)
+                    toast.error(locale.t("toast.error"), description: error.localizedDescription)
+                }
+            }
+            pendingDeleteCommit = nil
         }
     }
 
@@ -205,7 +244,7 @@ struct ReceiptsListView: View {
     private var content: some View {
         if store.receiptsLoading && store.receipts.isEmpty {
             Section {
-                NBLoadingCard()
+                NBSkeletonList(rows: 5)
                     .padding(.horizontal, Theme.Spacing.md)
             }
             .listRowBackground(Color.clear)

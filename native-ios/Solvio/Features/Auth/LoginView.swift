@@ -70,9 +70,24 @@ struct LoginView: View {
                         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
                         .overlay(
                             RoundedRectangle(cornerRadius: Theme.Radius.md)
-                                .stroke(Theme.foreground, lineWidth: Theme.Border.width)
+                                .stroke(emailErrorVisible ? Theme.destructive : Theme.foreground, lineWidth: Theme.Border.width)
                         )
                         .nbShadow(Theme.Shadow.sm)
+
+                    if emailErrorVisible {
+                        // Inline hint after the user has typed enough to be
+                        // taken seriously (3+ chars) but the address still
+                        // doesn't satisfy our regex. Quiet during early
+                        // typing, helpful once they're clearly stuck.
+                        HStack(spacing: 4) {
+                            Image(systemName: "exclamationmark.circle.fill")
+                                .font(.system(size: 11))
+                                .foregroundColor(Theme.destructive)
+                            Text(locale.t("validation.emailInvalid"))
+                                .font(AppFont.caption)
+                                .foregroundColor(Theme.destructive)
+                        }
+                    }
 
                     Button(action: handleSubmit) {
                         HStack(spacing: Theme.Spacing.xs) {
@@ -119,7 +134,18 @@ struct LoginView: View {
 
     private var isValidEmail: Bool {
         let trimmed = email.trimmingCharacters(in: .whitespaces)
-        return trimmed.contains("@") && trimmed.count >= 5
+        // RFC-5322 simplified — local-part, '@', domain with at least one '.'
+        // and a 2+ char TLD. Catches the common typos ("foo@bar", "@bar.com",
+        // "foo bar@baz.com") without false-positives on real addresses.
+        let pattern = #"^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$"#
+        return trimmed.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil
+    }
+
+    /// Show the inline error only after the user has typed something
+    /// substantial — avoids yelling on every keystroke.
+    private var emailErrorVisible: Bool {
+        let trimmed = email.trimmingCharacters(in: .whitespaces)
+        return trimmed.count >= 4 && !isValidEmail
     }
 
     private func handleSubmit() {

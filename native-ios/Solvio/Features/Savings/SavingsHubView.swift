@@ -231,7 +231,8 @@ struct SavingsHubView: View {
             }
 
             if vm.isBudgetLoading && vm.budget == nil {
-                NBLoadingCard()
+                NBSkeletonHero()
+                NBSkeletonList(rows: 3)
             } else if let err = vm.budgetError, vm.budget == nil {
                 NBErrorCard(message: err) { Task { await vm.loadBudget(force: true) } }
             } else if let b = vm.budget {
@@ -258,6 +259,15 @@ struct SavingsHubView: View {
         let income = Double(b.budget?.totalIncome ?? "0") ?? 0
         let savingsTarget = Double(b.budget?.savingsTarget ?? "0") ?? 0
         let pct = totalBudget > 0 ? b.totalSpent / totalBudget : 0
+        let savingsRate = income > 0 ? min(1, savingsTarget / income) : 0
+        // Burn rate vs month progress: if we've spent 60% but the month is
+        // only 40% over, we're burning faster than we should — paint amber.
+        let burnDelta = pct - b.monthProgress
+        let onPaceColor: Color = {
+            if burnDelta > 0.10 { return Theme.destructive }
+            if burnDelta > 0.0  { return Theme.warning }
+            return Theme.success
+        }()
 
         return VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
             LazyVGrid(columns: [
@@ -280,9 +290,28 @@ struct SavingsHubView: View {
             }
             if totalBudget > 0 {
                 NBProgressBar(value: pct, over: pct > 1)
-                Text(String(format: locale.t("savings.pctUsed"), Int(min(100, pct * 100))))
+                HStack {
+                    Text(String(format: locale.t("savings.pctUsed"), Int(min(100, pct * 100))))
+                        .font(AppFont.mono(11))
+                        .foregroundColor(Theme.mutedForeground)
+                    Spacer()
+                    // Pace indicator — visual signal whether we're burning
+                    // through the budget faster than the month is passing.
+                    HStack(spacing: 4) {
+                        Circle()
+                            .fill(onPaceColor)
+                            .frame(width: 6, height: 6)
+                            .overlay(Circle().stroke(Theme.foreground, lineWidth: 0.5))
+                        Text("\(Int(b.monthProgress * 100))% \(locale.t("savings.monthLabelFmt").replacingOccurrences(of: ": %@", with: "").lowercased())")
+                            .font(AppFont.mono(11))
+                            .foregroundColor(onPaceColor)
+                    }
+                }
+            }
+            if income > 0, savingsTarget > 0 {
+                Text(String(format: locale.t("budgetSheet.savingsRateFmt"), Int(savingsRate * 100)))
                     .font(AppFont.mono(11))
-                    .foregroundColor(Theme.mutedForeground)
+                    .foregroundColor(savingsRate >= 0.2 ? Theme.success : Theme.mutedForeground)
             }
         }
         .padding(Theme.Spacing.sm)
@@ -367,7 +396,16 @@ struct SavingsHubView: View {
             }
             productsRunCard
             if vm.isPriceLoading && vm.priceResult == nil {
-                NBLoadingCard()
+                NBProgressCard(
+                    title: locale.t("prices.runningTitle"),
+                    stages: [
+                        locale.t("progress.preparingRequest"),
+                        locale.t("progress.scanningWeb"),
+                        locale.t("progress.matchingProducts"),
+                        locale.t("progress.almostDone")
+                    ],
+                    estimatedSeconds: 14
+                )
             }
             if let msg = vm.priceError, vm.priceResult == nil {
                 NBErrorCard(message: msg) { Task { await vm.loadPriceComparison(force: true) } }
@@ -571,7 +609,17 @@ struct SavingsHubView: View {
             }
             storesRunCard
             if vm.isAuditLoading && vm.auditResult == nil {
-                NBLoadingCard()
+                NBProgressCard(
+                    title: locale.t("audit.runningTitle"),
+                    stages: [
+                        locale.t("progress.preparingRequest"),
+                        locale.t("progress.scanningWeb"),
+                        locale.t("progress.matchingProducts"),
+                        locale.t("progress.findingDeals"),
+                        locale.t("progress.almostDone")
+                    ],
+                    estimatedSeconds: 18
+                )
             }
             if let msg = vm.auditError, vm.auditResult == nil {
                 NBErrorCard(message: msg) { Task { await vm.loadAudit(force: true) } }
@@ -828,7 +876,7 @@ struct SavingsHubView: View {
             dealsHeader
 
             if vm.isPromotionsLoading && vm.promotions == nil {
-                NBLoadingCard()
+                NBSkeletonList(rows: 4)
             } else if let err = vm.promotionsError, vm.promotions == nil {
                 NBErrorCard(message: err) { Task { await vm.loadPromotions(force: true) } }
             } else if let promos = vm.promotions {
@@ -1236,6 +1284,10 @@ final class SavingsHubViewModel: ObservableObject {
 
 // MARK: - Budget edit sheet
 
+/// Monthly-budget planner with live allocation preview, validation, and
+/// quick presets (50/30/20, 70/20/10, 80/20). Sticky currency comes from
+/// `AppDataStore.currency` so the preview formatting matches the rest of
+/// the app the moment the sheet opens.
 struct BudgetEditSheet: View {
     let month: String
     let existing: MonthlyBudget?
@@ -1243,48 +1295,405 @@ struct BudgetEditSheet: View {
 
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var locale: AppLocale
-    @State private var income: String = ""
-    @State private var totalBudget: String = ""
-    @State private var savingsTarget: String = ""
+    @EnvironmentObject private var store: AppDataStore
+
+    @State private var incomeText: String = ""
+    @State private var budgetText: String = ""
+    @State private var savingsText: String = ""
+
+    /// Sticky currency — read from the central store so the planner preview
+    /// uses the same format string as Dashboard / Expenses.
+    private var currency: String { store.currency }
+
+    // MARK: - Parsed values + derived state
+
+    private var income: Double { parse(incomeText) }
+    private var totalBudget: Double { parse(budgetText) }
+    private var savingsTarget: Double { parse(savingsText) }
+
+    private var allocated: Double { totalBudget + savingsTarget }
+    private var unallocated: Double { max(0, income - allocated) }
+    private var overflow: Double { max(0, allocated - income) }
+    private var savingsRate: Double {
+        guard income > 0 else { return 0 }
+        return min(1, savingsTarget / income)
+    }
+
+    private var hasNegative: Bool {
+        income < 0 || totalBudget < 0 || savingsTarget < 0
+    }
+
+    private var canSave: Bool {
+        !hasNegative && (income > 0 || totalBudget > 0 || savingsTarget > 0)
+    }
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-                    Text(String(format: locale.t("savings.monthLabelFmt"), month))
-                        .font(AppFont.caption)
-                        .foregroundColor(Theme.mutedForeground)
-                    NBTextField(label: locale.t("savings.monthlyIncome"), text: $income, placeholder: "0.00", keyboardType: .decimalPad)
-                    NBTextField(label: locale.t("savings.totalBudget"), text: $totalBudget, placeholder: "0.00", keyboardType: .decimalPad)
-                    NBTextField(label: locale.t("savings.savingsTarget"), text: $savingsTarget, placeholder: "0.00", keyboardType: .decimalPad)
+                    intro
+                    inputs
+                    presets
+                    livePreview
+                    warnings
+                    Spacer(minLength: Theme.Spacing.lg)
                 }
                 .padding(Theme.Spacing.md)
             }
             .background(Theme.background)
-            .navigationTitle(locale.t("savings.editBudget"))
+            .navigationTitle(locale.t("budgetSheet.title"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button(locale.t("common.cancel")) { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(locale.t("common.cancel")) { dismiss() }
+                }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button(locale.t("common.save")) {
-                        let body = BudgetUpsert(
-                            month: month,
-                            totalIncome: Double(income),
-                            totalBudget: Double(totalBudget),
-                            savingsTarget: Double(savingsTarget)
-                        )
-                        onSubmit(body)
-                        dismiss()
-                    }
+                    Button(locale.t("common.save")) { commit() }
+                        .disabled(!canSave)
                 }
             }
-            .onAppear {
-                if let e = existing {
-                    income = e.totalIncome ?? ""
-                    totalBudget = e.totalBudget ?? ""
-                    savingsTarget = e.savingsTarget ?? ""
+            .onAppear(perform: hydrateFromExisting)
+            .animation(.spring(response: 0.35, dampingFraction: 0.85), value: allocated)
+        }
+    }
+
+    // MARK: - Sections
+
+    private var intro: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(String(format: locale.t("savings.monthLabelFmt"), month))
+                .font(AppFont.mono(11))
+                .tracking(0.5)
+                .textCase(.uppercase)
+                .foregroundColor(Theme.mutedForeground)
+            Text(locale.t("budgetSheet.intro"))
+                .font(AppFont.caption)
+                .foregroundColor(Theme.mutedForeground)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var inputs: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+            field(
+                label: locale.t("savings.monthlyIncome"),
+                text: $incomeText,
+                hint: locale.t("budgetSheet.incomeHint"),
+                share: nil // income is the denominator, no share line
+            )
+            field(
+                label: locale.t("savings.totalBudget"),
+                text: $budgetText,
+                hint: locale.t("budgetSheet.budgetHint"),
+                share: shareOfIncome(totalBudget)
+            )
+            field(
+                label: locale.t("savings.savingsTarget"),
+                text: $savingsText,
+                hint: locale.t("budgetSheet.savingsHint"),
+                share: shareOfIncome(savingsTarget)
+            )
+        }
+    }
+
+    private func field(
+        label: String,
+        text: Binding<String>,
+        hint: String,
+        share: Int?
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(label.uppercased())
+                    .font(AppFont.mono(10))
+                    .tracking(1.2)
+                    .foregroundColor(Theme.mutedForeground)
+                Spacer()
+                if let pct = share {
+                    Text("\(pct)% \(locale.t("budgetSheet.allocPreviewLabel").lowercased())")
+                        .font(AppFont.mono(10))
+                        .foregroundColor(pct > 100 ? Theme.destructive : Theme.mutedForeground)
                 }
+            }
+            HStack(spacing: 8) {
+                TextField("0.00", text: text)
+                    .keyboardType(.decimalPad)
+                    .font(AppFont.bold(20))
+                    .foregroundColor(Theme.foreground)
+                Text(currency)
+                    .font(AppFont.mono(12))
+                    .foregroundColor(Theme.mutedForeground)
+            }
+            .padding(.horizontal, Theme.Spacing.md)
+            .frame(height: 52)
+            .background(Theme.card)
+            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.Radius.md)
+                    .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
+            )
+            Text(hint)
+                .font(AppFont.caption)
+                .foregroundColor(Theme.mutedForeground)
+        }
+    }
+
+    private var presets: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+            HStack {
+                NBEyebrow(text: locale.t("budgetSheet.applyPreset"))
+                Spacer()
+                if existing == nil, hasLastMonthValues {
+                    Button {
+                        copyLastMonth()
+                    } label: {
+                        Label(locale.t("budgetSheet.copyLastMonth"), systemImage: "arrow.uturn.backward")
+                            .font(AppFont.mono(10))
+                            .foregroundColor(Theme.foreground)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            VStack(spacing: Theme.Spacing.xs) {
+                presetRow(
+                    title: locale.t("budgetSheet.preset50_30_20"),
+                    subtitle: locale.t("budgetSheet.preset50_30_20Desc"),
+                    budgetShare: 0.80, // 50% needs + 30% wants → spend
+                    savingsShare: 0.20
+                )
+                presetRow(
+                    title: locale.t("budgetSheet.preset70_20_10"),
+                    subtitle: locale.t("budgetSheet.preset70_20_10Desc"),
+                    budgetShare: 0.70,
+                    savingsShare: 0.30 // 20% save + 10% invest both go to savings
+                )
+                presetRow(
+                    title: locale.t("budgetSheet.preset80_20"),
+                    subtitle: locale.t("budgetSheet.preset80_20Desc"),
+                    budgetShare: 0.80,
+                    savingsShare: 0.20
+                )
             }
         }
+    }
+
+    private func presetRow(
+        title: String,
+        subtitle: String,
+        budgetShare: Double,
+        savingsShare: Double
+    ) -> some View {
+        Button {
+            applyPreset(budgetShare: budgetShare, savingsShare: savingsShare)
+        } label: {
+            HStack(alignment: .center, spacing: Theme.Spacing.sm) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(AppFont.bodyMedium)
+                        .foregroundColor(Theme.foreground)
+                    Text(subtitle)
+                        .font(AppFont.caption)
+                        .foregroundColor(Theme.mutedForeground)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer()
+                Image(systemName: "arrow.right")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundColor(Theme.foreground)
+            }
+            .padding(Theme.Spacing.sm)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Theme.card)
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                    .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+            .opacity(income > 0 ? 1.0 : 0.5)
+        }
+        .buttonStyle(.plain)
+        .disabled(income <= 0)
+    }
+
+    private var livePreview: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+            NBEyebrow(text: locale.t("savings.monthOverview"))
+            HStack(alignment: .center, spacing: Theme.Spacing.sm) {
+                allocationBar
+            }
+            HStack(spacing: Theme.Spacing.md) {
+                legend(label: locale.t("savings.budget"), value: totalBudget, color: Theme.foreground)
+                legend(label: locale.t("savings.savingsTargetShort"), value: savingsTarget, color: Theme.success)
+                if overflow == 0 {
+                    legend(label: locale.t("budgetSheet.unallocated"), value: unallocated, color: Theme.mutedForeground)
+                } else {
+                    legend(label: locale.t("budgetSheet.over"), value: overflow, color: Theme.destructive)
+                }
+            }
+            if income > 0 {
+                Text(String(format: locale.t("budgetSheet.savingsRateFmt"), Int(savingsRate * 100)))
+                    .font(AppFont.mono(11))
+                    .foregroundColor(savingsRate >= 0.2 ? Theme.success : Theme.mutedForeground)
+            }
+        }
+        .padding(Theme.Spacing.sm)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .nbCard(radius: Theme.Radius.md, shadow: Theme.Shadow.sm)
+    }
+
+    /// Stacked horizontal bar — budget (foreground) + savings (success) +
+    /// remainder (muted) when income > 0. When allocations exceed income
+    /// we paint the overflow in destructive red instead of remainder.
+    private var allocationBar: some View {
+        GeometryReader { geo in
+            let total = max(income, allocated, 1)
+            let budgetW = CGFloat(totalBudget / total) * geo.size.width
+            let savingsW = CGFloat(savingsTarget / total) * geo.size.width
+            let remW = max(0, geo.size.width - budgetW - savingsW)
+            HStack(spacing: 0) {
+                Rectangle()
+                    .fill(Theme.foreground)
+                    .frame(width: budgetW)
+                Rectangle()
+                    .fill(Theme.success)
+                    .frame(width: savingsW)
+                Rectangle()
+                    .fill(overflow > 0 ? Theme.destructive : Theme.muted)
+                    .frame(width: remW)
+            }
+        }
+        .frame(height: 14)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
+        )
+    }
+
+    private func legend(label: String, value: Double, color: Color) -> some View {
+        HStack(spacing: 4) {
+            Circle()
+                .fill(color)
+                .frame(width: 8, height: 8)
+                .overlay(Circle().stroke(Theme.foreground, lineWidth: 0.5))
+            VStack(alignment: .leading, spacing: 0) {
+                Text(label.uppercased())
+                    .font(AppFont.mono(9))
+                    .tracking(0.8)
+                    .foregroundColor(Theme.mutedForeground)
+                Text(Fmt.amount(value, currency: currency))
+                    .font(AppFont.mono(11))
+                    .foregroundColor(Theme.foreground)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var warnings: some View {
+        if hasNegative {
+            warningCard(text: locale.t("budgetSheet.warnNegative"), kind: .error)
+        }
+        if overflow > 0 {
+            warningCard(
+                text: String(format: locale.t("budgetSheet.warnExceeds"), Fmt.amount(overflow, currency: currency)),
+                kind: .warn
+            )
+        }
+        if income <= 0 && (totalBudget > 0 || savingsTarget > 0) {
+            warningCard(text: locale.t("budgetSheet.warnNoIncome"), kind: .info)
+        }
+    }
+
+    private enum WarnKind { case error, warn, info }
+
+    private func warningCard(text: String, kind: WarnKind) -> some View {
+        let (icon, tint): (String, Color) = {
+            switch kind {
+            case .error: return ("exclamationmark.octagon.fill", Theme.destructive)
+            case .warn:  return ("exclamationmark.triangle.fill", Theme.warning)
+            case .info:  return ("info.circle.fill", Theme.info)
+            }
+        }()
+        return HStack(alignment: .top, spacing: Theme.Spacing.sm) {
+            Image(systemName: icon).foregroundColor(tint)
+            Text(text)
+                .font(AppFont.caption)
+                .foregroundColor(Theme.foreground)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer()
+        }
+        .padding(Theme.Spacing.sm)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(tint.opacity(0.08))
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                .stroke(tint, lineWidth: Theme.Border.widthThin)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+    }
+
+    // MARK: - Helpers
+
+    private func parse(_ text: String) -> Double {
+        Double(text.replacingOccurrences(of: ",", with: ".")) ?? 0
+    }
+
+    private func format(_ value: Double) -> String {
+        if value == value.rounded() {
+            return String(format: "%.0f", value)
+        }
+        return String(format: "%.2f", value)
+    }
+
+    private func shareOfIncome(_ value: Double) -> Int? {
+        guard income > 0, value > 0 else { return nil }
+        return Int((value / income) * 100)
+    }
+
+    private func applyPreset(budgetShare: Double, savingsShare: Double) {
+        guard income > 0 else { return }
+        budgetText = format(income * budgetShare)
+        savingsText = format(income * savingsShare)
+    }
+
+    private var hasLastMonthValues: Bool {
+        // Quick proxy — the main view passed in `existing` for THIS month;
+        // if no existing record + the dashboard has prevTotal data, the
+        // user has at least one previous month's worth of activity.
+        existing == nil && (store.dashboard?.prevTotal ?? 0) > 0
+    }
+
+    private func copyLastMonth() {
+        // We don't yet have a per-month budget history endpoint — fall
+        // back to using prevTotal as a budget seed when the user hasn't
+        // set anything for this month yet.
+        let prev = store.dashboard?.prevTotal ?? 0
+        guard prev > 0 else { return }
+        budgetText = format(prev)
+        // Default 20% savings seed so the planner shows a balanced split.
+        if income > 0 {
+            savingsText = format(income * 0.20)
+        }
+    }
+
+    private func hydrateFromExisting() {
+        if let e = existing {
+            incomeText = e.totalIncome ?? ""
+            budgetText = e.totalBudget ?? ""
+            savingsText = e.savingsTarget ?? ""
+        }
+    }
+
+    private func commit() {
+        guard canSave else { return }
+        let body = BudgetUpsert(
+            month: month,
+            totalIncome: income > 0 ? income : nil,
+            totalBudget: totalBudget > 0 ? totalBudget : nil,
+            savingsTarget: savingsTarget > 0 ? savingsTarget : nil
+        )
+        onSubmit(body)
+        dismiss()
     }
 }

@@ -69,7 +69,7 @@ struct GoalsListView: View {
 
                 if isLoading && goals.isEmpty {
                     Section {
-                        NBLoadingCard()
+                        NBSkeletonList(rows: 4)
                             .padding(.horizontal, Theme.Spacing.md)
                     }
                     .listRowBackground(Color.clear)

@@ -57,7 +57,20 @@ struct AnalysisView: View {
                 periodSelector
                 runCard
                 if isLoading && result == nil {
-                    NBLoadingCard()
+                    // AI call typically lands in 8-15 s. NBProgressCard
+                    // cycles through stage labels and shows wall-clock
+                    // ETA so the user knows the request is alive.
+                    NBProgressCard(
+                        title: locale.t("analysis.runningTitle"),
+                        stages: [
+                            locale.t("progress.preparingRequest"),
+                            locale.t("progress.contactingAI"),
+                            locale.t("progress.crunchingData"),
+                            locale.t("progress.formattingResults"),
+                            locale.t("progress.almostDone"),
+                        ],
+                        estimatedSeconds: 12
+                    )
                 }
                 if let msg = errorMessage, result == nil {
                     NBErrorCard(message: msg) { Task { await run(force: true) } }

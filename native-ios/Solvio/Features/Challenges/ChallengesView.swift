@@ -41,7 +41,7 @@ struct ChallengesView: View {
                     )
 
                     if isLoading && challenges.isEmpty {
-                        NBLoadingCard()
+                        NBSkeletonList(rows: 4)
                     } else if let message = errorMessage, challenges.isEmpty {
                         NBErrorCard(message: message) { Task { await store.awaitChallenges(force: true) } }
                     } else if challenges.isEmpty {

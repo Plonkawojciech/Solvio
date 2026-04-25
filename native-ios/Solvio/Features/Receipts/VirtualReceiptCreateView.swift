@@ -21,10 +21,18 @@ struct VirtualReceiptCreateView: View {
     @State private var items: [EditableItem] = [EditableItem()]
     @State private var isSaving = false
 
+    /// Show validation hints only after the user tried Save once. Lets the
+    /// form stay quiet on first paint instead of yelling about an empty
+    /// vendor field the user is on the way to filling.
+    @State private var didTryToSave = false
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Theme.Spacing.md) {
                 NBTextField(label: locale.t("virtualReceipt.vendor"), text: $vendor, placeholder: locale.t("virtualReceipt.vendorPh"))
+                if didTryToSave, vendor.trimmingCharacters(in: .whitespaces).isEmpty {
+                    inlineError(locale.t("validation.vendorRequired"))
+                }
 
                 VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
                     Text(locale.t("virtualReceipt.dateLabel"))
@@ -61,13 +69,22 @@ struct VirtualReceiptCreateView: View {
                         )
                 }
 
+                if didTryToSave, !canSave, !vendor.trimmingCharacters(in: .whitespaces).isEmpty {
+                    inlineError(locale.t("validation.priceInvalid"))
+                }
+
                 Button {
+                    didTryToSave = true
+                    guard canSave else {
+                        toast.warning(locale.t("validation.vendorRequired"))
+                        return
+                    }
                     Task { await save() }
                 } label: {
                     Text(isSaving ? locale.t("virtualReceipt.saving") : locale.t("virtualReceipt.save"))
                 }
                 .buttonStyle(NBPrimaryButtonStyle())
-                .disabled(isSaving || !canSave)
+                .disabled(isSaving)
 
                 Spacer(minLength: Theme.Spacing.xl)
             }
@@ -80,6 +97,20 @@ struct VirtualReceiptCreateView: View {
             ToolbarItem(placement: .cancellationAction) {
                 Button(locale.t("common.cancel")) { dismiss() }
             }
+        }
+    }
+
+    /// Inline-validation chip — small red label under a field. Show only
+    /// after the user has attempted Save so the form doesn't yell during
+    /// initial typing.
+    private func inlineError(_ message: String) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: "exclamationmark.circle.fill")
+                .font(.system(size: 11))
+                .foregroundColor(Theme.destructive)
+            Text(message)
+                .font(AppFont.caption)
+                .foregroundColor(Theme.destructive)
         }
     }
 

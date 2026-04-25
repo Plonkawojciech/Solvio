@@ -20,7 +20,8 @@ struct GroupDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: Theme.Spacing.md) {
                 if vm.isLoading && vm.group == nil {
-                    NBLoadingCard()
+                    NBSkeletonHero()
+                    NBSkeletonList(rows: 3)
                 } else if let message = vm.errorMessage, vm.group == nil {
                     NBErrorCard(message: message) { Task { await vm.load(id: groupId) } }
                 } else if let g = vm.group {

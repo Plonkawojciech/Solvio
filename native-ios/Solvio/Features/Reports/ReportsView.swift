@@ -29,7 +29,10 @@ struct ReportsView: View {
             VStack(alignment: .leading, spacing: Theme.Spacing.md) {
                 header
                 if isLoading && yearBlocks.isEmpty {
-                    NBLoadingCard()
+                    // Reports loading is mostly DB aggregation — usually
+                    // fast. Skeleton list reads as a more honest preview
+                    // of the upcoming year/month rows than a spinner.
+                    NBSkeletonList(rows: 4)
                 } else if let msg = errorMessage, yearBlocks.isEmpty {
                     // Error card only when there's nothing on screen. If
                     // reports are already loaded a transient refresh fail

@@ -22,7 +22,12 @@ struct DashboardView: View {
             VStack(alignment: .leading, spacing: Theme.Spacing.md) {
                 header
                 if display == nil && store.dashboardLoading {
-                    NBLoadingCard()
+                    // Hero skeleton + 3 row skeletons matches the eventual
+                    // layout (hero card + recent-expenses list) so cold
+                    // dashboards don't flash from a single spinner card to
+                    // a busy multi-card layout.
+                    NBSkeletonHero()
+                    NBSkeletonList(rows: 3)
                 } else if display == nil, let message = store.dashboardError {
                     NBErrorCard(message: message) {
                         store.ensureDashboard(force: true)

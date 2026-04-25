@@ -31,7 +31,8 @@ struct ReceiptDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: Theme.Spacing.md) {
                 if vm.isLoading && vm.receipt == nil {
-                    NBLoadingCard()
+                    NBSkeletonHero()
+                    NBSkeletonList(rows: 3)
                 } else if let message = vm.errorMessage, vm.receipt == nil {
                     NBErrorCard(message: message) { Task { await vm.load(id: receiptId) } }
                 } else if let r = vm.receipt {

@@ -193,6 +193,194 @@ struct NBLoadingCard: View {
     }
 }
 
+// MARK: - Skeleton Loaders
+// Granular shimmer skeletons — replace the solid `NBLoadingCard` whenever
+// the consumer can predict the post-load layout. Cheaper visual cost than
+// a centered spinner because users don't experience a "blank" beat.
+
+/// Single bar — used as a building block inside list-row / kpi-tile skeletons.
+struct NBSkeletonBar: View {
+    var width: CGFloat? = nil
+    var height: CGFloat = 12
+    var cornerRadius: CGFloat = 4
+    @State private var phase: CGFloat = -1.0
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: cornerRadius)
+            .fill(Theme.muted)
+            .frame(width: width, height: height)
+            .frame(maxWidth: width == nil ? .infinity : nil, alignment: .leading)
+            .overlay(
+                GeometryReader { geo in
+                    LinearGradient(
+                        colors: [Color.clear, Theme.foreground.opacity(0.15), Color.clear],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                    .frame(width: geo.size.width * 0.6)
+                    .offset(x: phase * geo.size.width * 1.5)
+                }
+            )
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
+            .onAppear {
+                withAnimation(.linear(duration: 1.4).repeatForever(autoreverses: false)) {
+                    phase = 1.5
+                }
+            }
+    }
+}
+
+/// Generic skeleton row (header + body lines). Use for list items.
+struct NBSkeletonRow: View {
+    var body: some View {
+        HStack(spacing: Theme.Spacing.sm) {
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Theme.muted)
+                .frame(width: 36, height: 36)
+            VStack(alignment: .leading, spacing: 6) {
+                NBSkeletonBar(width: 140, height: 12)
+                NBSkeletonBar(width: 90, height: 10)
+            }
+            Spacer()
+            NBSkeletonBar(width: 60, height: 14)
+        }
+        .padding(Theme.Spacing.sm)
+        .nbCard(radius: Theme.Radius.md, shadow: Theme.Shadow.sm)
+    }
+}
+
+/// Skeleton card with N predictable rows. Replaces NBLoadingCard for list-style screens.
+struct NBSkeletonList: View {
+    var rows: Int = 4
+    var body: some View {
+        VStack(spacing: Theme.Spacing.xs) {
+            ForEach(0..<rows, id: \.self) { _ in
+                NBSkeletonRow()
+            }
+        }
+    }
+}
+
+/// Skeleton hero — for dashboard/detail-view top sections.
+struct NBSkeletonHero: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+            NBSkeletonBar(width: 80, height: 10)
+            NBSkeletonBar(width: 200, height: 28)
+            NBSkeletonBar(width: 140, height: 12)
+            HStack(spacing: Theme.Spacing.sm) {
+                NBSkeletonBar(width: 60, height: 36, cornerRadius: 8)
+                NBSkeletonBar(width: 60, height: 36, cornerRadius: 8)
+                NBSkeletonBar(width: 60, height: 36, cornerRadius: 8)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(Theme.Spacing.md)
+        .nbCard(radius: Theme.Radius.lg, shadow: Theme.Shadow.lg)
+    }
+}
+
+// MARK: - Progress Card for AI / long-running fetches
+// AI calls (analysis, audit, prices, advisor) typically sit between 8-15 s.
+// A bare spinner during that window feels broken — the user can't tell if
+// the request is still alive or stuck. NBProgressCard cycles through stage
+// labels and exposes an `eta` so the user knows roughly when to expect
+// results. Stage advancement is purely cosmetic — it's NOT tied to actual
+// backend progress because the backend doesn't report it.
+
+struct NBProgressCard: View {
+    let title: String
+    let stages: [String]   // user-facing strings, already localized
+    var estimatedSeconds: Int = 12
+
+    @State private var stageIndex = 0
+    @State private var elapsedSec: Int = 0
+    @State private var stageTimer: Timer?
+    @State private var elapsedTimer: Timer?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+            HStack(spacing: 10) {
+                ProgressView().tint(Theme.foreground)
+                Text(title)
+                    .font(AppFont.cardTitle)
+                    .foregroundColor(Theme.foreground)
+            }
+
+            if !stages.isEmpty {
+                HStack(spacing: 6) {
+                    Image(systemName: "sparkles")
+                        .foregroundColor(Theme.mutedForeground)
+                        .font(.caption)
+                    Text(stages[stageIndex % stages.count])
+                        .font(AppFont.caption)
+                        .foregroundColor(Theme.mutedForeground)
+                        .id("stage-\(stageIndex)")
+                        .transition(.opacity)
+                }
+            }
+
+            // Coarse progress bar — caps at 95% so it never claims to be
+            // "done" while we're still waiting on the network.
+            let pct = min(0.95, Double(elapsedSec) / Double(max(estimatedSeconds, 1)))
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(Theme.muted)
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(Theme.foreground)
+                        .frame(width: geo.size.width * pct)
+                        .animation(.easeOut(duration: 0.4), value: pct)
+                }
+            }
+            .frame(height: 6)
+
+            HStack {
+                Text("\(elapsedSec)s")
+                    .font(AppFont.mono(10))
+                    .foregroundColor(Theme.mutedForeground)
+                Spacer()
+                if elapsedSec < estimatedSeconds {
+                    Text("~\(max(estimatedSeconds - elapsedSec, 1))s")
+                        .font(AppFont.mono(10))
+                        .foregroundColor(Theme.mutedForeground)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(Theme.Spacing.md)
+        .nbCard(radius: Theme.Radius.md, shadow: Theme.Shadow.sm)
+        .onAppear {
+            // Two timers: one rotates stage labels every ~3 s, one tracks
+            // wall time for the bar/eta. Both cleaned up in onDisappear.
+            stageTimer?.invalidate()
+            elapsedTimer?.invalidate()
+            stageIndex = 0
+            elapsedSec = 0
+            if stages.count > 1 {
+                stageTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { _ in
+                    Task { @MainActor in
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            stageIndex = (stageIndex + 1) % stages.count
+                        }
+                    }
+                }
+            }
+            elapsedTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
+                Task { @MainActor in
+                    elapsedSec += 1
+                }
+            }
+        }
+        .onDisappear {
+            stageTimer?.invalidate()
+            elapsedTimer?.invalidate()
+            stageTimer = nil
+            elapsedTimer = nil
+        }
+    }
+}
+
 struct NBErrorCard: View {
     @EnvironmentObject private var locale: AppLocale
     let message: String

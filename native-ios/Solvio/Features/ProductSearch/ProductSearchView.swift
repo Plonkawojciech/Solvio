@@ -2,20 +2,48 @@ import SwiftUI
 
 struct ProductSearchView: View {
     @EnvironmentObject private var locale: AppLocale
+    @EnvironmentObject private var store: AppDataStore
     @State private var query = ""
     @State private var isLoading = false
     @State private var result: ProductSearchResponse?
     @State private var errorMessage: String?
-    @State private var currency = "PLN"
     @FocusState private var isSearchFocused: Bool
+
+    /// Sticky currency. Reads from AppDataStore (which prefetches from
+    /// dashboard) and falls back to UserDefaults so the user never sees
+    /// the hardcoded "PLN" placeholder when they've already set EUR/USD.
+    private var currency: String { store.currency }
+
+    /// Persisted search history (UserDefaults). Keeps the last 8 unique
+    /// queries the user actually ran. Surfaces as quick-tap chips when the
+    /// search field is empty so the user doesn't have to re-type a search
+    /// they did 30 seconds ago.
+    private static let historyKey = "solvio.productSearch.history"
+    private static let historyLimit = 8
+    @State private var history: [String] = ProductSearchView.loadHistory()
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Theme.Spacing.md) {
                 header
                 searchBar
+                // Recent searches chips: show only when there's no result
+                // on screen and user hasn't typed anything yet — otherwise
+                // they'd compete with the result list for attention.
+                if result == nil && query.isEmpty && !history.isEmpty && !isLoading {
+                    recentSearches
+                }
                 if isLoading {
-                    NBLoadingCard()
+                    NBProgressCard(
+                        title: locale.t("productSearch.runningTitle"),
+                        stages: [
+                            locale.t("progress.preparingRequest"),
+                            locale.t("progress.scanningWeb"),
+                            locale.t("progress.matchingProducts"),
+                            locale.t("progress.almostDone"),
+                        ],
+                        estimatedSeconds: 10
+                    )
                 }
                 if let msg = errorMessage, result == nil {
                     NBErrorCard(message: msg) { Task { await search() } }
@@ -42,14 +70,7 @@ struct ProductSearchView: View {
         .background(Theme.background)
         .navigationTitle(locale.t("search.navTitle"))
         .navigationBarTitleDisplayMode(.inline)
-        .task { await loadCurrency() }
-    }
-
-    private func loadCurrency() async {
-        guard let bundle = try? await SettingsRepo.fetch(),
-              let code = bundle.settings?.currency,
-              !code.isEmpty else { return }
-        currency = code
+        .task { store.ensureDashboard() }
     }
 
     private func search() async {
@@ -61,10 +82,77 @@ struct ProductSearchView: View {
         do {
             let lang = locale.language == .pl ? "pl" : "en"
             result = try await ProductSearchRepo.search(query: trimmed, lang: lang, currency: currency)
+            // Only persist successful searches. Errors / cancellations
+            // shouldn't pollute the history list.
+            saveToHistory(trimmed)
         } catch {
             errorMessage = error.localizedDescription
         }
         isLoading = false
+    }
+
+    // MARK: - Recent searches
+
+    private var recentSearches: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+            HStack {
+                Text(locale.t("search.recent"))
+                    .font(AppFont.mono(11))
+                    .tracking(1)
+                    .foregroundColor(Theme.mutedForeground)
+                Spacer()
+                Button(locale.t("search.clearHistory")) {
+                    history = []
+                    UserDefaults.standard.removeObject(forKey: Self.historyKey)
+                }
+                .font(AppFont.mono(10))
+                .foregroundColor(Theme.mutedForeground)
+            }
+            // Wrapping chip layout — flex/wrap is missing in SwiftUI so we
+            // fall back to a horizontal ScrollView. Good enough for ≤8 items.
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(history, id: \.self) { term in
+                        Button {
+                            query = term
+                            Task { await search() }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "clock.arrow.circlepath")
+                                    .font(.system(size: 11))
+                                Text(term)
+                                    .font(AppFont.body)
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .foregroundColor(Theme.foreground)
+                            .background(Theme.muted)
+                            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                                    .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - History persistence
+
+    private static func loadHistory() -> [String] {
+        UserDefaults.standard.stringArray(forKey: historyKey) ?? []
+    }
+
+    private func saveToHistory(_ term: String) {
+        // Move-to-front: dedup case-insensitively, then prepend, then cap.
+        var next = history.filter { $0.lowercased() != term.lowercased() }
+        next.insert(term, at: 0)
+        if next.count > Self.historyLimit { next = Array(next.prefix(Self.historyLimit)) }
+        history = next
+        UserDefaults.standard.set(next, forKey: Self.historyKey)
     }
 
     // MARK: - Header

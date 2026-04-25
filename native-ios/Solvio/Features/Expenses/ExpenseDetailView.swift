@@ -49,7 +49,8 @@ struct ExpenseDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: Theme.Spacing.md) {
                 if isLoading {
-                    NBLoadingCard()
+                    NBSkeletonHero()
+                    NBSkeletonList(rows: 2)
                 } else if notFound {
                     NBErrorCard(message: locale.t("expenseDetail.notFound")) {
                         Task { await store.awaitDashboard(force: true) }
