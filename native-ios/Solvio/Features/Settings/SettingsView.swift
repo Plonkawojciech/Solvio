@@ -9,6 +9,7 @@ struct SettingsView: View {
     @EnvironmentObject private var toast: ToastCenter
     @EnvironmentObject private var appTheme: AppTheme
     @EnvironmentObject private var locale: AppLocale
+    @EnvironmentObject private var store: AppDataStore
     @StateObject private var vm = SettingsViewModel()
 
     @State private var showAddCategory = false
@@ -63,6 +64,7 @@ struct SettingsView: View {
                         )
                         toast.success(locale.t("toast.created"))
                         await vm.load(locale: locale)
+                        store.didMutateCategoriesOrBudgetsOrSettings()
                     } catch {
                         toast.error(locale.t("toast.error"), description: error.localizedDescription)
                     }
@@ -78,6 +80,7 @@ struct SettingsView: View {
                         )
                         toast.success(locale.t("toast.updated"))
                         await vm.load(locale: locale)
+                        store.didMutateCategoriesOrBudgetsOrSettings()
                     } catch {
                         toast.error(locale.t("toast.error"), description: error.localizedDescription)
                     }
@@ -97,6 +100,11 @@ struct SettingsView: View {
                         )
                         toast.success(locale.t("toast.saved"))
                         await vm.load(locale: locale)
+                        // Budget changes ripple into dashboard breakdown
+                        // and the financial-health score — invalidate
+                        // both AppDataStore slices.
+                        store.didMutateBudget()
+                        store.didMutateCategoriesOrBudgetsOrSettings()
                     } catch {
                         toast.error(locale.t("toast.error"), description: error.localizedDescription)
                     }
@@ -116,6 +124,8 @@ struct SettingsView: View {
                         )
                         toast.success(locale.t("toast.updated"))
                         await vm.load(locale: locale)
+                        store.didMutateBudget()
+                        store.didMutateCategoriesOrBudgetsOrSettings()
                     } catch {
                         toast.error(locale.t("toast.error"), description: error.localizedDescription)
                     }
@@ -136,7 +146,15 @@ struct SettingsView: View {
                         do {
                             try await CategoriesRepo.delete(id: id)
                             toast.success(locale.t("toast.deleted"))
+                            // (1) Refresh local Settings VM so the deleted
+                            //     row disappears here.
+                            // (2) Bust the AppDataStore caches so dashboard
+                            //     pickers, budget breakdown and financial
+                            //     health re-read the new category set —
+                            //     without this the rest of the app showed
+                            //     a ghost category for up to 5 minutes.
                             await vm.load(locale: locale)
+                            store.didMutateCategoriesOrBudgetsOrSettings()
                         } catch {
                             toast.error(locale.t("toast.error"), description: error.localizedDescription)
                         }
@@ -349,6 +367,12 @@ struct SettingsView: View {
                 )
                 toast.success(locale.t("settings.preferencesSaved"))
                 await session.refresh()
+                // Currency / language change ripples into every formatted
+                // amount on dashboard, budget breakdown, financial-health
+                // tips, etc. — invalidate so the next refresh re-fetches
+                // with the new locale instead of leaving stale cents on
+                // screen for up to 5 minutes.
+                store.didMutateCategoriesOrBudgetsOrSettings()
             } catch {
                 toast.error(locale.t("toast.error"), description: error.localizedDescription)
             }

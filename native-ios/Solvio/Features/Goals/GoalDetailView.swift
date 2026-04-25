@@ -6,6 +6,7 @@ struct GoalDetailView: View {
     @EnvironmentObject private var toast: ToastCenter
     @EnvironmentObject private var router: AppRouter
     @EnvironmentObject private var locale: AppLocale
+    @EnvironmentObject private var store: AppDataStore
     @StateObject private var vm = GoalDetailViewModel()
     @State private var showDepositSheet = false
     @State private var showDelete = false
@@ -58,11 +59,18 @@ struct GoalDetailView: View {
         .alert(locale.t("goalDetail.deleteConfirm"), isPresented: $showDelete) {
             Button(locale.t("common.cancel"), role: .cancel) {}
             Button(locale.t("common.delete"), role: .destructive) {
+                // Pop FIRST so the user is off the detail screen immediately.
+                // Network round-trip happens off-screen; on success we
+                // invalidate the goals slice so the list reflects the
+                // deletion the moment the refresh lands. Without this
+                // mutation hook, the goal would re-appear in the list
+                // until pull-to-refresh.
+                router.popToRoot()
                 Task {
                     do {
                         try await GoalsRepo.delete(id: goalId)
                         toast.success(locale.t("goalDetail.deleted"))
-                        router.popToRoot()
+                        store.didMutateGoals()
                     } catch {
                         toast.error(locale.t("goalDetail.deleteFailed"), description: error.localizedDescription)
                     }

@@ -148,12 +148,20 @@ struct ReceiptsListView: View {
     }
 
     private func deleteReceipt(id: String) async {
+        // Optimistic — drop the row from the list cache so the swipe
+        // animation lands on a row that's actually gone, instead of
+        // showing the receipt for the duration of the network round-trip.
+        // didMutateReceipts() below either confirms the deletion or
+        // restores the row when the server rejects it.
+        store.removeReceiptOptimistic(id: id)
         do {
             try await ReceiptsRepo.delete(id: id)
             store.didMutateReceipts()
             toast.success(locale.t("toast.deleted"))
         } catch {
             toast.error(locale.t("toast.error"), description: error.localizedDescription)
+            // Rollback — refresh restores the row that we optimistically removed.
+            store.didMutateReceipts()
         }
     }
 

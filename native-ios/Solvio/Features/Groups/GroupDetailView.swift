@@ -9,6 +9,7 @@ struct GroupDetailView: View {
     @EnvironmentObject private var router: AppRouter
     @EnvironmentObject private var toast: ToastCenter
     @EnvironmentObject private var locale: AppLocale
+    @EnvironmentObject private var store: AppDataStore
     @StateObject private var vm = GroupDetailViewModel()
 
     @State private var showQuickSplit = false
@@ -95,11 +96,16 @@ struct GroupDetailView: View {
         .alert(locale.t("groupDetail.deleteConfirm"), isPresented: $confirmDelete) {
             Button(locale.t("common.cancel"), role: .cancel) {}
             Button(locale.t("common.delete"), role: .destructive) {
+                // Pop FIRST — same pattern as ExpenseDetailView/GoalDetailView.
+                // The mutation hook below makes sure the groups list is in
+                // sync once the user lands back on it; without the hook the
+                // deleted group reappeared until pull-to-refresh.
+                router.popToRoot()
                 Task {
                     do {
                         try await GroupsRepo.delete(id: groupId)
                         toast.success(locale.t("groupEdit.deleted"))
-                        router.popToRoot()
+                        store.didMutateGroups()
                     } catch {
                         toast.error(locale.t("groupEdit.deleteFailed"), description: error.localizedDescription)
                     }
