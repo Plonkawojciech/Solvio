@@ -605,8 +605,15 @@ final class ScanFlowViewModel: ObservableObject {
     @Published var isScanning = false
     @Published var ocrDraft: OcrDraft?
 
-    private static let maxPixelDimension: CGFloat = 2048
-    private static let maxUploadBytes = 8 * 1024 * 1024 // 8MB safety margin (backend limit 10MB)
+    /// Vercel serverless functions cap request bodies at ~4.5 MB. Anything
+    /// larger gets a `413 Payload Too Large` *before* our route handler
+    /// runs, so we keep the first-pass upload comfortably under that.
+    private static let maxPixelDimension: CGFloat = 1600
+    private static let maxUploadBytes = 4 * 1024 * 1024 // 4 MB — Vercel limit ~4.5 MB
+    /// Used when the first upload was already too large for Vercel — we
+    /// downscale aggressively and try one more time before giving up.
+    private static let retryPixelDimension: CGFloat = 1024
+    private static let retryUploadBytes = 2 * 1024 * 1024 // 2 MB
 
     func run(image: UIImage, locale: AppLocale, toast: ToastCenter) async {
         let resized = Self.resizeForUpload(image)
@@ -615,6 +622,7 @@ final class ScanFlowViewModel: ObservableObject {
             toast.error(locale.t("receipts.imageConversionFailed"))
             return
         }
+        Self.logScanAttempt(stage: "primary", original: image.size, resized: resized.size, bytes: jpeg.count)
         isScanning = true
         defer { isScanning = false }
         do {
@@ -630,8 +638,69 @@ final class ScanFlowViewModel: ObservableObject {
             // User dismissed the scan flow (camera sheet closed, view torn
             // down) before the upload finished — don't surface a "Scan
             // failed" toast for what's effectively a user cancellation.
+        } catch ApiError.payloadTooLarge {
+            // Vercel rejected the body. One last attempt with aggressive
+            // resize/compress before we tell the user.
+            await retryWithAggressiveCompression(image: image, locale: locale, toast: toast)
+        } catch let apiError as ApiError {
+            toast.error(locale.t("receipts.scanFailed"), description: Self.friendlyMessage(for: apiError, locale: locale))
         } catch {
-            toast.error(locale.t("receipts.scanFailed"), description: error.localizedDescription)
+            #if DEBUG
+            print("[ScanFlow] Unexpected error: \(error)")
+            #endif
+            toast.error(locale.t("receipts.scanFailed"), description: locale.t("errors.unknown"))
+        }
+    }
+
+    private func retryWithAggressiveCompression(image: UIImage, locale: AppLocale, toast: ToastCenter) async {
+        let resized = Self.resize(image, maxDimension: Self.retryPixelDimension)
+        guard let jpeg = Self.compressProgressive(resized, maxBytes: Self.retryUploadBytes) else {
+            toast.error(locale.t("receipts.scanFailed"), description: locale.t("errors.payloadTooLarge"))
+            return
+        }
+        Self.logScanAttempt(stage: "retry", original: image.size, resized: resized.size, bytes: jpeg.count)
+        do {
+            let response = try await ReceiptsRepo.scan(imageData: jpeg)
+            guard let first = response.firstSuccess,
+                  let receiptId = first.receiptId else {
+                let msg = response.results.first?.error ?? locale.t("receipts.noReceiptDetected")
+                toast.error(locale.t("receipts.scanFailed"), description: msg)
+                return
+            }
+            ocrDraft = OcrDraft(receiptId: receiptId, data: first.data)
+        } catch ApiError.cancelled {
+            // ignore
+        } catch ApiError.payloadTooLarge {
+            toast.error(locale.t("receipts.scanFailed"), description: locale.t("errors.payloadTooLarge"))
+        } catch let apiError as ApiError {
+            toast.error(locale.t("receipts.scanFailed"), description: Self.friendlyMessage(for: apiError, locale: locale))
+        } catch {
+            #if DEBUG
+            print("[ScanFlow] Retry unexpected error: \(error)")
+            #endif
+            toast.error(locale.t("receipts.scanFailed"), description: locale.t("errors.unknown"))
+        }
+    }
+
+    /// Map every ApiError case to a user-friendly localized message — never
+    /// surface raw `error.localizedDescription` (which leaks NSURLError /
+    /// HTTP-status text) to the user.
+    static func friendlyMessage(for error: ApiError, locale: AppLocale) -> String {
+        switch error {
+        case .invalidURL: return locale.t("errors.unknown")
+        case .transport: return locale.t("errors.network")
+        case .decoding: return locale.t("errors.serverUnexpected")
+        case .unauthorized: return locale.t("errors.sessionExpired")
+        case .forbidden: return locale.t("errors.forbidden")
+        case .notFound: return locale.t("errors.notFound")
+        case .rateLimited: return locale.t("errors.rateLimited")
+        case .timeout: return locale.t("errors.timeout")
+        case .noConnection: return locale.t("errors.network")
+        case .server(let status, _) where status >= 500: return locale.t("errors.serverDown")
+        case .server: return locale.t("errors.serverUnexpected")
+        case .payloadTooLarge: return locale.t("errors.payloadTooLarge")
+        case .cancelled: return locale.t("errors.cancelled")
+        case .unknown: return locale.t("errors.unknown")
         }
     }
 
@@ -643,7 +712,7 @@ final class ScanFlowViewModel: ObservableObject {
         compressProgressive(image, maxBytes: maxUploadBytes)
     }
 
-    private static func resize(_ image: UIImage, maxDimension: CGFloat) -> UIImage {
+    fileprivate static func resize(_ image: UIImage, maxDimension: CGFloat) -> UIImage {
         let size = image.size
         guard max(size.width, size.height) > maxDimension else { return image }
         let scale = maxDimension / max(size.width, size.height)
@@ -654,7 +723,7 @@ final class ScanFlowViewModel: ObservableObject {
         }
     }
 
-    private static func compressProgressive(_ image: UIImage, maxBytes: Int) -> Data? {
+    fileprivate static func compressProgressive(_ image: UIImage, maxBytes: Int) -> Data? {
         for quality: CGFloat in [0.75, 0.55, 0.35, 0.20] {
             if let data = image.jpegData(compressionQuality: quality),
                data.count <= maxBytes {
@@ -662,5 +731,13 @@ final class ScanFlowViewModel: ObservableObject {
             }
         }
         return image.jpegData(compressionQuality: 0.15)
+    }
+
+    private static func logScanAttempt(stage: String, original: CGSize, resized: CGSize, bytes: Int) {
+        #if DEBUG
+        let kb = Double(bytes) / 1024.0
+        print(String(format: "[ScanFlow] %@: original %.0f×%.0f → resized %.0f×%.0f → %.1f KB",
+                     stage, original.width, original.height, resized.width, resized.height, kb))
+        #endif
     }
 }

@@ -11,6 +11,11 @@ enum ApiError: Error, LocalizedError {
     case timeout
     case noConnection
     case server(status: Int, message: String?)
+    /// HTTP 413 — request body exceeded server / proxy limit. Vercel
+    /// caps serverless function bodies around 4.5 MB, so an oversized
+    /// receipt JPEG hits this *before* reaching our route handler. The
+    /// scan flow catches this and retries with aggressive compression.
+    case payloadTooLarge
     /// URLSession or Swift task cancellation. Almost always benign:
     /// SwiftUI tears down `.task` blocks when the view disappears, which
     /// surfaces as `NSURLErrorCancelled` (-999) at the network layer.
@@ -37,6 +42,7 @@ enum ApiError: Error, LocalizedError {
         case .server(let status, let msg):
             if let msg, !msg.isEmpty { return msg }
             return "Server error (\(status))"
+        case .payloadTooLarge: return "Image too large — please retry with a smaller photo"
         case .cancelled: return "Cancelled"
         case .unknown: return "Unknown error"
         }
@@ -45,7 +51,7 @@ enum ApiError: Error, LocalizedError {
     /// Whether the user can retry and potentially succeed.
     var isRetryable: Bool {
         switch self {
-        case .timeout, .noConnection, .rateLimited, .server(500..., _): return true
+        case .timeout, .noConnection, .rateLimited, .server(500..., _), .payloadTooLarge: return true
         default: return false
         }
     }
@@ -320,6 +326,7 @@ final class ApiClient {
         case 401: throw ApiError.unauthorized
         case 403: throw ApiError.forbidden
         case 404: throw ApiError.notFound
+        case 413: throw ApiError.payloadTooLarge
         case 429: throw ApiError.rateLimited
         default: throw ApiError.server(status: http.statusCode, message: msg)
         }

@@ -40,6 +40,12 @@ struct SolvioApp: App {
                 .environmentObject(dataStore)
                 .environmentObject(scanQueue)
                 .task { await session.restore() }
+                .onAppear {
+                    // Wire the queue's locale once so failure messages
+                    // get localized instead of leaking raw URLSession /
+                    // HTTP-status strings to the user.
+                    scanQueue.locale = appLocale
+                }
                 .onChange(of: session.currentUser?.email) { email in
                     if email != nil {
                         // Warm EVERY cache slice in parallel the moment the

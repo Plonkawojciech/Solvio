@@ -66,12 +66,23 @@ final class ScanQueueManager: ObservableObject {
     /// concurrent OCR calls bottleneck on the server side anyway.
     private let maxConcurrent = 2
     private let store: AppDataStore
+    /// Set once from `SolvioApp` so failure messages get localized rather
+    /// than leaking raw `error.localizedDescription` to the user.
+    weak var locale: AppLocale?
 
     // `nonisolated` so the detached compression task in `enqueue` can read
     // them without main-actor hopping. They're immutable constants —
     // perfectly safe to read from any thread.
-    nonisolated private static let maxPixelDimension: CGFloat = 2048
-    nonisolated private static let maxUploadBytes = 8 * 1024 * 1024 // 8MB safety margin (backend limit 10MB)
+    //
+    // Vercel serverless caps request bodies at ~4.5 MB. Anything larger
+    // gets rejected with HTTP 413 before our route even runs, so we keep
+    // the first-pass upload comfortably under that.
+    nonisolated private static let maxPixelDimension: CGFloat = 1600
+    nonisolated private static let maxUploadBytes = 4 * 1024 * 1024 // 4 MB — Vercel limit ~4.5 MB
+    /// Used when the first upload was already too large for Vercel — we
+    /// downscale aggressively and try one more time before marking failed.
+    nonisolated private static let retryPixelDimension: CGFloat = 1024
+    nonisolated private static let retryUploadBytes = 2 * 1024 * 1024 // 2 MB
 
     init(store: AppDataStore) {
         self.store = store
@@ -181,6 +192,7 @@ final class ScanQueueManager: ObservableObject {
             // Once we hand the data to the network, we're effectively
             // "uploading" until the server replies.
             items[idx].status = .uploading
+            Self.logScanAttempt(stage: "primary", bytes: item.imageData.count, filename: item.filename)
             let response = try await ReceiptsRepo.scan(
                 imageData: item.imageData,
                 filename: item.filename
@@ -199,7 +211,7 @@ final class ScanQueueManager: ObservableObject {
             } else {
                 let msg = response.results.first?.error
                     ?? response.results.first?.message
-                    ?? "Could not detect a receipt in this image."
+                    ?? localized("receipts.noReceiptDetected")
                 if let nidx = items.firstIndex(where: { $0.id == id }) {
                     items[nidx].status = .failed(msg)
                 }
@@ -212,12 +224,116 @@ final class ScanQueueManager: ObservableObject {
             if let nidx = items.firstIndex(where: { $0.id == id }) {
                 items[nidx].status = .pending
             }
-        } catch {
+        } catch ApiError.payloadTooLarge {
+            // Vercel rejected the body (~4.5 MB cap). Try once more with
+            // aggressive resize/compress, then mark failed if still too big.
+            await retryWithAggressiveCompression(id: id, original: item)
+        } catch let apiError as ApiError {
             if let nidx = items.firstIndex(where: { $0.id == id }) {
-                items[nidx].status = .failed(error.localizedDescription)
+                items[nidx].status = .failed(friendlyMessage(for: apiError))
+            }
+        } catch {
+            #if DEBUG
+            print("[ScanQueue] Unexpected error: \(error)")
+            #endif
+            if let nidx = items.firstIndex(where: { $0.id == id }) {
+                items[nidx].status = .failed(localized("errors.unknown"))
             }
         }
         pump()
+    }
+
+    private func retryWithAggressiveCompression(id: UUID, original: ScanQueueItem) async {
+        // Decode the already-compressed JPEG, resize down hard, recompress.
+        guard let image = UIImage(data: original.imageData) else {
+            if let nidx = items.firstIndex(where: { $0.id == id }) {
+                items[nidx].status = .failed(localized("errors.payloadTooLarge"))
+            }
+            return
+        }
+        let resized = Self.resize(image, maxDimension: Self.retryPixelDimension)
+        guard let jpeg = Self.compressProgressive(resized, maxBytes: Self.retryUploadBytes) else {
+            if let nidx = items.firstIndex(where: { $0.id == id }) {
+                items[nidx].status = .failed(localized("errors.payloadTooLarge"))
+            }
+            return
+        }
+        Self.logScanAttempt(stage: "retry", bytes: jpeg.count, filename: original.filename)
+        do {
+            let response = try await ReceiptsRepo.scan(
+                imageData: jpeg,
+                filename: original.filename
+            )
+            if let success = response.firstSuccess, let receiptId = success.receiptId {
+                if let nidx = items.firstIndex(where: { $0.id == id }) {
+                    items[nidx].status = .saved
+                    items[nidx].receiptId = receiptId
+                    items[nidx].vendor = success.data?.merchant
+                    items[nidx].total = success.data?.total
+                    items[nidx].currency = success.data?.currency
+                }
+                store.didMutateReceipts()
+            } else {
+                let msg = response.results.first?.error
+                    ?? response.results.first?.message
+                    ?? localized("receipts.noReceiptDetected")
+                if let nidx = items.firstIndex(where: { $0.id == id }) {
+                    items[nidx].status = .failed(msg)
+                }
+            }
+        } catch ApiError.cancelled {
+            if let nidx = items.firstIndex(where: { $0.id == id }) {
+                items[nidx].status = .pending
+            }
+        } catch ApiError.payloadTooLarge {
+            if let nidx = items.firstIndex(where: { $0.id == id }) {
+                items[nidx].status = .failed(localized("errors.payloadTooLarge"))
+            }
+        } catch let apiError as ApiError {
+            if let nidx = items.firstIndex(where: { $0.id == id }) {
+                items[nidx].status = .failed(friendlyMessage(for: apiError))
+            }
+        } catch {
+            #if DEBUG
+            print("[ScanQueue] Retry unexpected error: \(error)")
+            #endif
+            if let nidx = items.firstIndex(where: { $0.id == id }) {
+                items[nidx].status = .failed(localized("errors.unknown"))
+            }
+        }
+    }
+
+    /// Map an `ApiError` to the same user-friendly localized strings used
+    /// by `ScanFlowViewModel`. Falls back to English if `locale` wasn't
+    /// wired up — never leaks `localizedDescription` to the user.
+    private func friendlyMessage(for error: ApiError) -> String {
+        switch error {
+        case .invalidURL: return localized("errors.unknown")
+        case .transport: return localized("errors.network")
+        case .decoding: return localized("errors.serverUnexpected")
+        case .unauthorized: return localized("errors.sessionExpired")
+        case .forbidden: return localized("errors.forbidden")
+        case .notFound: return localized("errors.notFound")
+        case .rateLimited: return localized("errors.rateLimited")
+        case .timeout: return localized("errors.timeout")
+        case .noConnection: return localized("errors.network")
+        case .server(let status, _) where status >= 500: return localized("errors.serverDown")
+        case .server: return localized("errors.serverUnexpected")
+        case .payloadTooLarge: return localized("errors.payloadTooLarge")
+        case .cancelled: return localized("errors.cancelled")
+        case .unknown: return localized("errors.unknown")
+        }
+    }
+
+    private func localized(_ key: String) -> String {
+        locale?.t(key) ?? L10n.strings[.en]?[key] ?? key
+    }
+
+    private static func logScanAttempt(stage: String, bytes: Int, filename: String) {
+        #if DEBUG
+        let kb = Double(bytes) / 1024.0
+        print(String(format: "[ScanQueue] %@: %.1f KB (%@)", stage, kb, filename))
+        #endif
     }
 
     // MARK: - Image utilities
