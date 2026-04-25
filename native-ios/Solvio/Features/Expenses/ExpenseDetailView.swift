@@ -22,6 +22,10 @@ struct ExpenseDetailView: View {
     @State private var lastFetchedReceiptId: String? = nil
     @State private var showEdit = false
     @State private var showDelete = false
+    /// Set to `true` the moment the user confirms delete. Used to suppress the
+    /// "not found" error card that would otherwise flash between the
+    /// optimistic remove (which makes `expense` nil) and the navigation pop.
+    @State private var isDeleting = false
 
     private var expense: Expense? {
         store.expenses.first(where: { $0.id == expenseId })
@@ -36,7 +40,9 @@ struct ExpenseDetailView: View {
     private var isLoading: Bool { store.dashboardLoading && store.dashboard == nil }
     private var notFound: Bool {
         // Only treat as not-found once the store has loaded at least once.
-        store.dashboardLoadedAt != nil && expense == nil
+        // While `isDeleting` is true the row was just removed optimistically;
+        // we're about to pop, so don't render the "not found" card.
+        store.dashboardLoadedAt != nil && expense == nil && !isDeleting
     }
 
     var body: some View {
@@ -104,13 +110,22 @@ struct ExpenseDetailView: View {
         .alert(locale.t("expenseDetail.deleteConfirm"), isPresented: $showDelete) {
             Button(locale.t("common.cancel"), role: .cancel) {}
             Button(locale.t("common.delete"), role: .destructive) {
+                // Order matters here:
+                //   1. Flip `isDeleting` so `notFound` stays false even after
+                //      the optimistic remove drops the row.
+                //   2. Pop FIRST — the user is already gone from the detail
+                //      screen by the time the network call lands, so there's
+                //      no chance of a "not found" flash.
+                //   3. Optimistic remove from store (list view updates).
+                //   4. Network DELETE; on failure, rollback via didMutateExpenses().
+                isDeleting = true
+                router.popToRoot()
                 Task {
                     do {
                         store.removeExpensesOptimistic(ids: [expenseId])
                         try await ExpensesRepo.delete(ids: [expenseId])
                         toast.success(locale.t("expenseDetail.deleted"))
                         store.didMutateExpenses()
-                        router.popToRoot()
                     } catch {
                         store.didMutateExpenses() // rollback optimistic
                         toast.error(locale.t("toast.error"), description: error.localizedDescription)

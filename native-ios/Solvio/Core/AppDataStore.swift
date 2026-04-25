@@ -15,6 +15,13 @@ import SwiftUI
 ///   3. Mutations (create / update / delete) invalidate the relevant slice
 ///      and immediately refresh in the background.
 ///
+/// **Race-free force refresh.** Each slice owns a `xxxGen` generation
+/// counter. `ensureXxx(force: true)` / `awaitXxx(force: true)` cancel any
+/// in-flight task, bump the gen, and start a fresh fetch — and the running
+/// impl drops its result if the gen changed under it. Without this, a
+/// background refresh kicked off BEFORE an optimistic delete could land
+/// AFTER and resurrect the just-deleted row.
+///
 /// **One source of truth.** `dashboard` carries categories + settings +
 /// budgets + expenses + receiptsCount, so we re-expose them as computed
 /// properties. Views that previously fetched `/api/data/settings` or
@@ -42,6 +49,7 @@ final class AppDataStore: ObservableObject {
     @Published private(set) var dashboardLoading = false
     @Published private(set) var dashboardError: String?
     private var dashboardTask: Task<Void, Never>?
+    private var dashboardGen: UInt64 = 0
 
     // MARK: Receipts
 
@@ -50,6 +58,7 @@ final class AppDataStore: ObservableObject {
     @Published private(set) var receiptsLoading = false
     @Published private(set) var receiptsError: String?
     private var receiptsTask: Task<Void, Never>?
+    private var receiptsGen: UInt64 = 0
 
     // MARK: Goals
 
@@ -58,6 +67,7 @@ final class AppDataStore: ObservableObject {
     @Published private(set) var goalsLoading = false
     @Published private(set) var goalsError: String?
     private var goalsTask: Task<Void, Never>?
+    private var goalsGen: UInt64 = 0
 
     // MARK: Loyalty cards
 
@@ -66,6 +76,7 @@ final class AppDataStore: ObservableObject {
     @Published private(set) var loyaltyLoading = false
     @Published private(set) var loyaltyError: String?
     private var loyaltyTask: Task<Void, Never>?
+    private var loyaltyGen: UInt64 = 0
 
     // MARK: Challenges
 
@@ -74,6 +85,7 @@ final class AppDataStore: ObservableObject {
     @Published private(set) var challengesLoading = false
     @Published private(set) var challengesError: String?
     private var challengesTask: Task<Void, Never>?
+    private var challengesGen: UInt64 = 0
 
     // MARK: Groups
 
@@ -82,6 +94,7 @@ final class AppDataStore: ObservableObject {
     @Published private(set) var groupsLoading = false
     @Published private(set) var groupsError: String?
     private var groupsTask: Task<Void, Never>?
+    private var groupsGen: UInt64 = 0
 
     // MARK: Budget (current-month monthly budget + per-category breakdown)
 
@@ -90,6 +103,7 @@ final class AppDataStore: ObservableObject {
     @Published private(set) var budgetLoading = false
     @Published private(set) var budgetError: String?
     private var budgetTask: Task<Void, Never>?
+    private var budgetGen: UInt64 = 0
 
     // MARK: Financial Health (score 0-100 + tip strings)
 
@@ -98,6 +112,7 @@ final class AppDataStore: ObservableObject {
     @Published private(set) var financialHealthLoading = false
     @Published private(set) var financialHealthError: String?
     private var financialHealthTask: Task<Void, Never>?
+    private var financialHealthGen: UInt64 = 0
 
     // MARK: Promotions (personalized deals — backend caches 24h)
 
@@ -106,6 +121,7 @@ final class AppDataStore: ObservableObject {
     @Published private(set) var promotionsLoading = false
     @Published private(set) var promotionsError: String?
     private var promotionsTask: Task<Void, Never>?
+    private var promotionsGen: UInt64 = 0
 
     // MARK: - Convenience accessors derived from the dashboard payload
 
@@ -142,9 +158,16 @@ final class AppDataStore: ObservableObject {
     /// call finishes the UI updates without any explicit await.
     func ensureDashboard(force: Bool = false) {
         if !force && !shouldRefresh(dashboardLoadedAt) { return }
-        if dashboardTask != nil { return } // already in-flight
+        if !force && dashboardTask != nil { return } // background refresh already in-flight
+        // force=true may cancel an in-flight task — its result is stale
+        // relative to whatever mutation just triggered the force. The gen
+        // bump means the cancelled impl will discard its response if it
+        // races to completion before cancel takes effect.
+        dashboardTask?.cancel()
+        dashboardGen &+= 1
+        let myGen = dashboardGen
         dashboardTask = Task { [weak self] in
-            await self?.refreshDashboardImpl()
+            await self?.refreshDashboardImpl(gen: myGen)
         }
     }
 
@@ -152,40 +175,54 @@ final class AppDataStore: ObservableObject {
     /// Use this on initial app launch when we genuinely have nothing to show.
     func awaitDashboard(force: Bool = false) async {
         if !force, dashboard != nil, isFresh(dashboardLoadedAt, ttl: cacheTTL) { return }
-        if let existing = dashboardTask { await existing.value; return }
-        let task = Task { [weak self] in
-            guard let self else { return }
-            await self.refreshDashboardImpl()
+        if !force, let existing = dashboardTask { await existing.value; return }
+        dashboardTask?.cancel()
+        dashboardGen &+= 1
+        let myGen = dashboardGen
+        let task: Task<Void, Never> = Task { [weak self] in
+            await self?.refreshDashboardImpl(gen: myGen)
         }
         dashboardTask = task
         await task.value
     }
 
-    private func refreshDashboardImpl() async {
-        defer { dashboardTask = nil }
-        // Only flip the spinner on if we have NOTHING to show. Background
-        // refresh on a populated cache stays invisible to the user.
+    private func refreshDashboardImpl(gen: UInt64) async {
+        defer {
+            // Only null out the task pointer if I'm still the current
+            // generation. A newer task may have already replaced me.
+            if gen == dashboardGen { dashboardTask = nil }
+        }
         let hadCache = (dashboard != nil)
-        if !hadCache { dashboardLoading = true }
-        defer { dashboardLoading = false }
+        if !hadCache, gen == dashboardGen { dashboardLoading = true }
+        defer {
+            if !hadCache, gen == dashboardGen { dashboardLoading = false }
+        }
 
         // Up to 3 attempts on transient errors (Neon cold start, timeouts).
         let maxAttempts = 3
         for attempt in 1...maxAttempts {
+            // Bail out if a newer task has been started — our result would
+            // overwrite their fresher data.
+            if gen != dashboardGen { return }
             do {
                 let raw = try await DashboardRepo.fetch()
+                guard gen == dashboardGen else { return }
                 dashboard = raw
                 dashboardLoadedAt = Date()
                 dashboardError = nil
                 #if DEBUG
-                print("[AppDataStore] dashboard refreshed: expenses=\(raw.expenses.count) categories=\(raw.categories.count) receipts=\(raw.receiptsCount)")
+                print("[AppDataStore] dashboard refreshed (gen=\(gen)): expenses=\(raw.expenses.count) categories=\(raw.categories.count) receipts=\(raw.receiptsCount)")
                 #endif
+                return
+            } catch ApiError.cancelled {
+                // Cancelled by a force-refresh. Don't surface, don't retry.
                 return
             } catch {
                 if let api = error as? ApiError, api.isRetryable, attempt < maxAttempts {
                     try? await Task.sleep(nanoseconds: UInt64(attempt) * 1_000_000_000)
                     continue
                 }
+                guard gen == dashboardGen else { return }
                 // Surface error ONLY if we have nothing cached. If the user
                 // already sees data, a transient failure shouldn't replace
                 // their screen with an error card.
@@ -204,34 +241,47 @@ final class AppDataStore: ObservableObject {
 
     func ensureReceipts(force: Bool = false) {
         if !force && !shouldRefresh(receiptsLoadedAt) { return }
-        if receiptsTask != nil { return }
+        if !force && receiptsTask != nil { return }
+        receiptsTask?.cancel()
+        receiptsGen &+= 1
+        let myGen = receiptsGen
         receiptsTask = Task { [weak self] in
-            await self?.refreshReceiptsImpl()
+            await self?.refreshReceiptsImpl(gen: myGen)
         }
     }
 
     func awaitReceipts(force: Bool = false) async {
         if !force, receiptsLoadedAt != nil, isFresh(receiptsLoadedAt, ttl: cacheTTL) { return }
-        if let existing = receiptsTask { await existing.value; return }
-        let task = Task { [weak self] in
-            guard let self else { return }
-            await self.refreshReceiptsImpl()
+        if !force, let existing = receiptsTask { await existing.value; return }
+        receiptsTask?.cancel()
+        receiptsGen &+= 1
+        let myGen = receiptsGen
+        let task: Task<Void, Never> = Task { [weak self] in
+            await self?.refreshReceiptsImpl(gen: myGen)
         }
         receiptsTask = task
         await task.value
     }
 
-    private func refreshReceiptsImpl() async {
-        defer { receiptsTask = nil }
+    private func refreshReceiptsImpl(gen: UInt64) async {
+        defer {
+            if gen == receiptsGen { receiptsTask = nil }
+        }
         let hadCache = !receipts.isEmpty
-        if !hadCache { receiptsLoading = true }
-        defer { receiptsLoading = false }
+        if !hadCache, gen == receiptsGen { receiptsLoading = true }
+        defer {
+            if !hadCache, gen == receiptsGen { receiptsLoading = false }
+        }
         do {
             let list = try await ReceiptsRepo.list()
+            guard gen == receiptsGen else { return }
             receipts = list
             receiptsLoadedAt = Date()
             receiptsError = nil
+        } catch ApiError.cancelled {
+            return
         } catch {
+            guard gen == receiptsGen else { return }
             if !hadCache { receiptsError = error.localizedDescription }
             #if DEBUG
             print("[AppDataStore] receipts refresh failed (hadCache=\(hadCache)): \(error)")
@@ -243,34 +293,47 @@ final class AppDataStore: ObservableObject {
 
     func ensureGoals(force: Bool = false) {
         if !force && !shouldRefresh(goalsLoadedAt) { return }
-        if goalsTask != nil { return }
+        if !force && goalsTask != nil { return }
+        goalsTask?.cancel()
+        goalsGen &+= 1
+        let myGen = goalsGen
         goalsTask = Task { [weak self] in
-            await self?.refreshGoalsImpl()
+            await self?.refreshGoalsImpl(gen: myGen)
         }
     }
 
     func awaitGoals(force: Bool = false) async {
         if !force, goalsLoadedAt != nil, isFresh(goalsLoadedAt, ttl: cacheTTL) { return }
-        if let existing = goalsTask { await existing.value; return }
-        let task = Task { [weak self] in
-            guard let self else { return }
-            await self.refreshGoalsImpl()
+        if !force, let existing = goalsTask { await existing.value; return }
+        goalsTask?.cancel()
+        goalsGen &+= 1
+        let myGen = goalsGen
+        let task: Task<Void, Never> = Task { [weak self] in
+            await self?.refreshGoalsImpl(gen: myGen)
         }
         goalsTask = task
         await task.value
     }
 
-    private func refreshGoalsImpl() async {
-        defer { goalsTask = nil }
+    private func refreshGoalsImpl(gen: UInt64) async {
+        defer {
+            if gen == goalsGen { goalsTask = nil }
+        }
         let hadCache = !goals.isEmpty
-        if !hadCache { goalsLoading = true }
-        defer { goalsLoading = false }
+        if !hadCache, gen == goalsGen { goalsLoading = true }
+        defer {
+            if !hadCache, gen == goalsGen { goalsLoading = false }
+        }
         do {
             let list = try await GoalsRepo.list()
+            guard gen == goalsGen else { return }
             goals = list
             goalsLoadedAt = Date()
             goalsError = nil
+        } catch ApiError.cancelled {
+            return
         } catch {
+            guard gen == goalsGen else { return }
             if !hadCache { goalsError = error.localizedDescription }
             #if DEBUG
             print("[AppDataStore] goals refresh failed (hadCache=\(hadCache)): \(error)")
@@ -282,34 +345,47 @@ final class AppDataStore: ObservableObject {
 
     func ensureLoyalty(force: Bool = false) {
         if !force && !shouldRefresh(loyaltyLoadedAt) { return }
-        if loyaltyTask != nil { return }
+        if !force && loyaltyTask != nil { return }
+        loyaltyTask?.cancel()
+        loyaltyGen &+= 1
+        let myGen = loyaltyGen
         loyaltyTask = Task { [weak self] in
-            await self?.refreshLoyaltyImpl()
+            await self?.refreshLoyaltyImpl(gen: myGen)
         }
     }
 
     func awaitLoyalty(force: Bool = false) async {
         if !force, loyaltyLoadedAt != nil, isFresh(loyaltyLoadedAt, ttl: cacheTTL) { return }
-        if let existing = loyaltyTask { await existing.value; return }
-        let task = Task { [weak self] in
-            guard let self else { return }
-            await self.refreshLoyaltyImpl()
+        if !force, let existing = loyaltyTask { await existing.value; return }
+        loyaltyTask?.cancel()
+        loyaltyGen &+= 1
+        let myGen = loyaltyGen
+        let task: Task<Void, Never> = Task { [weak self] in
+            await self?.refreshLoyaltyImpl(gen: myGen)
         }
         loyaltyTask = task
         await task.value
     }
 
-    private func refreshLoyaltyImpl() async {
-        defer { loyaltyTask = nil }
+    private func refreshLoyaltyImpl(gen: UInt64) async {
+        defer {
+            if gen == loyaltyGen { loyaltyTask = nil }
+        }
         let hadCache = !loyalty.isEmpty
-        if !hadCache { loyaltyLoading = true }
-        defer { loyaltyLoading = false }
+        if !hadCache, gen == loyaltyGen { loyaltyLoading = true }
+        defer {
+            if !hadCache, gen == loyaltyGen { loyaltyLoading = false }
+        }
         do {
             let list = try await LoyaltyRepo.list()
+            guard gen == loyaltyGen else { return }
             loyalty = list
             loyaltyLoadedAt = Date()
             loyaltyError = nil
+        } catch ApiError.cancelled {
+            return
         } catch {
+            guard gen == loyaltyGen else { return }
             if !hadCache { loyaltyError = error.localizedDescription }
             #if DEBUG
             print("[AppDataStore] loyalty refresh failed (hadCache=\(hadCache)): \(error)")
@@ -321,34 +397,47 @@ final class AppDataStore: ObservableObject {
 
     func ensureChallenges(force: Bool = false) {
         if !force && !shouldRefresh(challengesLoadedAt) { return }
-        if challengesTask != nil { return }
+        if !force && challengesTask != nil { return }
+        challengesTask?.cancel()
+        challengesGen &+= 1
+        let myGen = challengesGen
         challengesTask = Task { [weak self] in
-            await self?.refreshChallengesImpl()
+            await self?.refreshChallengesImpl(gen: myGen)
         }
     }
 
     func awaitChallenges(force: Bool = false) async {
         if !force, challengesLoadedAt != nil, isFresh(challengesLoadedAt, ttl: cacheTTL) { return }
-        if let existing = challengesTask { await existing.value; return }
-        let task = Task { [weak self] in
-            guard let self else { return }
-            await self.refreshChallengesImpl()
+        if !force, let existing = challengesTask { await existing.value; return }
+        challengesTask?.cancel()
+        challengesGen &+= 1
+        let myGen = challengesGen
+        let task: Task<Void, Never> = Task { [weak self] in
+            await self?.refreshChallengesImpl(gen: myGen)
         }
         challengesTask = task
         await task.value
     }
 
-    private func refreshChallengesImpl() async {
-        defer { challengesTask = nil }
+    private func refreshChallengesImpl(gen: UInt64) async {
+        defer {
+            if gen == challengesGen { challengesTask = nil }
+        }
         let hadCache = !challenges.isEmpty
-        if !hadCache { challengesLoading = true }
-        defer { challengesLoading = false }
+        if !hadCache, gen == challengesGen { challengesLoading = true }
+        defer {
+            if !hadCache, gen == challengesGen { challengesLoading = false }
+        }
         do {
             let list = try await ChallengesRepo.list()
+            guard gen == challengesGen else { return }
             challenges = list
             challengesLoadedAt = Date()
             challengesError = nil
+        } catch ApiError.cancelled {
+            return
         } catch {
+            guard gen == challengesGen else { return }
             if !hadCache { challengesError = error.localizedDescription }
             #if DEBUG
             print("[AppDataStore] challenges refresh failed (hadCache=\(hadCache)): \(error)")
@@ -360,34 +449,47 @@ final class AppDataStore: ObservableObject {
 
     func ensureGroups(force: Bool = false) {
         if !force && !shouldRefresh(groupsLoadedAt) { return }
-        if groupsTask != nil { return }
+        if !force && groupsTask != nil { return }
+        groupsTask?.cancel()
+        groupsGen &+= 1
+        let myGen = groupsGen
         groupsTask = Task { [weak self] in
-            await self?.refreshGroupsImpl()
+            await self?.refreshGroupsImpl(gen: myGen)
         }
     }
 
     func awaitGroups(force: Bool = false) async {
         if !force, groupsLoadedAt != nil, isFresh(groupsLoadedAt, ttl: cacheTTL) { return }
-        if let existing = groupsTask { await existing.value; return }
-        let task = Task { [weak self] in
-            guard let self else { return }
-            await self.refreshGroupsImpl()
+        if !force, let existing = groupsTask { await existing.value; return }
+        groupsTask?.cancel()
+        groupsGen &+= 1
+        let myGen = groupsGen
+        let task: Task<Void, Never> = Task { [weak self] in
+            await self?.refreshGroupsImpl(gen: myGen)
         }
         groupsTask = task
         await task.value
     }
 
-    private func refreshGroupsImpl() async {
-        defer { groupsTask = nil }
+    private func refreshGroupsImpl(gen: UInt64) async {
+        defer {
+            if gen == groupsGen { groupsTask = nil }
+        }
         let hadCache = !groups.isEmpty
-        if !hadCache { groupsLoading = true }
-        defer { groupsLoading = false }
+        if !hadCache, gen == groupsGen { groupsLoading = true }
+        defer {
+            if !hadCache, gen == groupsGen { groupsLoading = false }
+        }
         do {
             let list = try await GroupsRepo.list()
+            guard gen == groupsGen else { return }
             groups = list
             groupsLoadedAt = Date()
             groupsError = nil
+        } catch ApiError.cancelled {
+            return
         } catch {
+            guard gen == groupsGen else { return }
             if !hadCache { groupsError = error.localizedDescription }
             #if DEBUG
             print("[AppDataStore] groups refresh failed (hadCache=\(hadCache)): \(error)")
@@ -407,34 +509,47 @@ final class AppDataStore: ObservableObject {
 
     func ensureBudget(force: Bool = false) {
         if !force && !shouldRefresh(budgetLoadedAt) { return }
-        if budgetTask != nil { return }
+        if !force && budgetTask != nil { return }
+        budgetTask?.cancel()
+        budgetGen &+= 1
+        let myGen = budgetGen
         budgetTask = Task { [weak self] in
-            await self?.refreshBudgetImpl()
+            await self?.refreshBudgetImpl(gen: myGen)
         }
     }
 
     func awaitBudget(force: Bool = false) async {
         if !force, budget != nil, isFresh(budgetLoadedAt, ttl: cacheTTL) { return }
-        if let existing = budgetTask { await existing.value; return }
-        let task = Task { [weak self] in
-            guard let self else { return }
-            await self.refreshBudgetImpl()
+        if !force, let existing = budgetTask { await existing.value; return }
+        budgetTask?.cancel()
+        budgetGen &+= 1
+        let myGen = budgetGen
+        let task: Task<Void, Never> = Task { [weak self] in
+            await self?.refreshBudgetImpl(gen: myGen)
         }
         budgetTask = task
         await task.value
     }
 
-    private func refreshBudgetImpl() async {
-        defer { budgetTask = nil }
+    private func refreshBudgetImpl(gen: UInt64) async {
+        defer {
+            if gen == budgetGen { budgetTask = nil }
+        }
         let hadCache = (budget != nil)
-        if !hadCache { budgetLoading = true }
-        defer { budgetLoading = false }
+        if !hadCache, gen == budgetGen { budgetLoading = true }
+        defer {
+            if !hadCache, gen == budgetGen { budgetLoading = false }
+        }
         do {
             let res = try await BudgetRepo.fetch(month: currentMonthString)
+            guard gen == budgetGen else { return }
             budget = res
             budgetLoadedAt = Date()
             budgetError = nil
+        } catch ApiError.cancelled {
+            return
         } catch {
+            guard gen == budgetGen else { return }
             if !hadCache { budgetError = error.localizedDescription }
             #if DEBUG
             print("[AppDataStore] budget refresh failed (hadCache=\(hadCache)): \(error)")
@@ -446,34 +561,47 @@ final class AppDataStore: ObservableObject {
 
     func ensureFinancialHealth(force: Bool = false) {
         if !force && !shouldRefresh(financialHealthLoadedAt) { return }
-        if financialHealthTask != nil { return }
+        if !force && financialHealthTask != nil { return }
+        financialHealthTask?.cancel()
+        financialHealthGen &+= 1
+        let myGen = financialHealthGen
         financialHealthTask = Task { [weak self] in
-            await self?.refreshFinancialHealthImpl()
+            await self?.refreshFinancialHealthImpl(gen: myGen)
         }
     }
 
     func awaitFinancialHealth(force: Bool = false) async {
         if !force, financialHealth != nil, isFresh(financialHealthLoadedAt, ttl: cacheTTL) { return }
-        if let existing = financialHealthTask { await existing.value; return }
-        let task = Task { [weak self] in
-            guard let self else { return }
-            await self.refreshFinancialHealthImpl()
+        if !force, let existing = financialHealthTask { await existing.value; return }
+        financialHealthTask?.cancel()
+        financialHealthGen &+= 1
+        let myGen = financialHealthGen
+        let task: Task<Void, Never> = Task { [weak self] in
+            await self?.refreshFinancialHealthImpl(gen: myGen)
         }
         financialHealthTask = task
         await task.value
     }
 
-    private func refreshFinancialHealthImpl() async {
-        defer { financialHealthTask = nil }
+    private func refreshFinancialHealthImpl(gen: UInt64) async {
+        defer {
+            if gen == financialHealthGen { financialHealthTask = nil }
+        }
         let hadCache = (financialHealth != nil)
-        if !hadCache { financialHealthLoading = true }
-        defer { financialHealthLoading = false }
+        if !hadCache, gen == financialHealthGen { financialHealthLoading = true }
+        defer {
+            if !hadCache, gen == financialHealthGen { financialHealthLoading = false }
+        }
         do {
             let res = try await FinancialHealthRepo.fetch()
+            guard gen == financialHealthGen else { return }
             financialHealth = res
             financialHealthLoadedAt = Date()
             financialHealthError = nil
+        } catch ApiError.cancelled {
+            return
         } catch {
+            guard gen == financialHealthGen else { return }
             if !hadCache { financialHealthError = error.localizedDescription }
             #if DEBUG
             print("[AppDataStore] financialHealth refresh failed (hadCache=\(hadCache)): \(error)")
@@ -492,28 +620,37 @@ final class AppDataStore: ObservableObject {
 
     func ensurePromotions(force: Bool = false) {
         if !force && !shouldRefresh(promotionsLoadedAt) { return }
-        if promotionsTask != nil { return }
+        if !force && promotionsTask != nil { return }
+        promotionsTask?.cancel()
+        promotionsGen &+= 1
+        let myGen = promotionsGen
         promotionsTask = Task { [weak self] in
-            await self?.refreshPromotionsImpl()
+            await self?.refreshPromotionsImpl(gen: myGen)
         }
     }
 
     func awaitPromotions(force: Bool = false) async {
         if !force, promotions != nil, isFresh(promotionsLoadedAt, ttl: cacheTTL) { return }
-        if let existing = promotionsTask { await existing.value; return }
-        let task = Task { [weak self] in
-            guard let self else { return }
-            await self.refreshPromotionsImpl()
+        if !force, let existing = promotionsTask { await existing.value; return }
+        promotionsTask?.cancel()
+        promotionsGen &+= 1
+        let myGen = promotionsGen
+        let task: Task<Void, Never> = Task { [weak self] in
+            await self?.refreshPromotionsImpl(gen: myGen)
         }
         promotionsTask = task
         await task.value
     }
 
-    private func refreshPromotionsImpl() async {
-        defer { promotionsTask = nil }
+    private func refreshPromotionsImpl(gen: UInt64) async {
+        defer {
+            if gen == promotionsGen { promotionsTask = nil }
+        }
         let hadCache = (promotions != nil)
-        if !hadCache { promotionsLoading = true }
-        defer { promotionsLoading = false }
+        if !hadCache, gen == promotionsGen { promotionsLoading = true }
+        defer {
+            if !hadCache, gen == promotionsGen { promotionsLoading = false }
+        }
         do {
             // Use the dashboard's currency if we have it; otherwise PLN. Same
             // language fallback as the rest of the store.
@@ -521,10 +658,14 @@ final class AppDataStore: ObservableObject {
                 lang: nil,
                 currency: dashboard?.settings?.currency ?? "PLN"
             )
+            guard gen == promotionsGen else { return }
             promotions = res
             promotionsLoadedAt = Date()
             promotionsError = nil
+        } catch ApiError.cancelled {
+            return
         } catch {
+            guard gen == promotionsGen else { return }
             if !hadCache { promotionsError = error.localizedDescription }
             #if DEBUG
             print("[AppDataStore] promotions refresh failed (hadCache=\(hadCache)): \(error)")
@@ -662,6 +803,12 @@ final class AppDataStore: ObservableObject {
         }
     }
 
+    /// Drop a receipt locally so the receipts list updates instantly when
+    /// the user deletes from detail. Mirrors `removeExpensesOptimistic`.
+    func removeReceiptOptimistic(id: String) {
+        receipts.removeAll { $0.id == id }
+    }
+
     // MARK: - Invalidation
 
     func invalidateDashboard() { dashboardLoadedAt = nil }
@@ -694,6 +841,16 @@ final class AppDataStore: ObservableObject {
         budgetTask?.cancel()
         financialHealthTask?.cancel()
         promotionsTask?.cancel()
+        // Bump every gen so any in-flight responses are dropped.
+        dashboardGen &+= 1
+        receiptsGen &+= 1
+        goalsGen &+= 1
+        loyaltyGen &+= 1
+        challengesGen &+= 1
+        groupsGen &+= 1
+        budgetGen &+= 1
+        financialHealthGen &+= 1
+        promotionsGen &+= 1
         dashboard = nil; dashboardLoadedAt = nil; dashboardLoading = false; dashboardError = nil
         receipts = []; receiptsLoadedAt = nil; receiptsLoading = false; receiptsError = nil
         goals = []; goalsLoadedAt = nil; goalsLoading = false; goalsError = nil
