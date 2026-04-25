@@ -4,12 +4,14 @@ import SwiftUI
 /// Matches web `/app/(protected)/groups/page.tsx` — two top CTAs
 /// (Quick Split + New Group), unsettled-debts banner, rich group
 /// cards with member avatars + balance, and Recent Activity footer.
+///
+/// Reads from `AppDataStore.groups` so tab switches don't re-fetch.
 struct GroupsListView: View {
     @EnvironmentObject private var router: AppRouter
     @EnvironmentObject private var session: SessionStore
     @EnvironmentObject private var toast: ToastCenter
     @EnvironmentObject private var locale: AppLocale
-    @StateObject private var vm = GroupsListViewModel()
+    @EnvironmentObject private var store: AppDataStore
     @State private var showCreate = false
     @State private var tipDismissed = false
     @State private var showRecentActivity = false
@@ -22,15 +24,19 @@ struct GroupsListView: View {
         "#3b82f6", "#8b5cf6", "#ef4444", "#14b8a6",
     ]
 
+    private var groups: [Group] { store.groups }
+    private var isLoading: Bool { store.groupsLoading }
+    private var errorMessage: String? { store.groupsError }
+
     /// Groups with a non-zero balance — used for both the AI tip banner
     /// and the Recent Activity preview (matches web's `.filter(abs > 0)`).
     private var unsettledGroups: [Group] {
-        vm.groups.filter { abs($0.totalBalance ?? 0) > 0.01 }
+        groups.filter { abs($0.totalBalance ?? 0) > 0.01 }
     }
 
     /// Sum of |balance| across all groups — shown in the banner.
     private var totalUnsettled: Double {
-        vm.groups.reduce(0) { $0 + abs($1.totalBalance ?? 0) }
+        groups.reduce(0) { $0 + abs($1.totalBalance ?? 0) }
     }
 
     var body: some View {
@@ -53,7 +59,7 @@ struct GroupsListView: View {
 
             content
 
-            if !vm.groups.isEmpty && !unsettledGroups.isEmpty {
+            if !groups.isEmpty && !unsettledGroups.isEmpty {
                 Section {
                     recentActivityDisclosure
                         .padding(.horizontal, Theme.Spacing.md)
@@ -74,8 +80,8 @@ struct GroupsListView: View {
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
         .background(Theme.background)
-        .refreshable { await vm.load() }
-        .task { if vm.groups.isEmpty { await vm.load() } }
+        .refreshable { await store.awaitGroups(force: true) }
+        .task { store.ensureGroups() }
         .animation(.nbSpring, value: showRecentActivity)
         .animation(.nbSpring, value: tipDismissed)
         .sheet(isPresented: $showCreate) {
@@ -85,7 +91,7 @@ struct GroupsListView: View {
                         let finalPayload = payloadWithCreator(payload)
                         _ = try await GroupsRepo.create(finalPayload)
                         toast.success(locale.t("toast.created"))
-                        await vm.load()
+                        store.didMutateGroups()
                     } catch {
                         toast.error(locale.t("toast.error"), description: error.localizedDescription)
                     }
@@ -107,7 +113,7 @@ struct GroupsListView: View {
                     do {
                         try await GroupsRepo.delete(id: g.id)
                         toast.success(locale.t("toast.deleted"))
-                        await vm.load()
+                        store.didMutateGroups()
                     } catch {
                         toast.error(locale.t("toast.error"), description: error.localizedDescription)
                     }
@@ -128,7 +134,7 @@ struct GroupsListView: View {
     private var topCTAs: some View {
         HStack(spacing: Theme.Spacing.sm) {
             Button {
-                if let first = vm.groups.first {
+                if let first = groups.first {
                     router.push(.groupDetail(id: first.id))
                 } else {
                     toast.info(locale.t("groups.quickSplitUnavailable"))
@@ -169,7 +175,7 @@ struct GroupsListView: View {
                 Text(locale.t("groups.unsettledDebts"))
                     .font(AppFont.bodyMedium)
                     .foregroundColor(Theme.foreground)
-                Text("\(unsettledGroups.count) · \(Fmt.amount(totalUnsettled, currency: vm.groups.first?.currency ?? "PLN"))")
+                Text("\(unsettledGroups.count) · \(Fmt.amount(totalUnsettled, currency: groups.first?.currency ?? "PLN"))")
                     .font(AppFont.caption)
                     .foregroundColor(Theme.mutedForeground)
             }
@@ -216,13 +222,13 @@ struct GroupsListView: View {
         NBScreenHeader(
             eyebrow: locale.t("groups.eyebrow"),
             title: locale.t("groups.subtitle"),
-            subtitle: "\(vm.groups.count) \(locale.t("challenges.active").lowercased())"
+            subtitle: "\(groups.count) \(locale.t("challenges.active").lowercased())"
         )
     }
 
     @ViewBuilder
     private var content: some View {
-        if vm.isLoading && vm.groups.isEmpty {
+        if isLoading && groups.isEmpty {
             Section {
                 NBLoadingCard()
                     .padding(.horizontal, Theme.Spacing.md)
@@ -230,15 +236,15 @@ struct GroupsListView: View {
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
             .listRowInsets(EdgeInsets())
-        } else if let message = vm.errorMessage {
+        } else if let message = errorMessage, groups.isEmpty {
             Section {
-                NBErrorCard(message: message) { Task { await vm.load() } }
+                NBErrorCard(message: message) { Task { await store.awaitGroups(force: true) } }
                     .padding(.horizontal, Theme.Spacing.md)
             }
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
             .listRowInsets(EdgeInsets())
-        } else if vm.groups.isEmpty {
+        } else if groups.isEmpty {
             Section {
                 NBEmptyState(
                     systemImage: "person.3.fill",
@@ -253,7 +259,7 @@ struct GroupsListView: View {
             .listRowInsets(EdgeInsets())
         } else {
             Section {
-                ForEach(vm.groups) { g in
+                ForEach(groups) { g in
                     groupCard(g)
                         .listRowBackground(Color.clear)
                         .listRowSeparator(.hidden)
@@ -476,24 +482,6 @@ struct GroupsListView: View {
             .nbCard(radius: Theme.Radius.sm, shadow: Theme.Shadow.sm)
         }
         .buttonStyle(.plain)
-    }
-}
-
-@MainActor
-final class GroupsListViewModel: ObservableObject {
-    @Published var groups: [Group] = []
-    @Published var isLoading = false
-    @Published var errorMessage: String?
-
-    func load() async {
-        isLoading = true
-        errorMessage = nil
-        defer { isLoading = false }
-        do {
-            groups = try await GroupsRepo.list()
-        } catch {
-            errorMessage = error.localizedDescription
-        }
     }
 }
 

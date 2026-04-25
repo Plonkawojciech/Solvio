@@ -3,7 +3,7 @@
 import { motion } from 'framer-motion'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Tag, Clock, ShoppingCart } from 'lucide-react'
+import { Clock, ShoppingCart } from 'lucide-react'
 import { useTranslation } from '@/lib/i18n'
 
 export interface PromotionData {

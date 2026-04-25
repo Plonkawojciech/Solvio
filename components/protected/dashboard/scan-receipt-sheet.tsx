@@ -15,6 +15,7 @@ import {
   Edit2,
   Check,
   Tag,
+  ExternalLink,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -54,6 +55,7 @@ type AiEnrichment = {
 
 type ParsedItem = {
   name: string;
+  nameTranslated?: string | null;
   quantity?: number | null;
   price?: number | null;
   category_id?: string | null;
@@ -87,7 +89,9 @@ type OcrResult = {
       total?: number;
       currency?: string;
       date?: string;
-      items?: Array<{ name: string; quantity?: number | null; price?: number | null }>;
+      exchangeRate?: number | null;
+      detectedLanguage?: string | null;
+      items?: Array<{ name: string; nameTranslated?: string | null; quantity?: number | null; price?: number | null; category_id?: string | null }>;
       aiEnrichment?: AiEnrichment;
     };
   }>;
@@ -101,6 +105,16 @@ interface ScanReceiptSheetProps {
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
+
+const CURRENCY_SYMBOLS: Record<string, string> = {
+  EUR: '€', USD: '$', GBP: '£', CHF: 'CHF', CZK: 'Kč',
+  SEK: 'kr', NOK: 'kr', DKK: 'kr', HUF: 'Ft', RON: 'lei',
+  PLN: 'zł',
+};
+
+function getCurrencySymbol(currency: string): string {
+  return CURRENCY_SYMBOLS[currency.toUpperCase()] ?? currency;
+}
 
 function isHeicFile(file: File) {
   return (
@@ -346,14 +360,31 @@ export function ScanReceiptSheet({
   isOpen,
   onClose,
   onParsed,
-  categories = [],
+  categories: categoriesProp = [],
 }: ScanReceiptSheetProps) {
   const [files, setFiles] = React.useState<File[]>([]);
   const [isBusy, setIsBusy] = React.useState(false);
   const [scanStep, setScanStep] = React.useState<ScanStep | null>(null);
   const [errorMsg, setErrorMsg] = React.useState<string | null>(null);
   const dropRef = React.useRef<HTMLLabelElement>(null);
+  const cameraInputRef = React.useRef<HTMLInputElement>(null);
   const [isDragOver, setIsDragOver] = React.useState(false);
+  const autoScanTriggered = React.useRef(false);
+
+  // Self-fetch categories + account currency when prop is empty
+  const [fetchedCategories, setFetchedCategories] = React.useState<Array<{ id: string; name: string }>>([]);
+  const [accountCurrency, setAccountCurrency] = React.useState('PLN');
+  React.useEffect(() => {
+    if (!isOpen) return;
+    fetch('/api/data/settings')
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data?.categories && categoriesProp.length === 0) setFetchedCategories(data.categories);
+        if (data?.settings?.currency) setAccountCurrency(data.settings.currency.toUpperCase());
+      })
+      .catch((err) => console.error('Failed to fetch settings:', err));
+  }, [isOpen, categoriesProp.length]);
+  const categories = categoriesProp.length > 0 ? categoriesProp : fetchedCategories;
 
   // Review step state
   const [reviewItems, setReviewItems] = React.useState<ParsedItem[]>([]);
@@ -362,6 +393,8 @@ export function ScanReceiptSheet({
     total?: number;
     currency?: string;
     date?: string;
+    exchangeRate?: number | null;
+    detectedLanguage?: string | null;
     receiptId?: string;
     ocrResult?: OcrResult;
   } | null>(null);
@@ -369,6 +402,8 @@ export function ScanReceiptSheet({
   const [editingReviewIndex, setEditingReviewIndex] = React.useState<number | null>(null);
   const [editReviewName, setEditReviewName] = React.useState('');
   const [editReviewCategory, setEditReviewCategory] = React.useState('');
+  const [editReviewPrice, setEditReviewPrice] = React.useState('');
+  const [editReviewQuantity, setEditReviewQuantity] = React.useState('');
 
   const isPl = getLanguage() === 'pl';
 
@@ -385,7 +420,25 @@ export function ScanReceiptSheet({
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files) addFiles(e.target.files);
+    if (e.target.files && e.target.files.length > 0) {
+      const incoming = Array.from(e.target.files);
+      setErrorMsg(null);
+      setFiles((prev) => {
+        const existing = new Set(prev.map((f) => `${f.name}-${f.size}`));
+        const deduped = incoming.filter((f) => !existing.has(`${f.name}-${f.size}`));
+        const merged = [...prev, ...deduped];
+        // Auto-start scan after state update using merged files directly
+        if (merged.length > 0 && !autoScanTriggered.current) {
+          autoScanTriggered.current = true;
+          // Use setTimeout to ensure state flush before triggering scan
+          setTimeout(() => {
+            autoScanTriggered.current = false;
+            runScan(merged);
+          }, 0);
+        }
+        return merged;
+      });
+    }
     // Reset input so same file can be re-selected
     e.target.value = '';
   };
@@ -419,14 +472,13 @@ export function ScanReceiptSheet({
     onClose();
   };
 
-  // ── Submit ─────────────────────────────────────────────────────────────────
+  // ── Core scan logic (accepts files directly to avoid stale-closure issues) ──
 
-  const onSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const runScan = async (filesToScan: File[]) => {
     setErrorMsg(null);
 
-    if (files.length === 0) {
-      setErrorMsg(isPl ? 'Dodaj przynajmniej jeden plik.' : 'Add at least one file.');
+    if (filesToScan.length === 0) {
+      setErrorMsg(t('receipts.addFileFirst'));
       return;
     }
 
@@ -437,16 +489,16 @@ export function ScanReceiptSheet({
       setScanStep('compressing');
 
       const perFileTarget =
-        files.length <= 1
+        filesToScan.length <= 1
           ? 1200 * 1024
-          : files.length === 2
+          : filesToScan.length === 2
             ? 800 * 1024
-            : files.length === 3
+            : filesToScan.length === 3
               ? 650 * 1024
               : 500 * 1024;
 
       const optimizedForOcr: File[] = [];
-      for (const original of files) {
+      for (const original of filesToScan) {
         if (original.type === 'application/pdf' && original.size > perFileTarget) {
           throw new Error(
             isPl
@@ -493,13 +545,13 @@ export function ScanReceiptSheet({
       const responseText = await res.text();
 
       if (!res.ok) {
-        let msg = isPl ? 'OCR zwrócił błąd.' : 'OCR returned an error.';
+        let msg = t('receipts.ocrError');
 
         if (res.status === 413) {
           msg = isPl
             ? 'Plik jest za duży (limit serwera). Spróbuj 1 plik naraz lub zrób zdjęcie bliżej paragonu.'
             : 'File is too large (server limit). Try 1 file at a time or take a closer photo of the receipt.';
-          toast.error(isPl ? 'Za duży plik' : 'Request too large', { description: msg, duration: 7000 });
+          toast.error(t('receipts.requestTooLarge'), { description: msg, duration: 7000 });
           throw new Error(msg);
         }
 
@@ -507,7 +559,7 @@ export function ScanReceiptSheet({
           msg = isPl
             ? 'Nieprawidłowy format pliku. Użyj JPG, PNG, HEIC lub PDF.'
             : 'Invalid file format. Use JPG, PNG, HEIC or PDF.';
-          toast.error(isPl ? 'Błąd formatu' : 'Format error', { description: msg, duration: 5000 });
+          toast.error(t('receipts.formatError'), { description: msg, duration: 5000 });
           throw new Error(msg);
         }
 
@@ -517,8 +569,8 @@ export function ScanReceiptSheet({
             msg = isPl
               ? `Ten paragon został już wgrany! ${errorData.message || ''}`
               : `This receipt was already uploaded! ${errorData.message || ''}`;
-            toast.warning(isPl ? 'Duplikat paragonu' : 'Duplicate receipt', {
-              description: errorData.message || (isPl ? 'Ten paragon został już dodany.' : 'This receipt was already added.'),
+            toast.warning(t('receipts.duplicateReceipt'), {
+              description: errorData.message || t('receipts.duplicateReceiptDesc'),
               duration: 5000,
             });
           } else {
@@ -534,7 +586,7 @@ export function ScanReceiptSheet({
       try {
         parsed = JSON.parse(responseText);
       } catch {
-        throw new Error(isPl ? 'Nieprawidłowa odpowiedź serwera.' : 'Invalid server response.');
+        throw new Error(t('receipts.invalidResponse'));
       }
 
       // OCR result is available in `parsed` — logging removed for cleanliness
@@ -551,7 +603,7 @@ export function ScanReceiptSheet({
 
       if (parsed.results && Array.isArray(parsed.results)) {
         if (successCount === totalCount && successCount > 0) {
-          toast.success(isPl ? 'Skanowanie zakończone' : 'Scanning complete', {
+          toast.success(t('receipts.scanComplete'), {
             description: isPl
               ? `Przetworzono ${successCount} paragon${successCount > 1 ? 'ów' : ''}.`
               : `Processed ${successCount} receipt${successCount !== 1 ? 's' : ''}.`,
@@ -589,8 +641,10 @@ export function ScanReceiptSheet({
           const aiItem = aiItems.find((a) => a.index === idx + 1);
           return {
             name: item.name,
+            nameTranslated: item.nameTranslated,
             quantity: item.quantity,
             price: item.price,
+            category_id: item.category_id,
             suggestedCategory: aiItem?.suggestedCategory,
             confidence: aiItem?.confidence,
           };
@@ -602,6 +656,8 @@ export function ScanReceiptSheet({
           total: firstSuccess.data.total,
           currency: firstSuccess.data.currency,
           date: firstSuccess.data.date,
+          exchangeRate: firstSuccess.data.exchangeRate,
+          detectedLanguage: firstSuccess.data.detectedLanguage,
           receiptId: firstSuccess.receipt_id,
           ocrResult: parsed,
         });
@@ -616,7 +672,7 @@ export function ScanReceiptSheet({
       onClose();
     } catch (err: unknown) {
       const msg =
-        err instanceof Error ? err.message : (isPl ? 'Błąd podczas skanowania.' : 'Scanning error.');
+        err instanceof Error ? err.message : t('receipts.scanError');
       if (process.env.NODE_ENV === 'development') {
         console.error('[ScanReceipt] catch:', err);
       }
@@ -627,6 +683,13 @@ export function ScanReceiptSheet({
     }
   };
 
+  // ── Form submit wrapper (used by the manual "Scan" button) ─────────────────
+
+  const onSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await runScan(files);
+  };
+
   // ─── Review helpers ──────────────────────────────────────────────────────────
 
   const startReviewEdit = (index: number) => {
@@ -634,20 +697,52 @@ export function ScanReceiptSheet({
     setEditingReviewIndex(index);
     setEditReviewName(item.name);
     setEditReviewCategory(item.suggestedCategory ?? '');
+    setEditReviewPrice(item.price != null ? String(item.price) : '');
+    setEditReviewQuantity(item.quantity != null ? String(item.quantity) : '1');
   };
 
   const saveReviewEdit = (index: number) => {
     setReviewItems((prev) =>
       prev.map((item, i) =>
         i === index
-          ? { ...item, name: editReviewName.trim() || item.name, suggestedCategory: editReviewCategory || item.suggestedCategory }
+          ? {
+              ...item,
+              name: editReviewName.trim() || item.name,
+              suggestedCategory: editReviewCategory || item.suggestedCategory,
+              price: editReviewPrice ? parseFloat(editReviewPrice.replace(',', '.')) : item.price,
+              quantity: editReviewQuantity ? parseInt(editReviewQuantity, 10) || item.quantity : item.quantity,
+            }
           : item
       )
     );
     setEditingReviewIndex(null);
   };
 
-  const handleSaveAndClose = () => {
+  const handleSaveAndClose = async () => {
+    // Persist user's edited items to DB via PUT
+    if (reviewMeta?.receiptId && reviewItems.length > 0) {
+      try {
+        const res = await fetch('/api/data/receipts', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: reviewMeta.receiptId,
+            items: reviewItems.map(item => ({
+              name: item.name,
+              nameTranslated: item.nameTranslated || null,
+              quantity: item.quantity ?? 1,
+              price: item.price ?? 0,
+              category_id: item.category_id || null,
+            })),
+          }),
+        });
+        if (!res.ok) {
+          toast.error(t('errors.saveFailed'));
+        }
+      } catch {
+        toast.error(t('errors.saveFailed'));
+      }
+    }
     onParsed?.(reviewMeta?.ocrResult ?? null);
     resetState();
     onClose();
@@ -664,18 +759,30 @@ export function ScanReceiptSheet({
         <SheetContent className="w-full flex flex-col gap-0 p-0 sm:max-w-2xl">
           <SheetHeader className="p-6 border-b">
             <SheetTitle className="text-xl font-semibold">
-              {isPl ? 'Sprawdź pozycje paragonu' : 'Review Receipt Items'}
+              {t('receipts.reviewItems')}
             </SheetTitle>
-            <SheetDescription>
-              {reviewMeta?.merchant && (
-                <span className="font-medium text-foreground">{reviewMeta.merchant}</span>
-              )}
-              {reviewMeta?.date && (
-                <span className="text-muted-foreground"> &bull; {reviewMeta.date}</span>
-              )}
-              {reviewMeta?.total !== undefined && (
-                <span className="text-muted-foreground">
-                  {' '}&bull; {reviewMeta.total?.toFixed(2)} {reviewMeta.currency ?? ''}
+            <SheetDescription className="space-y-1">
+              <span className="flex flex-wrap items-center gap-1.5">
+                {reviewMeta?.merchant && (
+                  <span className="font-medium text-foreground">{reviewMeta.merchant}</span>
+                )}
+                {reviewMeta?.date && (
+                  <span className="text-muted-foreground">&bull; {reviewMeta.date}</span>
+                )}
+                {reviewMeta?.total !== undefined && reviewMeta.currency && (
+                  <span className="text-muted-foreground font-medium">
+                    &bull; {getCurrencySymbol(reviewMeta.currency)}{reviewMeta.total?.toFixed(2)} {reviewMeta.currency}
+                  </span>
+                )}
+                {reviewMeta?.detectedLanguage && reviewMeta.detectedLanguage !== 'pl' && reviewMeta.detectedLanguage !== 'en' && (
+                  <span className="text-xs bg-blue-500/10 text-blue-600 dark:text-blue-400 px-1.5 py-0.5 rounded-full">
+                    {({ es: '🇪🇸', de: '🇩🇪', fr: '🇫🇷', it: '🇮🇹', pt: '🇵🇹' } as Record<string, string>)[reviewMeta.detectedLanguage] ?? '🌍'} {reviewMeta.detectedLanguage.toUpperCase()}
+                  </span>
+                )}
+              </span>
+              {reviewMeta?.exchangeRate && reviewMeta.currency && reviewMeta.currency !== accountCurrency && reviewMeta.total !== undefined && (
+                <span className="text-xs text-emerald-600 dark:text-emerald-400">
+                  ≈ {(reviewMeta.total * reviewMeta.exchangeRate).toFixed(2)} {accountCurrency} ({reviewMeta.exchangeRate.toFixed(4)} {accountCurrency}/{reviewMeta.currency})
                 </span>
               )}
             </SheetDescription>
@@ -685,15 +792,15 @@ export function ScanReceiptSheet({
             <div className="space-y-2">
               {reviewItems.length === 0 && (
                 <p className="text-center text-muted-foreground py-8 text-sm">
-                  {isPl ? 'Brak pozycji do wyświetlenia.' : 'No items to display.'}
+                  {t('receipts.noItemsDisplay')}
                 </p>
               )}
 
               {/* Column headers */}
               {reviewItems.length > 0 && (
                 <div className="grid grid-cols-[1fr_auto_auto] gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wide px-3 pb-1">
-                  <span>{isPl ? 'Produkt' : 'Item'}</span>
-                  <span className="w-20 text-right">{isPl ? 'Cena' : 'Price'}</span>
+                  <span>{t('receipts.product')}</span>
+                  <span className="w-20 text-right">{t('receipts.itemPrice')}</span>
                   <span className="w-7" />
                 </div>
               )}
@@ -709,21 +816,40 @@ export function ScanReceiptSheet({
                         value={editReviewName}
                         onChange={(e) => setEditReviewName(e.target.value)}
                         className="h-8 text-sm"
-                        placeholder={isPl ? 'Nazwa produktu' : 'Item name'}
+                        placeholder={t('receipts.itemNamePlaceholder')}
                         autoFocus
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') { e.preventDefault(); saveReviewEdit(index); }
                           if (e.key === 'Escape') { e.preventDefault(); setEditingReviewIndex(null); }
                         }}
                       />
+                      <div className="flex gap-2">
+                        <Input
+                          type="number"
+                          step="0.01"
+                          value={editReviewPrice}
+                          onChange={(e) => setEditReviewPrice(e.target.value)}
+                          className="h-8 text-sm w-24"
+                          placeholder={t('receipts.itemPrice')}
+                        />
+                        <Input
+                          type="number"
+                          step="1"
+                          min="1"
+                          value={editReviewQuantity}
+                          onChange={(e) => setEditReviewQuantity(e.target.value)}
+                          className="h-8 text-sm w-16"
+                          placeholder="Qty"
+                        />
+                      </div>
                       {categories.length > 0 && (
                         <Select value={editReviewCategory} onValueChange={setEditReviewCategory}>
                           <SelectTrigger className="h-8 text-sm">
-                            <SelectValue placeholder={isPl ? 'Kategoria' : 'Category'} />
+                            <SelectValue placeholder={t('receipts.categoryPlaceholder')} />
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="">
-                              {isPl ? 'Brak kategorii' : 'No category'}
+                              {t('expenses.noCategory')}
                             </SelectItem>
                             {categories.map((cat) => (
                               <SelectItem key={cat.id} value={cat.name}>
@@ -742,7 +868,7 @@ export function ScanReceiptSheet({
                           onClick={() => saveReviewEdit(index)}
                         >
                           <Check className="h-3.5 w-3.5 mr-1" />
-                          {isPl ? 'Zapisz' : 'Save'}
+                          {t('common.save')}
                         </Button>
                         <Button
                           type="button"
@@ -758,21 +884,19 @@ export function ScanReceiptSheet({
                   ) : (
                     <div className="flex items-center gap-2">
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">{item.name}</p>
+                        <p className="text-sm font-medium truncate">
+                          {item.nameTranslated || item.name}
+                        </p>
+                        {item.nameTranslated && item.nameTranslated !== item.name && (
+                          <p className="text-xs text-muted-foreground/70 truncate">{item.name}</p>
+                        )}
                         <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                          {item.suggestedCategory && (
-                            <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                          {(item.category_id || item.suggestedCategory) && (
+                            <span className="inline-flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400">
                               <Tag className="h-3 w-3" />
-                              {item.suggestedCategory}
-                              {item.confidence !== undefined && (
-                                <span className={cn(
-                                  'text-xs',
-                                  item.confidence >= 0.8 ? 'text-green-600' :
-                                  item.confidence >= 0.5 ? 'text-yellow-600' : 'text-muted-foreground'
-                                )}>
-                                  ({Math.round(item.confidence * 100)}%)
-                                </span>
-                              )}
+                              {item.category_id
+                                ? (categories.find(c => c.id === item.category_id)?.name ?? item.suggestedCategory ?? item.category_id)
+                                : item.suggestedCategory}
                             </span>
                           )}
                           {item.quantity !== null && item.quantity !== undefined && item.quantity !== 1 && (
@@ -787,9 +911,10 @@ export function ScanReceiptSheet({
                       </span>
                       <Button
                         type="button"
+                        aria-label={t('receipts.editItem')}
                         variant="ghost"
                         size="icon"
-                        className="h-7 w-7 shrink-0"
+                        className="h-9 w-9 min-h-[44px] min-w-[44px] shrink-0"
                         onClick={() => startReviewEdit(index)}
                       >
                         <Edit2 className="h-3.5 w-3.5" />
@@ -801,21 +926,37 @@ export function ScanReceiptSheet({
             </div>
           </div>
 
-          <SheetFooter className="mt-auto border-t p-6 flex justify-end gap-3">
+          <SheetFooter className="mt-auto border-t p-6 flex flex-wrap justify-end gap-3">
             <Button
               type="button"
               variant="outline"
               onClick={handleClose}
             >
-              {isPl ? 'Odrzuć' : 'Discard'}
+              {t('receipts.discard')}
             </Button>
+            {reviewMeta?.receiptId && (
+              <Button
+                type="button"
+                variant="outline"
+                asChild
+              >
+                <a
+                  href={`/receipt/${reviewMeta.receiptId}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <ExternalLink className="mr-2 h-4 w-4" />
+                  {t('receipts.viewEReceipt')}
+                </a>
+              </Button>
+            )}
             <Button
               type="button"
               onClick={handleSaveAndClose}
               className="min-w-[130px]"
             >
               <Check className="mr-2 h-4 w-4" />
-              {isPl ? 'Zapisz i zamknij' : 'Save & Close'}
+              {t('receipts.saveAndClose')}
             </Button>
           </SheetFooter>
         </SheetContent>
@@ -829,7 +970,7 @@ export function ScanReceiptSheet({
       <SheetContent className="w-full flex flex-col gap-0 p-0 sm:max-w-2xl">
         <SheetHeader className="p-6 border-b">
           <SheetTitle className="text-xl font-semibold">
-            {isPl ? 'Nowy skan paragonu' : 'New Receipt Scan'}
+            {t('receipts.newScan')}
           </SheetTitle>
           <SheetDescription>
             {isPl
@@ -843,7 +984,7 @@ export function ScanReceiptSheet({
 
             {/* ── Drop zone ── */}
             {!isBusy && (
-              <div className="space-y-2">
+              <div className="space-y-3">
                 <Label htmlFor="file-upload">{t('receipts.addFile')}</Label>
                 <label
                   ref={dropRef}
@@ -866,9 +1007,9 @@ export function ScanReceiptSheet({
                   />
                   <p className="mt-2 text-sm text-muted-foreground text-center">
                     <span className="font-semibold text-primary">
-                      {isPl ? 'Kliknij' : 'Click'}
+                      {t('receipts.click')}
                     </span>{' '}
-                    {isPl ? 'lub przeciągnij pliki tutaj' : 'or drag & drop files here'}
+                    {t('receipts.dragDrop')}
                   </p>
                   <p className="mt-1 text-xs text-muted-foreground">
                     {t('receipts.selectFiles')} &mdash; {t('receipts.maxSize')}
@@ -883,6 +1024,29 @@ export function ScanReceiptSheet({
                     disabled={isBusy}
                   />
                 </label>
+
+                {/* ── Camera capture button (mobile only) ── */}
+                <div className="md:hidden">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full gap-2"
+                    disabled={isBusy}
+                    onClick={() => cameraInputRef.current?.click()}
+                  >
+                    <ScanLine className="h-4 w-4" />
+                    {t('receipts.takePhoto')}
+                  </Button>
+                  <input
+                    ref={cameraInputRef}
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    className="hidden"
+                    onChange={handleFileChange}
+                    disabled={isBusy}
+                  />
+                </div>
               </div>
             )}
 
@@ -890,7 +1054,7 @@ export function ScanReceiptSheet({
             {hasFiles && !isBusy && (
               <div className="space-y-2">
                 <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                  {isPl ? `Wybrane pliki (${files.length})` : `Selected files (${files.length})`}
+                  {`${t('receipts.selectedFiles')} (${files.length})`}
                 </p>
                 {files.map((file, index) => (
                   <div
@@ -906,9 +1070,10 @@ export function ScanReceiptSheet({
                     </div>
                     <Button
                       type="button"
+                      aria-label={t('receipts.removeFile')}
                       variant="ghost"
                       size="icon"
-                      className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
+                      className="h-9 w-9 min-h-[44px] min-w-[44px] shrink-0 text-muted-foreground hover:text-destructive"
                       onClick={() => removeFile(index)}
                     >
                       <X className="h-4 w-4" />
@@ -922,7 +1087,7 @@ export function ScanReceiptSheet({
             {isBusy && scanStep && (
               <div className="space-y-4">
                 <p className="text-sm font-medium text-center text-muted-foreground">
-                  {isPl ? 'Przetwarzanie paragonu...' : 'Processing receipt...'}
+                  {t('receipts.processingReceipt')}
                 </p>
                 <ScanProgress step={scanStep} />
                 <p className="text-xs text-center text-muted-foreground">
@@ -948,7 +1113,7 @@ export function ScanReceiptSheet({
                   onClick={() => setErrorMsg(null)}
                 >
                   <RefreshCcw className="h-3.5 w-3.5" />
-                  {isPl ? 'Spróbuj ponownie' : 'Try again'}
+                  {t('receipts.tryAgain')}
                 </Button>
               </div>
             )}
@@ -973,7 +1138,7 @@ export function ScanReceiptSheet({
             {isBusy ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                {isPl ? 'Przetwarzanie...' : 'Processing...'}
+                {t('receipts.processing')}
               </>
             ) : (
               t('receipts.scan')

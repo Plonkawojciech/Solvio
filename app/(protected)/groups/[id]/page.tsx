@@ -22,19 +22,19 @@ import {
   Clock,
   Wallet,
   Camera,
-  Plane,
-  Home,
-  Users,
   Banknote,
 } from 'lucide-react'
-import { SplitExpenseSheet } from '@/components/protected/groups/split-expense-sheet'
-import { TripDashboard } from '@/components/protected/groups/trip-dashboard'
-import { TripTimeline } from '@/components/protected/groups/trip-timeline'
+import dynamic from 'next/dynamic'
 import { GroupReceiptCard } from '@/components/protected/groups/group-receipt-card'
-import { ReceiptItemAssigner } from '@/components/protected/groups/receipt-item-assigner'
-import { ScanGroupReceiptSheet } from '@/components/protected/groups/scan-group-receipt-sheet'
-import { SettlementSummary } from '@/components/protected/groups/settlement-summary'
-import { AiExpenseInsights } from '@/components/protected/groups/ai-expense-insights'
+
+/* Heavy sheet/modal components — lazy-loaded to reduce initial bundle */
+const SplitExpenseSheet = dynamic(() => import('@/components/protected/groups/split-expense-sheet').then(m => ({ default: m.SplitExpenseSheet })), { ssr: false })
+const TripDashboard = dynamic(() => import('@/components/protected/groups/trip-dashboard').then(m => ({ default: m.TripDashboard })), { ssr: false })
+const TripTimeline = dynamic(() => import('@/components/protected/groups/trip-timeline').then(m => ({ default: m.TripTimeline })), { ssr: false })
+const ReceiptItemAssigner = dynamic(() => import('@/components/protected/groups/receipt-item-assigner').then(m => ({ default: m.ReceiptItemAssigner })), { ssr: false })
+const ScanGroupReceiptSheet = dynamic(() => import('@/components/protected/groups/scan-group-receipt-sheet').then(m => ({ default: m.ScanGroupReceiptSheet })), { ssr: false })
+const SettlementSummary = dynamic(() => import('@/components/protected/groups/settlement-summary').then(m => ({ default: m.SettlementSummary })), { ssr: false })
+const AiExpenseInsights = dynamic(() => import('@/components/protected/groups/ai-expense-insights').then(m => ({ default: m.AiExpenseInsights })), { ssr: false })
 
 const MEMBER_COLORS = [
   '#6366f1', '#ec4899', '#f59e0b', '#10b981',
@@ -257,6 +257,7 @@ export default function GroupDetailPage() {
   const [groupReceipts, setGroupReceipts] = useState<GroupReceipt[]>([])
   const [receiptMembers, setReceiptMembers] = useState<Array<{ id: string; name: string; email?: string | null; color?: string | null }>>([])
   const [receiptsLoading, setReceiptsLoading] = useState(false)
+  const [receiptsError, setReceiptsError] = useState(false)
   const [scanSheetOpen, setScanSheetOpen] = useState(false)
   const [selectedReceipt, setSelectedReceipt] = useState<GroupReceipt | null>(null)
 
@@ -288,18 +289,21 @@ export default function GroupDetailPage() {
   const fetchReceipts = useCallback(async () => {
     if (!groupId) return
     setReceiptsLoading(true)
+    setReceiptsError(false)
     try {
       const res = await fetch(`/api/groups/${groupId}/receipts`)
       if (!res.ok) throw new Error('Failed')
       const data = await res.json()
       setGroupReceipts(data.receipts || [])
       setReceiptMembers(data.members || [])
-    } catch {
-      // silent
+    } catch (error) {
+      console.error('Failed to fetch receipts:', error)
+      setReceiptsError(true)
+      toast.error(t('errors.loadFailed') || 'Failed to load receipts')
     } finally {
       setReceiptsLoading(false)
     }
-  }, [groupId])
+  }, [groupId, t])
 
   useEffect(() => {
     fetchGroup()
@@ -319,11 +323,11 @@ export default function GroupDetailPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ memberId }),
       })
-      if (!res.ok) throw new Error('Failed to settle')
+      if (!res.ok) throw new Error()
       toast.success(t('groups.settled'))
       await fetchGroup()
     } catch {
-      toast.error(t('groups.failedLoad'))
+      toast.error(t('errors.settleFailed'))
     } finally {
       setSettlingId(null)
     }
@@ -404,25 +408,25 @@ export default function GroupDetailPage() {
           {t('groups.backToGroups')}
         </Link>
 
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-3xl">
+        <div className="flex items-center justify-between gap-3 md:gap-4">
+          <div className="flex items-center gap-3 md:gap-4 min-w-0">
+            <div className="flex h-11 w-11 md:h-14 md:w-14 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-2xl md:text-3xl">
               {group.emoji || getModeEmoji(group.mode)}
             </div>
-            <div>
+            <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                <h1 className="text-xl sm:text-2xl font-bold tracking-tight">{group.name}</h1>
+                <h1 className="text-lg sm:text-2xl font-bold tracking-tight truncate">{group.name}</h1>
                 {/* Mode badge */}
                 <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold border ${getModeBadgeStyle(group.mode)}`}>
                   {getModeEmoji(group.mode)}{' '}
-                  {t(`groups.mode.${group.mode}` as any)}
+                  {t(`groups.mode.${group.mode}` as Parameters<typeof t>[0])}
                 </span>
               </div>
-              <p className="text-sm text-muted-foreground">
+              <p className="text-xs md:text-sm text-muted-foreground truncate">
                 {group.members.length}{' '}
                 {group.members.length === 1 ? t('groups.member') : t('groups.members')} · {group.currency}
                 {isTrip && group.startDate && group.endDate && (
-                  <span className="ml-1">
+                  <span className="hidden sm:inline ml-1">
                     · {formatDate(group.startDate)} — {formatDate(group.endDate)}
                   </span>
                 )}
@@ -445,16 +449,18 @@ export default function GroupDetailPage() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.05, duration: 0.3 }}
       >
-        <div className="flex gap-1 p-1 bg-muted/50 rounded-xl overflow-x-auto scrollbar-hide scroll-px-1 snap-x snap-mandatory">
+        <div role="tablist" className="flex gap-1 p-1 bg-muted/50 rounded-xl overflow-x-auto scrollbar-hide scroll-px-1 snap-x snap-mandatory">
           {tabs.map((tab) => {
             const Icon = tab.icon
             const isActive = activeTab === tab.id
             return (
               <button
                 key={tab.id}
+                role="tab"
+                aria-selected={isActive}
                 type="button"
                 onClick={() => setActiveTab(tab.id)}
-                className={`relative flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-medium transition-all duration-200 whitespace-nowrap min-w-fit snap-start ${
+                className={`relative flex items-center gap-1.5 px-3 md:px-3.5 py-2.5 md:py-2 rounded-lg text-xs md:text-sm font-medium transition-all duration-200 whitespace-nowrap min-w-fit min-h-[44px] snap-start ${
                   isActive
                     ? 'bg-background text-foreground shadow-sm'
                     : 'text-muted-foreground hover:text-foreground hover:bg-background/50'
@@ -510,6 +516,11 @@ export default function GroupDetailPage() {
                 {[...Array(3)].map((_, i) => (
                   <Skeleton key={i} className="h-36 rounded-xl" />
                 ))}
+              </div>
+            ) : receiptsError ? (
+              <div className="flex flex-col items-center py-12 gap-3 text-center">
+                <p className="text-sm text-destructive">{t('groups.receiptsLoadFailed')}</p>
+                <Button variant="outline" size="sm" onClick={fetchReceipts}>{t('groups.retry')}</Button>
               </div>
             ) : groupReceipts.length === 0 ? (
               <div className="flex flex-col items-center py-16 gap-4 text-center">
@@ -625,14 +636,14 @@ export default function GroupDetailPage() {
                             <p className="text-xs text-muted-foreground truncate">{rel.description}</p>
                           </div>
 
-                          <div className="flex items-center gap-2 shrink-0">
-                            <span className="text-sm font-semibold text-red-500 dark:text-red-400 tabular-nums">
+                          <div className="flex items-center gap-1.5 md:gap-2 shrink-0">
+                            <span className="text-xs md:text-sm font-semibold text-red-500 dark:text-red-400 tabular-nums">
                               {group.currency} {rel.amount.toFixed(2)}
                             </span>
                             <Button
                               size="sm"
                               variant="outline"
-                              className="h-9 px-3 text-xs"
+                              className="h-9 px-3 text-xs min-h-[44px]"
                               onClick={() => handleSettle(rel.splitId, rel.fromId)}
                               disabled={isSettling}
                             >
@@ -855,7 +866,7 @@ export default function GroupDetailPage() {
           ...m,
           color: MEMBER_COLORS[i % MEMBER_COLORS.length],
         }))}
-        onScanned={(receiptId) => {
+        onScanned={() => {
           fetchReceipts()
           // After scanning, auto-navigate to receipts tab and try to select the new receipt
           setActiveTab('receipts')

@@ -1,6 +1,6 @@
 // ══════════════════════════════════════════════════════════════════════════════
 // POST /api/bank/disconnect
-// Revoke PKO consent and delete the bank connection.
+// Delete Nordigen requisition and remove the bank connection.
 // Body: { connectionId: string }
 // ══════════════════════════════════════════════════════════════════════════════
 
@@ -9,7 +9,7 @@ import { auth } from '@/lib/auth-compat'
 import { db } from '@/lib/db'
 import { bankConnections, bankAccounts, bankTransactions } from '@/lib/db/schema'
 import { eq, and, inArray } from 'drizzle-orm'
-import { getPkoClient, PkoApiError } from '@/lib/pko/client'
+import { getNordigenClient } from '@/lib/nordigen/client'
 
 export async function POST(request: NextRequest) {
   const { userId } = await auth()
@@ -44,19 +44,16 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Try to revoke the consent at PKO (best-effort)
-    if (connection.consentId && connection.status === 'active') {
+    // Try to delete the Nordigen requisition (best-effort)
+    if (connection.requisitionId) {
       try {
-        const client = getPkoClient()
-        await client.deleteConsent(connection.consentId)
+        const client = getNordigenClient()
+        await client.deleteRequisition(connection.requisitionId)
       } catch (err) {
-        // Log but don't fail — we still want to clean up our side
-        if (err instanceof PkoApiError) {
-          console.warn(
-            `[bank/disconnect] Failed to revoke PKO consent ${connection.consentId}:`,
-            err.message,
-          )
-        }
+        console.warn(
+          `[bank/disconnect] Failed to delete Nordigen requisition ${connection.requisitionId}:`,
+          err instanceof Error ? err.message : String(err),
+        )
       }
     }
 
@@ -69,14 +66,13 @@ export async function POST(request: NextRequest) {
     const accountIds = accounts.map((a) => a.id)
 
     // Delete bank transactions for these accounts
-    // Note: expenses linked via bankTransactionId remain (just unlinked)
     if (accountIds.length > 0) {
       await db
         .delete(bankTransactions)
         .where(inArray(bankTransactions.accountId, accountIds))
     }
 
-    // Delete bank accounts (cascades from connection FK, but explicit for safety)
+    // Delete bank accounts
     await db
       .delete(bankAccounts)
       .where(eq(bankAccounts.connectionId, connection.id))
@@ -92,7 +88,6 @@ export async function POST(request: NextRequest) {
     })
   } catch (err) {
     console.error('[bank/disconnect POST]', err)
-    const message = err instanceof Error ? err.message : 'Failed to disconnect'
-    return NextResponse.json({ error: message }, { status: 500 })
+    return NextResponse.json({ error: 'Operation failed' }, { status: 500 })
   }
 }

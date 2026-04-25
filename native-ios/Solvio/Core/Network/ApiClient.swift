@@ -11,6 +11,11 @@ enum ApiError: Error, LocalizedError {
     case timeout
     case noConnection
     case server(status: Int, message: String?)
+    /// URLSession or Swift task cancellation. Almost always benign:
+    /// SwiftUI tears down `.task` blocks when the view disappears, which
+    /// surfaces as `NSURLErrorCancelled` (-999) at the network layer.
+    /// Callers should silently ignore this case (no toast, no log).
+    case cancelled
     case unknown
 
     var errorDescription: String? {
@@ -32,6 +37,7 @@ enum ApiError: Error, LocalizedError {
         case .server(let status, let msg):
             if let msg, !msg.isEmpty { return msg }
             return "Server error (\(status))"
+        case .cancelled: return "Cancelled"
         case .unknown: return "Unknown error"
         }
     }
@@ -257,9 +263,16 @@ final class ApiClient {
     }
 
     /// Map URLSession transport errors to user-friendly ApiError cases.
+    /// `NSURLErrorCancelled` (-999) and Swift's `CancellationError` are
+    /// folded into `.cancelled` so callers can pattern-match and silently
+    /// ignore them — they're a normal byproduct of SwiftUI tearing down
+    /// `.task` blocks when the view disappears.
     static func classifyTransport(_ error: Error) -> ApiError {
+        if error is CancellationError { return .cancelled }
         let nsError = error as NSError
         switch nsError.code {
+        case NSURLErrorCancelled:
+            return .cancelled
         case NSURLErrorTimedOut:
             return .timeout
         case NSURLErrorNotConnectedToInternet,

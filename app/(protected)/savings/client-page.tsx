@@ -10,6 +10,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
+import { SavingsGoalCard } from '@/components/protected/personal/savings-goal-card'
+import { NewGoalSheet } from '@/components/protected/personal/new-goal-sheet'
+import { AddFundsSheet } from '@/components/protected/personal/add-funds-sheet'
+import { FinancialHealthScore } from '@/components/protected/personal/financial-health-score'
 import {
   Target,
   PiggyBank,
@@ -19,11 +23,15 @@ import {
   ArrowRight,
   Plus,
   Wallet,
-  TrendingUp,
   CreditCard,
   ShieldCheck,
+  TrendingUp,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { toast } from 'sonner'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 
 // ---- Types ----
 interface SavingsGoal {
@@ -32,8 +40,17 @@ interface SavingsGoal {
   emoji: string | null
   targetAmount: string
   currentAmount: string
+  currency: string | null
   deadline: string | null
+  priority: string | null
+  color: string | null
+  category: string | null
   isCompleted: boolean
+  completedAt: string | null
+  aiTips: string[] | null
+  createdAt: string
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  deposits: any[]
 }
 
 interface CategoryBudget {
@@ -64,6 +81,16 @@ const TABS: { key: TabKey; icon: typeof Target }[] = [
   { key: 'challenges', icon: Trophy },
   { key: 'deals', icon: Tag },
 ]
+
+const CATEGORY_EMOJIS: Record<string, string> = {
+  electronics: '🎮',
+  travel: '✈️',
+  emergency: '🚨',
+  education: '📚',
+  car: '🚗',
+  home: '🏠',
+  custom: '🎁',
+}
 
 // ---- Skeleton ----
 function SavingsHubSkeleton() {
@@ -113,47 +140,9 @@ function HealthGauge({ score }: { score: number }) {
         <motion.div
           initial={{ width: 0 }}
           animate={{ width: `${score}%` }}
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] as any }}
           className={cn('h-full rounded-full', bgColor)}
-        />
-      </div>
-    </div>
-  )
-}
-
-// ---- Goal Mini Card ----
-function GoalMiniCard({ goal, currency, locale }: { goal: SavingsGoal; currency: string; locale: string }) {
-  const current = parseFloat(goal.currentAmount || '0')
-  const target = parseFloat(goal.targetAmount || '1')
-  const pct = Math.min(Math.round((current / target) * 100), 100)
-
-  const formatAmount = (v: number) =>
-    new Intl.NumberFormat(locale, { style: 'currency', currency, minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(v)
-
-  return (
-    <div className="rounded-xl border bg-card p-3.5 hover:shadow-md hover:-translate-y-0.5 transition-all duration-300">
-      <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-2">
-          <span className="text-lg">{goal.emoji || '🎯'}</span>
-          <span className="text-sm font-medium truncate max-w-[120px]">{goal.name}</span>
-        </div>
-        {goal.isCompleted && (
-          <Badge className="bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-900 text-[10px] px-1.5">
-            <ShieldCheck className="h-3 w-3 mr-0.5" />
-            100%
-          </Badge>
-        )}
-      </div>
-      <div className="flex items-end justify-between text-xs text-muted-foreground mb-1.5">
-        <span className="tabular-nums font-medium text-foreground">{formatAmount(current)}</span>
-        <span className="tabular-nums">{formatAmount(target)}</span>
-      </div>
-      <div className="h-1.5 rounded-full bg-muted/50 overflow-hidden">
-        <motion.div
-          initial={{ width: 0 }}
-          animate={{ width: `${pct}%` }}
-          transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] as any }}
-          className={cn('h-full rounded-full', pct >= 100 ? 'bg-emerald-500' : 'bg-primary')}
         />
       </div>
     </div>
@@ -224,6 +213,7 @@ function ChallengeMiniCard({ challenge }: { challenge: Challenge }) {
         <motion.div
           initial={{ width: 0 }}
           animate={{ width: `${Math.min(progress, 100)}%` }}
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] as any }}
           className={cn('h-full rounded-full', progress >= 100 ? 'bg-emerald-500' : 'bg-violet-500')}
         />
@@ -242,12 +232,32 @@ export default function SavingsHub() {
   const [activeTab, setActiveTab] = useState<TabKey>('goals')
   const [currency, setCurrency] = useState('PLN')
 
-  // Data
+  // Goals state
   const [goals, setGoals] = useState<SavingsGoal[]>([])
+  const [newGoalOpen, setNewGoalOpen] = useState(false)
+  const [addFundsGoal, setAddFundsGoal] = useState<{
+    id: string
+    name: string
+    emoji: string | null
+    targetAmount: string
+    currentAmount: string
+    color: string | null
+    currency: string | null
+  } | null>(null)
+  const [showCompleted, setShowCompleted] = useState(false)
+  const [filterCategory, setFilterCategory] = useState<string | null>(null)
+  const [goalToDelete, setGoalToDelete] = useState<string | null>(null)
+  const [deletingGoal, setDeletingGoal] = useState(false)
+
+  // Budget state
   const [budgetCategories, setBudgetCategories] = useState<CategoryBudget[]>([])
   const [totalSpent, setTotalSpent] = useState(0)
   const [totalBudgeted, setTotalBudgeted] = useState(0)
+
+  // Challenges state
   const [challenges, setChallenges] = useState<Challenge[]>([])
+
+  // Health score
   const [healthScore, setHealthScore] = useState(65)
 
   const locale = lang === 'pl' ? 'pl-PL' : 'en-US'
@@ -322,6 +332,22 @@ export default function SavingsHub() {
     if (isPersonal) fetchData()
   }, [fetchData, isPersonal])
 
+  async function confirmDeleteGoal() {
+    if (!goalToDelete) return
+    setDeletingGoal(true)
+    try {
+      const res = await fetch(`/api/personal/goals/${goalToDelete}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error()
+      setGoals(prev => prev.filter(g => g.id !== goalToDelete))
+      toast.success(t('goals.deleteGoal'))
+      setGoalToDelete(null)
+    } catch {
+      toast.error(t('errors.deleteGoal'))
+    } finally {
+      setDeletingGoal(false)
+    }
+  }
+
   const totalSaved = goals.reduce((sum, g) => sum + parseFloat(g.currentAmount || '0'), 0)
 
   const formatAmount = (v: number) =>
@@ -347,6 +373,23 @@ export default function SavingsHub() {
 
   const activeChallenges = challenges.filter(c => c.isActive && !c.isCompleted)
   const budgetWithAmounts = budgetCategories.filter(c => c.budgeted > 0)
+
+  const activeGoals = goals.filter(g => !g.isCompleted)
+  const completedGoals = goals.filter(g => g.isCompleted)
+  const filteredGoals = filterCategory ? activeGoals.filter(g => g.category === filterCategory) : activeGoals
+
+  // Monthly savings needed across all active goals
+  const monthlyNeeded = activeGoals.reduce((sum, g) => {
+    const target = parseFloat(g.targetAmount || '0')
+    const current = parseFloat(g.currentAmount || '0')
+    const remaining = target - current
+    if (remaining <= 0) return sum
+    if (g.deadline) {
+      const daysLeft = Math.max(1, Math.ceil((new Date(g.deadline).getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
+      return sum + (remaining / daysLeft) * 30
+    }
+    return sum + remaining / 12
+  }, 0)
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.35 }} className="flex flex-col gap-4 sm:gap-6">
@@ -443,50 +486,237 @@ export default function SavingsHub() {
             transition={{ duration: 0.3 }}
             className="space-y-4"
           >
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold" suppressHydrationWarning>{t('savings.tabs.goals')}</h2>
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" asChild>
-                  <Link href="/goals">
-                    <span suppressHydrationWarning>{t('savings.viewAll')}</span>
-                    <ArrowRight className="h-3.5 w-3.5 ml-1.5" />
-                  </Link>
-                </Button>
-                <Button size="sm" asChild>
-                  <Link href="/goals">
-                    <Plus className="h-3.5 w-3.5 mr-1" />
-                    <span suppressHydrationWarning>{t('goals.newGoal')}</span>
-                  </Link>
-                </Button>
+            {/* Goals header */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-semibold" suppressHydrationWarning>{t('savings.tabs.goals')}</h2>
+                {activeGoals.length > 0 && (
+                  <p className="text-sm text-muted-foreground" suppressHydrationWarning>{t('goals.subtitle')}</p>
+                )}
               </div>
+              <Button size="sm" onClick={() => setNewGoalOpen(true)} className="shrink-0">
+                <Plus className="h-3.5 w-3.5 mr-1" />
+                <span suppressHydrationWarning>{t('goals.newGoal')}</span>
+              </Button>
             </div>
 
-            {goals.length === 0 ? (
+            {/* KPI strip for goals */}
+            {activeGoals.length > 0 && (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {[
+                  { icon: PiggyBank, label: t('goals.totalSaved'), value: formatAmount(totalSaved), color: 'text-emerald-600 dark:text-emerald-400' },
+                  { icon: Target, label: t('goals.activeGoals'), value: String(activeGoals.length), color: 'text-primary' },
+                  { icon: TrendingUp, label: t('goals.perMonth'), value: formatAmount(monthlyNeeded), color: 'text-amber-600 dark:text-amber-400' },
+                  { icon: Sparkles, label: t('goals.completed'), value: String(completedGoals.length), color: 'text-purple-600 dark:text-purple-400' },
+                ].map((kpi, i) => (
+                  <Card key={i} className="hover:shadow-sm transition-shadow">
+                    <CardHeader className="pb-1 pt-3 px-3">
+                      <CardTitle className="text-[11px] font-medium text-muted-foreground flex items-center gap-1">
+                        <kpi.icon className="h-3 w-3" />
+                        <span suppressHydrationWarning>{kpi.label}</span>
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="px-3 pb-3 pt-0">
+                      <div className={cn('text-base font-bold', kpi.color)}>{kpi.value}</div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+
+            {/* Category filter */}
+            {activeGoals.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() => setFilterCategory(null)}
+                  className={cn(
+                    'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all min-h-[36px]',
+                    !filterCategory ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-muted/80 text-muted-foreground'
+                  )}
+                  suppressHydrationWarning
+                >
+                  {t('goals.allCategories')}
+                </button>
+                {Object.entries(CATEGORY_EMOJIS).map(([key, emo]) => (
+                  <button
+                    key={key}
+                    onClick={() => setFilterCategory(filterCategory === key ? null : key)}
+                    className={cn(
+                      'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all min-h-[36px]',
+                      filterCategory === key ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-muted/80 text-muted-foreground'
+                    )}
+                  >
+                    <span>{emo}</span>
+                    {t(`goals.category.${key}` as Parameters<typeof t>[0])}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Empty state */}
+            {goals.length === 0 && (
               <Card>
                 <CardContent className="p-8 text-center">
-                  <Target className="h-10 w-10 text-muted-foreground/40 mx-auto mb-3" />
-                  <p className="text-sm text-muted-foreground" suppressHydrationWarning>{t('savings.goalsEmpty')}</p>
-                  <Button className="mt-4" size="sm" asChild>
-                    <Link href="/goals">
-                      <Plus className="h-3.5 w-3.5 mr-1.5" />
-                      <span suppressHydrationWarning>{t('goals.newGoal')}</span>
-                    </Link>
+                  <p className="font-mono text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-3" suppressHydrationWarning>
+                    {'// '}{t('goals.emptyTitle')}
+                  </p>
+                  <div className="mx-auto mb-4 h-16 w-16 border-2 border-foreground bg-secondary shadow-[3px_3px_0_hsl(var(--foreground))] rounded-md flex items-center justify-center">
+                    <Target className="h-8 w-8 text-foreground" />
+                  </div>
+                  <h3 className="font-semibold mb-1" suppressHydrationWarning>{t('goals.emptyTitle')}</h3>
+                  <p className="text-sm text-muted-foreground mb-4" suppressHydrationWarning>{t('goals.emptyDesc')}</p>
+                  <Button size="sm" onClick={() => setNewGoalOpen(true)}>
+                    <Plus className="h-3.5 w-3.5 mr-1.5" />
+                    <span suppressHydrationWarning>{t('goals.newGoal')}</span>
                   </Button>
                 </CardContent>
               </Card>
-            ) : (
+            )}
+
+            {/* Active goals grid */}
+            {filteredGoals.length > 0 && (
               <motion.div
-                className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"
+                className="grid sm:grid-cols-2 xl:grid-cols-3 gap-4"
                 variants={{ hidden: {}, visible: { transition: { staggerChildren: 0.05 } } }}
                 initial="hidden"
                 animate="visible"
               >
-                {goals.slice(0, 6).map(goal => (
-                  <motion.div key={goal.id} variants={{ hidden: { opacity: 0, y: 8 }, visible: { opacity: 1, y: 0, transition: { duration: 0.3 } } }}>
-                    <GoalMiniCard goal={goal} currency={currency} locale={locale} />
-                  </motion.div>
+                {filteredGoals.map((goal, i) => (
+                  <SavingsGoalCard
+                    key={goal.id}
+                    goal={goal}
+                    index={i}
+                    onAddFunds={g => setAddFundsGoal({ id: g.id, name: g.name, emoji: g.emoji, targetAmount: g.targetAmount, currentAmount: g.currentAmount, color: g.color, currency: g.currency })}
+                    onDelete={(gid: string) => setGoalToDelete(gid)}
+                    currency={currency}
+                  />
                 ))}
               </motion.div>
+            )}
+
+            {/* AI Coach + Financial Health — shown when goals exist */}
+            {activeGoals.length > 0 && (
+              <div className="grid md:grid-cols-2 gap-4">
+                <Card className="border-primary/20 bg-gradient-to-br from-primary/5 to-emerald-500/5">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <Sparkles className="h-5 w-5 text-primary" />
+                      {t('goals.aiCoach')}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div className="flex items-start gap-2 bg-background/50 rounded-lg px-3 py-2.5 border border-border/40">
+                      <TrendingUp className="h-4 w-4 text-primary shrink-0 mt-0.5" />
+                      <p className="text-sm leading-relaxed">
+                        {t('goals.aiCoachSaveMonthly')
+                          .replace('%amount', monthlyNeeded.toFixed(0))
+                          .replace('%currency', currency)}
+                      </p>
+                    </div>
+                    {activeGoals.slice(0, 2).map(g => {
+                      const target = parseFloat(g.targetAmount || '0')
+                      const current = parseFloat(g.currentAmount || '0')
+                      const pct = target > 0 ? (current / target) * 100 : 0
+                      const onTrack = pct >= 50 || !g.deadline
+                      return (
+                        <div key={g.id} className="flex items-start gap-2 text-xs text-muted-foreground">
+                          <span className="text-base">{g.emoji}</span>
+                          <span>
+                            {g.name} — {onTrack ? t('goals.onTrack') : t('goals.behindSchedule')}
+                            {' '}({Math.round(pct)}%)
+                          </span>
+                          <Badge variant="outline" className={cn('ml-auto text-[10px]', onTrack ? 'border-emerald-500/30 text-emerald-600' : 'border-amber-500/30 text-amber-600')}>
+                            {onTrack ? '✓' : '!'}
+                          </Badge>
+                        </div>
+                      )
+                    })}
+                    {activeGoals[0]?.aiTips && activeGoals[0].aiTips.length > 0 && (
+                      <div className="pt-2 border-t border-border/40 space-y-1.5">
+                        {activeGoals[0].aiTips.slice(0, 2).map((tip, i) => (
+                          <p key={i} className="text-xs text-muted-foreground flex items-start gap-1.5">
+                            <span className="text-primary mt-0.5">•</span>
+                            {tip}
+                          </p>
+                        ))}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+                <FinancialHealthScore />
+              </div>
+            )}
+
+            {/* Completed goals */}
+            {completedGoals.length > 0 && (
+              <Card>
+                <CardHeader className="pb-3">
+                  <button
+                    onClick={() => setShowCompleted(!showCompleted)}
+                    className="flex items-center justify-between w-full"
+                  >
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <Sparkles className="h-5 w-5 text-purple-500" />
+                      {t('goals.completedGoals')} ({completedGoals.length})
+                    </CardTitle>
+                    {showCompleted ? (
+                      <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                    ) : (
+                      <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                    )}
+                  </button>
+                </CardHeader>
+                <AnimatePresence>
+                  {showCompleted && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: 'auto', opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      transition={{ duration: 0.3 }}
+                      className="overflow-hidden"
+                    >
+                      <CardContent className="pt-0">
+                        <div className="divide-y divide-border/40">
+                          {completedGoals.map(g => {
+                            const createdDate = new Date(g.createdAt)
+                            const completedDate = g.completedAt ? new Date(g.completedAt) : null
+                            const daysTaken = completedDate
+                              ? Math.ceil((completedDate.getTime() - createdDate.getTime()) / (1000 * 60 * 60 * 24))
+                              : null
+                            return (
+                              <div key={g.id} className="flex items-center gap-3 py-3">
+                                <span className="text-xl">{g.emoji || '🎯'}</span>
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm font-semibold">{g.name}</p>
+                                  <p className="text-xs text-muted-foreground">
+                                    {parseFloat(g.targetAmount).toLocaleString('pl-PL', { minimumFractionDigits: 2 })} {g.currency || currency}
+                                  </p>
+                                </div>
+                                <div className="text-right shrink-0">
+                                  {completedDate && (
+                                    <p className="text-xs text-muted-foreground">
+                                      {t('goals.reachedOn')} {completedDate.toLocaleDateString(lang === 'pl' ? 'pl-PL' : 'en-US')}
+                                    </p>
+                                  )}
+                                  {daysTaken !== null && (
+                                    <p className="text-[10px] text-muted-foreground">
+                                      {daysTaken} {t('goals.days')}
+                                    </p>
+                                  )}
+                                </div>
+                                <Badge className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/20 text-[10px]">
+                                  <ShieldCheck className="h-3 w-3 mr-0.5" />
+                                  ✓
+                                </Badge>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </CardContent>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </Card>
             )}
           </motion.div>
         )}
@@ -535,10 +765,18 @@ export default function SavingsHub() {
                 {/* Overall progress bar */}
                 {totalBudgeted > 0 && (
                   <div className="mb-4">
-                    <div className="h-2 rounded-full bg-muted/50 overflow-hidden">
+                    <div
+                      className="h-2 rounded-full bg-muted/50 overflow-hidden"
+                      role="progressbar"
+                      aria-valuenow={Math.round((totalSpent / totalBudgeted) * 100)}
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      aria-label={t('dashboard.budgetProgress') || 'Budget progress'}
+                    >
                       <motion.div
                         initial={{ width: 0 }}
                         animate={{ width: `${Math.min((totalSpent / totalBudgeted) * 100, 100)}%` }}
+                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
                         transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] as any }}
                         className={cn(
                           'h-full rounded-full',
@@ -693,6 +931,31 @@ export default function SavingsHub() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Sheets */}
+      <NewGoalSheet
+        open={newGoalOpen}
+        onOpenChange={setNewGoalOpen}
+        onCreated={fetchData}
+        currency={currency}
+      />
+      <AddFundsSheet
+        open={!!addFundsGoal}
+        onOpenChange={open => { if (!open) setAddFundsGoal(null) }}
+        goal={addFundsGoal}
+        onDeposited={fetchData}
+        currency={currency}
+      />
+      <ConfirmDialog
+        open={goalToDelete !== null}
+        onOpenChange={(open) => !open && !deletingGoal && setGoalToDelete(null)}
+        title={t('goals.deleteConfirm')}
+        confirmLabel={t('common.delete')}
+        cancelLabel={t('common.cancel')}
+        destructive
+        loading={deletingGoal}
+        onConfirm={confirmDeleteGoal}
+      />
     </motion.div>
   )
 }

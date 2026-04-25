@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next"
-import { Geist } from "next/font/google"
+import { Inter, JetBrains_Mono } from "next/font/google"
 import { ThemeProvider } from "next-themes"
+import { ServiceWorkerRegister } from "@/components/sw-register"
 import "./globals.css"
 
 const defaultUrl = process.env.NEXT_PUBLIC_APP_URL ||
@@ -28,8 +29,15 @@ export const metadata: Metadata = {
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
-    statusBarStyle: "default",
+    statusBarStyle: "black-translucent",
     title: "Solvio",
+  },
+  icons: {
+    icon: [
+      { url: "/icon.svg", type: "image/svg+xml" },
+      { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
+    ],
+    apple: "/apple-touch-icon.png",
   },
   formatDetection: {
     telephone: false,
@@ -38,22 +46,36 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
-    { media: "(prefers-color-scheme: dark)", color: "#030712" },
+    { media: "(prefers-color-scheme: light)", color: "#f5f0eb" },
+    { media: "(prefers-color-scheme: dark)", color: "#141414" },
   ],
   width: "device-width",
   initialScale: 1,
   maximumScale: 5,
+  viewportFit: "cover",
 }
 
-const geistSans = Geist({ variable: "--font-geist-sans", display: "swap", subsets: ["latin"] })
+const inter = Inter({
+  variable: "--font-inter",
+  display: "swap",
+  subsets: ["latin", "latin-ext"],
+  weight: ["400", "500", "600", "700", "800", "900"],
+})
+
+const jetbrainsMono = JetBrains_Mono({
+  variable: "--font-jetbrains-mono",
+  display: "swap",
+  subsets: ["latin", "latin-ext"],
+  weight: ["400", "500", "600", "700"],
+})
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" suppressHydrationWarning>
-      <body className={`${geistSans.className} antialiased`}>
+    <html lang="pl" suppressHydrationWarning>
+      <body className={`${inter.variable} ${jetbrainsMono.variable} antialiased`}>
         <ThemeProvider attribute="class" defaultTheme="light" enableSystem disableTransitionOnChange>
           {children}
+          <ServiceWorkerRegister />
         </ThemeProvider>
       </body>
     </html>

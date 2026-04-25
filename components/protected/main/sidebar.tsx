@@ -27,6 +27,7 @@ import {
   Landmark,
   Building2,
   PiggyBank,
+  Repeat,
   type LucideIcon,
 } from "lucide-react"
 import { useTranslation } from '@/lib/i18n'
@@ -49,6 +50,7 @@ function getNavItems(isPersonal: boolean): NavItem[] {
       { key: 'expenses', href: '/expenses', icon: DollarSign },
       { key: 'groups', href: '/groups', icon: Users },
       { key: 'bank', href: '/bank', icon: Landmark },
+      { key: 'subscriptions', href: '/subscriptions', icon: Repeat },
       { key: 'savings', href: '/savings', icon: PiggyBank },
       { key: 'settings', href: '/settings', icon: Settings },
     ]
@@ -65,7 +67,7 @@ function getNavItems(isPersonal: boolean): NavItem[] {
 }
 
 export function AppSidebar() {
-  const { t, lang, mounted } = useTranslation()
+  const { t } = useTranslation()
   const pathname = usePathname()
   const router = useRouter()
   const { email } = useSession()
@@ -83,22 +85,22 @@ export function AppSidebar() {
 
   return (
     <Sidebar>
-      <SidebarHeader className="border-b border-sidebar-border p-4">
+      <SidebarHeader className="border-b-2 border-sidebar-border p-4">
         <Link href="/dashboard" className="flex items-center gap-3 group">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+          <div className="flex h-9 w-9 items-center justify-center rounded-md border-2 border-foreground bg-foreground text-background shadow-[2px_2px_0_hsl(var(--foreground))] group-hover:translate-x-[-1px] group-hover:translate-y-[-1px] group-hover:shadow-[3px_3px_0_hsl(var(--foreground))] transition-all">
             {isBusiness ? (
-              <Building2 className="h-4 w-4" />
+              <Building2 className="h-4 w-4" aria-hidden="true" />
             ) : (
-              <Wallet className="h-4 w-4" />
+              <Wallet className="h-4 w-4" aria-hidden="true" />
             )}
           </div>
           <div className="flex flex-col">
-            <span className="text-sm font-semibold leading-tight tracking-tight">Solvio</span>
+            <span className="text-sm font-black leading-tight tracking-tight">Solvio</span>
             <span
               suppressHydrationWarning
-              className="text-[10px] font-medium uppercase tracking-wider leading-none text-muted-foreground"
+              className="font-mono text-[10px] font-bold uppercase tracking-widest leading-none text-muted-foreground"
             >
-              {t(`nav.${isPersonal ? 'personal' : 'business'}`)}
+              {'// '}{t(`nav.${isPersonal ? 'personal' : 'business'}`)}
             </span>
           </div>
         </Link>
@@ -117,7 +119,7 @@ export function AppSidebar() {
                   <SidebarMenuItem key={item.href}>
                     <SidebarMenuButton asChild isActive={isActive}>
                       <Link href={item.href} className="flex items-center gap-2">
-                        <item.icon className="h-4 w-4" />
+                        <item.icon className="h-4 w-4" aria-hidden="true" />
                         <span suppressHydrationWarning>{t(`nav.${item.key}`)}</span>
                       </Link>
                     </SidebarMenuButton>
@@ -129,20 +131,20 @@ export function AppSidebar() {
         </SidebarGroup>
       </SidebarContent>
 
-      <SidebarFooter className="p-3 border-t border-sidebar-border space-y-2.5">
+      <SidebarFooter className="p-3 border-t-2 border-sidebar-border space-y-2.5">
         {/* Product switcher (Personal / Business) */}
         <ProductSwitcher />
 
-        <div className="h-px bg-sidebar-border" />
+        <div className="h-[2px] bg-sidebar-border" />
 
         {/* User info */}
-        <div className="flex items-center gap-3 px-2 py-2 rounded-lg">
-          <div className="h-8 w-8 shrink-0 rounded-full bg-muted flex items-center justify-center">
-            <span className="text-xs font-medium text-muted-foreground">{initials}</span>
+        <div className="flex items-center gap-3 px-2 py-2 rounded-md border-2 border-dashed border-sidebar-border/40">
+          <div className="h-9 w-9 shrink-0 rounded-md border-2 border-foreground bg-card flex items-center justify-center font-mono shadow-[2px_2px_0_hsl(var(--foreground))]">
+            <span className="text-xs font-black text-foreground">{initials}</span>
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium truncate leading-tight">{displayName}</p>
-            {email && <p className="text-xs text-muted-foreground truncate mt-0.5">{email}</p>}
+            <p className="text-sm font-bold truncate leading-tight">{displayName}</p>
+            {email && <p className="font-mono text-[11px] text-muted-foreground truncate mt-0.5" title={email}>{email}</p>}
           </div>
         </div>
 
@@ -165,10 +167,11 @@ export function AppSidebar() {
         <Button
           variant="ghost"
           size="sm"
-          className="w-full justify-start text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+          className="w-full justify-start text-muted-foreground hover:bg-destructive hover:text-destructive-foreground"
           onClick={handleSignOut}
+          aria-label={t('nav.signOut')}
         >
-          <LogOut className="h-4 w-4 mr-2" />
+          <LogOut className="h-4 w-4 mr-2" aria-hidden="true" />
           <span suppressHydrationWarning>{t('nav.signOut')}</span>
         </Button>
       </SidebarFooter>

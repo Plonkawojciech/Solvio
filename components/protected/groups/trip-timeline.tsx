@@ -3,7 +3,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useTranslation } from '@/lib/i18n'
-import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ChevronDown, ChevronUp, Receipt, Calendar } from 'lucide-react'
 
@@ -57,16 +56,6 @@ function formatDateFull(dateStr: string): string {
   }
 }
 
-function formatDateShort(dateStr: string): string {
-  try {
-    return new Date(dateStr).toLocaleDateString(undefined, {
-      month: 'short',
-      day: 'numeric',
-    })
-  } catch {
-    return dateStr
-  }
-}
 
 interface TripTimelineProps {
   groupId: string
@@ -95,6 +84,7 @@ export function TripTimeline({
       if (!res.ok) throw new Error('Failed')
       const data = await res.json()
       setReceipts(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (data.receipts || []).map((r: any) => ({
           id: r.id,
           vendor: r.vendor,

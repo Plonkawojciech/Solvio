@@ -52,7 +52,7 @@ export function AffordCalculator({ currency, lang, month }: AffordCalculatorProp
     } catch {
       setResult({
         verdict: 'maybe',
-        explanation: lang === 'pl' ? 'Nie udalo sie sprawdzic. Sprobuj ponownie.' : 'Could not check. Try again.',
+        explanation: t('budget.affordError'),
         impact: [],
       })
     } finally {
@@ -120,7 +120,7 @@ export function AffordCalculator({ currency, lang, month }: AffordCalculatorProp
                 })()}
                 <div className="flex-1 space-y-2">
                   <p className={`text-sm font-bold ${verdictConfig[result.verdict].color}`}>
-                    {t(`budget.afford.${result.verdict}` as any)}
+                    {t(`budget.afford.${result.verdict}` as Parameters<typeof t>[0])}
                   </p>
                   <p className="text-sm leading-relaxed">{result.explanation}</p>
                   {result.impact && result.impact.length > 0 && (

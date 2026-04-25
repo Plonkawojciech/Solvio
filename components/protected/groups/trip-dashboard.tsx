@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion } from 'framer-motion'
 import dynamic from 'next/dynamic'
 import { useTranslation } from '@/lib/i18n'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -11,9 +11,6 @@ import {
   Users,
   Calendar,
   Receipt,
-  TrendingUp,
-  TrendingDown,
-  ArrowRight,
 } from 'lucide-react'
 
 // Lazy-load Recharts for performance
@@ -157,6 +154,7 @@ function getMemberColor(
 const kpiCardVariants = {
   hidden: { opacity: 0, y: 12 },
   visible: { opacity: 1, y: 0, transition: { duration: 0.3 } },
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 } as any
 
 interface TripDashboardProps {

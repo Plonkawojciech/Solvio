@@ -3,9 +3,15 @@ import SwiftUI
 /// CRUD manager for expense categories. Edit renames + icon change;
 /// delete is blocked for default categories server-side (we still show
 /// the button — backend returns 400 which surfaces via toast).
+///
+/// Reads the category list from `AppDataStore` (sourced from the dashboard
+/// payload) instead of hitting `/api/data/settings` separately. Saves a
+/// network round-trip on every visit + makes the screen instant when
+/// opened from the prefetched login warm-up.
 struct CategoriesManagerView: View {
     @EnvironmentObject private var toast: ToastCenter
     @EnvironmentObject private var locale: AppLocale
+    @EnvironmentObject private var store: AppDataStore
     @StateObject private var vm = CategoriesManagerViewModel()
     @State private var showCreate = false
     @State private var editingCategory: Category?
@@ -17,8 +23,11 @@ struct CategoriesManagerView: View {
                     NBScreenHeader(eyebrow: locale.t("categories.headerEyebrow"), title: locale.t("categories.headerTitle"), subtitle: String(format: locale.t("categories.totalFmt"), vm.categories.count))
                     if vm.isLoading && vm.categories.isEmpty {
                         NBLoadingCard()
-                    } else if let message = vm.errorMessage {
-                        NBErrorCard(message: message) { Task { await vm.load() } }
+                    } else if let message = vm.errorMessage, vm.categories.isEmpty {
+                        // Same rule as the rest of the app: error card only
+                        // when there's nothing cached. Refresh failures stay
+                        // invisible if we already have categories on screen.
+                        NBErrorCard(message: message) { Task { await vm.load(store: store, force: true) } }
                     } else if vm.categories.isEmpty {
                         NBEmptyState(
                             systemImage: "folder.fill",
@@ -39,7 +48,12 @@ struct CategoriesManagerView: View {
                                             do {
                                                 try await CategoriesRepo.delete(id: c.id)
                                                 toast.success(locale.t("categories.deleted"))
-                                                await vm.load()
+                                                // Tells the store to bust
+                                                // dashboard + budget + health
+                                                // caches; the onChange watcher
+                                                // re-syncs the VM mirror once
+                                                // the refresh lands.
+                                                store.didMutateCategoriesOrBudgetsOrSettings()
                                             } catch {
                                                 toast.error(locale.t("categories.deleteFailed"), description: error.localizedDescription)
                                             }
@@ -55,8 +69,17 @@ struct CategoriesManagerView: View {
                 .padding(.top, Theme.Spacing.md)
             }
             .background(Theme.background)
-            .refreshable { await vm.load() }
-            .task { if vm.categories.isEmpty { await vm.load() } }
+            .refreshable { await vm.load(store: store, force: true) }
+            .task {
+                vm.bind(store: store)
+                if vm.categories.isEmpty {
+                    await vm.load(store: store, force: false)
+                }
+            }
+            // The store fans the dashboard refresh into `categories` — keep
+            // the VM mirror in sync so the list updates the moment a CRUD
+            // mutation lands or the foreground refresh ticks.
+            .onChange(of: store.categories) { _ in vm.syncFromStore(store: store) }
 
             Button { showCreate = true } label: {
                 Image(systemName: "plus")
@@ -78,7 +101,7 @@ struct CategoriesManagerView: View {
                     do {
                         _ = try await CategoriesRepo.create(.init(name: name, icon: icon))
                         toast.success(locale.t("categories.created"))
-                        await vm.load()
+                        store.didMutateCategoriesOrBudgetsOrSettings()
                     } catch {
                         toast.error(locale.t("categories.createFailed"), description: error.localizedDescription)
                     }
@@ -92,7 +115,7 @@ struct CategoriesManagerView: View {
                     do {
                         try await CategoriesRepo.update(.init(id: cat.id, name: name, icon: icon))
                         toast.success(locale.t("categories.updated"))
-                        await vm.load()
+                        store.didMutateCategoriesOrBudgetsOrSettings()
                     } catch {
                         toast.error(locale.t("categories.updateFailed"), description: error.localizedDescription)
                     }
@@ -129,16 +152,27 @@ final class CategoriesManagerViewModel: ObservableObject {
     @Published var isLoading = false
     @Published var errorMessage: String?
 
-    func load() async {
-        isLoading = true
+    /// Pull whatever the dashboard slice currently holds. Cheap — no
+    /// network. Idempotent.
+    func bind(store: AppDataStore) {
+        syncFromStore(store: store)
+    }
+
+    func syncFromStore(store: AppDataStore) {
+        categories = store.categories
+        // Surface dashboard errors only when we have nothing on screen.
+        errorMessage = (store.categories.isEmpty ? store.dashboardError : nil)
+        isLoading = store.dashboardLoading && store.categories.isEmpty
+    }
+
+    /// Wait for the dashboard refresh, then mirror the result. `force=true`
+    /// is for pull-to-refresh; the standard tab-open path uses force=false
+    /// so the cache TTL is honored.
+    func load(store: AppDataStore, force: Bool) async {
+        if categories.isEmpty { isLoading = true }
         errorMessage = nil
-        defer { isLoading = false }
-        do {
-            let bundle = try await SettingsRepo.fetch()
-            categories = bundle.categories
-        } catch {
-            errorMessage = error.localizedDescription
-        }
+        await store.awaitDashboard(force: force)
+        syncFromStore(store: store)
     }
 }
 

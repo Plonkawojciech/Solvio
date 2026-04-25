@@ -4,13 +4,19 @@ import UIKit
 /// Loyalty card wallet with barcode display. Tapping a card enlarges
 /// its barcode for scanning at checkout. Matches the new `LoyaltyCard`
 /// model shape (`store`, `cardNumber`, `memberName`).
+///
+/// Reads from `AppDataStore.loyalty` so tab switches don't re-fetch.
 struct LoyaltyView: View {
     @EnvironmentObject private var toast: ToastCenter
     @EnvironmentObject private var locale: AppLocale
-    @StateObject private var vm = LoyaltyViewModel()
+    @EnvironmentObject private var store: AppDataStore
     @State private var showCreate = false
     @State private var expandedCard: LoyaltyCard?
     @State private var pendingDelete: LoyaltyCard?
+
+    private var cards: [LoyaltyCard] { store.loyalty }
+    private var isLoading: Bool { store.loyaltyLoading }
+    private var errorMessage: String? { store.loyaltyError }
 
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
@@ -19,7 +25,7 @@ struct LoyaltyView: View {
                     NBScreenHeader(
                         eyebrow: locale.t("loyalty.eyebrow"),
                         title: locale.t("loyalty.headerTitle"),
-                        subtitle: "\(vm.cards.count) \(vm.cards.count == 1 ? locale.t("loyalty.cardSuffixSingular") : locale.t("loyalty.cardSuffixPlural"))"
+                        subtitle: "\(cards.count) \(cards.count == 1 ? locale.t("loyalty.cardSuffixSingular") : locale.t("loyalty.cardSuffixPlural"))"
                     )
                     .padding(.horizontal, Theme.Spacing.md)
                     .padding(.top, Theme.Spacing.md)
@@ -29,7 +35,7 @@ struct LoyaltyView: View {
                 .listRowSeparator(.hidden)
                 .listRowInsets(EdgeInsets())
 
-                if vm.isLoading && vm.cards.isEmpty {
+                if isLoading && cards.isEmpty {
                     Section {
                         NBLoadingCard()
                             .padding(.horizontal, Theme.Spacing.md)
@@ -37,15 +43,15 @@ struct LoyaltyView: View {
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
                     .listRowInsets(EdgeInsets())
-                } else if let message = vm.errorMessage {
+                } else if let message = errorMessage, cards.isEmpty {
                     Section {
-                        NBErrorCard(message: message) { Task { await vm.load() } }
+                        NBErrorCard(message: message) { Task { await store.awaitLoyalty(force: true) } }
                             .padding(.horizontal, Theme.Spacing.md)
                     }
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
                     .listRowInsets(EdgeInsets())
-                } else if vm.cards.isEmpty {
+                } else if cards.isEmpty {
                     Section {
                         NBEmptyState(
                             systemImage: "creditcard.fill",
@@ -60,7 +66,7 @@ struct LoyaltyView: View {
                     .listRowInsets(EdgeInsets())
                 } else {
                     Section {
-                        ForEach(vm.cards) { card in
+                        ForEach(cards) { card in
                             Button { expandedCard = card } label: {
                                 cardRow(card)
                             }
@@ -99,8 +105,8 @@ struct LoyaltyView: View {
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
             .background(Theme.background)
-            .refreshable { await vm.load() }
-            .task { if vm.cards.isEmpty { await vm.load() } }
+            .refreshable { await store.awaitLoyalty(force: true) }
+            .task { store.ensureLoyalty() }
 
             Button { showCreate = true } label: {
                 Image(systemName: "plus")
@@ -125,7 +131,7 @@ struct LoyaltyView: View {
                     do {
                         _ = try await LoyaltyRepo.create(body)
                         toast.success(locale.t("loyalty.cardAdded"))
-                        await vm.load()
+                        store.didMutateLoyalty()
                     } catch {
                         toast.error(locale.t("loyalty.createFailed"), description: error.localizedDescription)
                     }
@@ -151,7 +157,7 @@ struct LoyaltyView: View {
                     do {
                         try await LoyaltyRepo.delete(id: card.id)
                         toast.success(locale.t("loyalty.cardDeleted"))
-                        await vm.load()
+                        store.didMutateLoyalty()
                     } catch {
                         toast.error(locale.t("loyalty.deleteFailed"), description: error.localizedDescription)
                     }
@@ -195,24 +201,6 @@ struct LoyaltyView: View {
         if n.count <= 4 { return n }
         let suffix = String(n.suffix(4))
         return "•••• \(suffix)"
-    }
-}
-
-@MainActor
-final class LoyaltyViewModel: ObservableObject {
-    @Published var cards: [LoyaltyCard] = []
-    @Published var isLoading = false
-    @Published var errorMessage: String?
-
-    func load() async {
-        isLoading = true
-        errorMessage = nil
-        defer { isLoading = false }
-        do {
-            cards = try await LoyaltyRepo.list()
-        } catch {
-            errorMessage = error.localizedDescription
-        }
     }
 }
 

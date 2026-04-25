@@ -2,6 +2,18 @@ import { auth } from '@/lib/auth-compat'
 import { NextResponse } from 'next/server'
 import { db, savingsGoals } from '@/lib/db'
 import { eq, and } from 'drizzle-orm'
+import { z } from 'zod'
+
+// SECURITY FIX: Zod schema validation for PUT body
+const GoalUpdateSchema = z.object({
+  name: z.string().min(1).max(100).optional(),
+  emoji: z.string().max(10).optional(),
+  targetAmount: z.union([z.number().positive(), z.string().regex(/^\d+(\.\d+)?$/)]).optional(),
+  deadline: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+  priority: z.enum(['low', 'medium', 'high']).optional(),
+  color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+  category: z.string().max(50).optional(),
+}).strict()
 
 export async function PUT(
   request: Request,
@@ -12,15 +24,21 @@ export async function PUT(
 
   const { id } = await params
 
-  let body: any
+  let rawBody: unknown
   try {
-    body = await request.json()
+    rawBody = await request.json()
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
 
+  const parsed = GoalUpdateSchema.safeParse(rawBody)
+  if (!parsed.success) {
+    return NextResponse.json({ error: 'Invalid input' }, { status: 400 })
+  }
+  const body = parsed.data
+
   try {
-    const updateData: any = {}
+    const updateData: Record<string, unknown> = {}
     if (body.name !== undefined) updateData.name = body.name
     if (body.emoji !== undefined) updateData.emoji = body.emoji
     if (body.targetAmount !== undefined) updateData.targetAmount = String(body.targetAmount)

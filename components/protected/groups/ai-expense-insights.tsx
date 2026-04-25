@@ -10,7 +10,6 @@ import {
   RefreshCw,
   Loader2,
   TrendingUp,
-  TrendingDown,
   AlertTriangle,
   Lightbulb,
   DollarSign,
@@ -156,9 +155,10 @@ export function AiExpenseInsights({ groupId }: AiExpenseInsightsProps) {
                 <button
                   type="button"
                   onClick={() => dismissInsight(originalIdx)}
-                  className={`p-1 rounded-md hover:bg-black/5 dark:hover:bg-white/5 ${style.text} opacity-50 hover:opacity-100 transition-opacity shrink-0`}
+                  aria-label={`Dismiss insight: ${insight.title}`}
+                  className={`p-1 rounded-md hover:bg-black/5 dark:hover:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground focus-visible:ring-offset-1 ${style.text} opacity-50 hover:opacity-100 transition-opacity shrink-0`}
                 >
-                  <X className="h-3.5 w-3.5" />
+                  <X className="h-3.5 w-3.5" aria-hidden="true" />
                 </button>
               </div>
             </motion.div>

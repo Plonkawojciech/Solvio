@@ -20,14 +20,12 @@ import {
   Loader2,
   Camera,
   DollarSign,
-  Users,
   ArrowRight,
   ArrowLeft,
   Check,
   Copy,
   Sparkles,
   Receipt,
-  X,
 } from 'lucide-react'
 import { AiSplitSuggestion } from './ai-split-suggestion'
 
@@ -68,6 +66,7 @@ const stepVariants = {
   enter: { x: 40, opacity: 0 },
   center: { x: 0, opacity: 1 },
   exit: { x: -40, opacity: 0 },
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 } as any
 
 export function QuickSplitSheet({ open, onOpenChange }: QuickSplitSheetProps) {
@@ -398,8 +397,9 @@ export function QuickSplitSheet({ open, onOpenChange }: QuickSplitSheetProps) {
                         className="h-9 w-9 shrink-0 text-muted-foreground hover:text-destructive"
                         onClick={() => removePerson(person.id)}
                         disabled={people.length <= 2}
+                        aria-label={t('groups.removePerson')}
                       >
-                        <Trash2 className="h-4 w-4" />
+                        <Trash2 className="h-4 w-4" aria-hidden="true" />
                       </Button>
                     </motion.div>
                   ))}

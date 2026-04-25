@@ -81,12 +81,13 @@ export function SavingsGoalCard({ goal, index, onAddFunds, onDelete, currency }:
             <div className="flex items-center gap-1.5 shrink-0">
               {goal.priority && (
                 <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${priorityColors[goal.priority] || ''}`}>
-                  {t(`goals.priority.${goal.priority}` as any)}
+                  {t(`goals.priority.${goal.priority}` as Parameters<typeof t>[0])}
                 </Badge>
               )}
               <button
                 onClick={() => onDelete(goal.id)}
-                className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
+                className="md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100 transition-opacity p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
+                aria-label={t('goals.deleteSavingsGoal')}
               >
                 <Trash2 className="h-3.5 w-3.5" />
               </button>

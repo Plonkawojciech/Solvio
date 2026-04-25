@@ -33,7 +33,7 @@ export default function WelcomePage() {
     let raf = requestAnimationFrame(function loop(t) {
       const pct = Math.min(100, ((t - start) / DURATION) * 100);
       setValue(pct);
-      pct < 100 ? (raf = requestAnimationFrame(loop)) : router.replace("/dashboard");
+      if (pct < 100) { raf = requestAnimationFrame(loop) } else { router.replace("/dashboard") }
     });
     return () => cancelAnimationFrame(raf);
   }, [router]);

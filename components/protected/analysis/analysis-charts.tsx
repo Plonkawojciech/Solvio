@@ -27,7 +27,7 @@ interface MonthlyTrendChartProps {
 
 export function MonthlyTrendChart({ data, currency, spendingLabel }: MonthlyTrendChartProps) {
   return (
-    <ResponsiveContainer width="100%" height={220}>
+    <ResponsiveContainer width="100%" height={220} minWidth={280}>
       <AreaChart data={data}>
         <defs>
           <linearGradient id="colorTotal" x1="0" y1="0" x2="0" y2="1">
@@ -39,6 +39,7 @@ export function MonthlyTrendChart({ data, currency, spendingLabel }: MonthlyTren
         <XAxis dataKey="month" tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" />
         <YAxis tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" />
         <Tooltip
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           formatter={(v: any) => [fmtMoney(v, currency), spendingLabel]}
           contentStyle={{ background: 'hsl(var(--popover))', border: '1px solid hsl(var(--border))', borderRadius: '8px', fontSize: 12 }}
         />
@@ -57,12 +58,13 @@ interface CategoryPieChartProps {
 
 export function CategoryPieChart({ data, currency, amountLabel }: CategoryPieChartProps) {
   return (
-    <ResponsiveContainer width="100%" height={220}>
+    <ResponsiveContainer width="100%" height={220} minWidth={280}>
       <PieChart>
         <Pie data={data.slice(0, 6)} cx="50%" cy="50%" innerRadius={55} outerRadius={90} paddingAngle={3} dataKey="value">
           {data.slice(0, 6).map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
         </Pie>
         <Tooltip
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           formatter={(v: any) => [fmtMoney(v, currency), amountLabel]}
           contentStyle={{ background: 'hsl(var(--popover))', border: '1px solid hsl(var(--border))', borderRadius: '8px', fontSize: 12 }}
         />
@@ -82,12 +84,13 @@ interface DailySpendingChartProps {
 
 export function DailySpendingChart({ data, currency, spendingLabel, dateLabel }: DailySpendingChartProps) {
   return (
-    <ResponsiveContainer width="100%" height={180}>
+    <ResponsiveContainer width="100%" height={180} minWidth={280}>
       <BarChart data={data} barSize={8}>
         <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
         <XAxis dataKey="date" tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" interval={4} />
         <YAxis tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" />
         <Tooltip
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           formatter={(v: any) => [fmtMoney(v, currency), spendingLabel]}
           labelFormatter={(label) => `${dateLabel}: ${label}`}
           contentStyle={{ background: 'hsl(var(--popover))', border: '1px solid hsl(var(--border))', borderRadius: '8px', fontSize: 12 }}
@@ -107,17 +110,69 @@ interface CategoryBarChartProps {
 
 export function CategoryBarChart({ data, currency, amountLabel }: CategoryBarChartProps) {
   return (
-    <ResponsiveContainer width="100%" height={Math.max(180, data.length * 36)}>
+    <ResponsiveContainer width="100%" height={Math.max(180, data.length * 36)} minWidth={280}>
       <BarChart data={data} layout="vertical" barSize={16}>
         <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" horizontal={false} />
         <XAxis type="number" tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" tickFormatter={v => fmtMoney(v, currency)} />
         <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" width={90} />
         <Tooltip
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           formatter={(v: any) => [fmtMoney(v, currency), amountLabel]}
           contentStyle={{ background: 'hsl(var(--popover))', border: '1px solid hsl(var(--border))', borderRadius: '8px', fontSize: 12 }}
         />
         <Bar dataKey="value" radius={[0, 6, 6, 0]}>
           {data.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+        </Bar>
+      </BarChart>
+    </ResponsiveContainer>
+  )
+}
+
+/* ─── Weekday spending bar chart ─── */
+interface WeekdaySpendingChartProps {
+  data: { day: string; total: number; count: number; avg: number }[]
+  currency: string
+  spendingLabel: string
+  avgLabel: string
+}
+
+export function WeekdaySpendingChart({ data, currency, spendingLabel, avgLabel }: WeekdaySpendingChartProps) {
+  const maxTotal = Math.max(...data.map(d => d.total), 1)
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const CustomTooltip = ({ active, payload }: any) => {
+    if (!active || !payload || payload.length === 0) return null
+    const d = payload[0].payload
+    return (
+      <div style={{ background: 'hsl(var(--popover))', border: '1px solid hsl(var(--border))', borderRadius: 8, padding: '8px 12px', fontSize: 12 }}>
+        <p style={{ fontWeight: 600, marginBottom: 4 }}>{d.day}</p>
+        <p style={{ color: 'hsl(var(--muted-foreground))' }}>
+          {spendingLabel}: <span style={{ fontWeight: 600, color: 'hsl(var(--foreground))' }}>{fmtMoney(d.total, currency)}</span>
+        </p>
+        <p style={{ color: 'hsl(var(--muted-foreground))' }}>
+          {avgLabel}: <span style={{ fontWeight: 600, color: 'hsl(var(--foreground))' }}>{fmtMoney(d.avg, currency)}</span>
+        </p>
+        {d.count > 0 && (
+          <p style={{ color: 'hsl(var(--muted-foreground))', fontSize: 11 }}>×{d.count}</p>
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <ResponsiveContainer width="100%" height={200} minWidth={280}>
+      <BarChart data={data} barSize={32}>
+        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+        <XAxis dataKey="day" tick={{ fontSize: 12, fontWeight: 500 }} stroke="hsl(var(--muted-foreground))" />
+        <YAxis tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" tickFormatter={v => fmtMoney(v, currency)} width={55} />
+        <Tooltip content={<CustomTooltip />} />
+        <Bar dataKey="total" radius={[6, 6, 0, 0]}>
+          {data.map((d, i) => (
+            <Cell
+              key={i}
+              fill={d.total === maxTotal && d.total > 0 ? 'hsl(var(--primary))' : 'hsl(var(--primary) / 0.45)'}
+            />
+          ))}
         </Bar>
       </BarChart>
     </ResponsiveContainer>

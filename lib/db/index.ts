@@ -14,6 +14,7 @@ let _db: ReturnType<typeof getDb> | null = null
 export const db = new Proxy({} as ReturnType<typeof getDb>, {
   get(_target, prop) {
     if (!_db) _db = getDb()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return (_db as any)[prop]
   },
 })

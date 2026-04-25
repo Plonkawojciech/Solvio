@@ -1,8 +1,23 @@
 import { auth } from '@/lib/auth-compat'
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { vatEntries, companies, companyMembers, userSettings } from '@/lib/db/schema'
-import { eq, and, desc, sql } from 'drizzle-orm'
+import { vatEntries, companyMembers, userSettings } from '@/lib/db/schema'
+import { eq, and, desc, inArray } from 'drizzle-orm'
+import { z } from 'zod'
+
+const CreateVatEntrySchema = z.object({
+  type: z.enum(['input', 'output']),
+  netAmount: z.number().nonnegative(),
+  vatAmount: z.number().nonnegative(),
+  vatRate: z.enum(['23%', '8%', '5%', '0%', 'zw']),
+  period: z.string().regex(/^\d{4}-\d{2}$/, 'period must be YYYY-MM'),
+  invoiceId: z.string().uuid().optional().nullable(),
+  counterpartyName: z.string().max(255).optional().nullable(),
+  counterpartyNip: z.string().max(10).optional().nullable(),
+  documentNumber: z.string().max(100).optional().nullable(),
+  documentDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
+  deductible: z.boolean().optional().default(true),
+})
 
 export async function GET(req: NextRequest) {
   const { userId } = await auth()
@@ -51,38 +66,52 @@ export async function GET(req: NextRequest) {
     const vatInput = inputEntries.reduce((sum, e) => sum + (parseFloat(e.vatAmount) || 0), 0)
     const vatOutput = outputEntries.reduce((sum, e) => sum + (parseFloat(e.vatAmount) || 0), 0)
 
-    // Get last 12 months data for the chart
+    // PERF FIX: Get last 12 months data for the chart in ONE query (was N+1: 12 separate queries)
     const now = new Date()
-    const monthlyData = []
+    const monthMeta: Array<{ period: string; label: string }> = []
+    const last12Periods: string[] = []
     for (let i = 11; i >= 0; i--) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
       const monthPeriod = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-
-      const monthEntries = await db.select({
-        type: vatEntries.type,
-        vatAmount: vatEntries.vatAmount,
-      })
-        .from(vatEntries)
-        .where(and(
-          eq(vatEntries.companyId, companyId),
-          eq(vatEntries.period, monthPeriod),
-        ))
-
-      const monthInput = monthEntries
-        .filter(e => e.type === 'input')
-        .reduce((sum, e) => sum + (parseFloat(e.vatAmount) || 0), 0)
-      const monthOutput = monthEntries
-        .filter(e => e.type === 'output')
-        .reduce((sum, e) => sum + (parseFloat(e.vatAmount) || 0), 0)
-
-      monthlyData.push({
+      last12Periods.push(monthPeriod)
+      monthMeta.push({
         period: monthPeriod,
         label: d.toLocaleDateString('pl-PL', { month: 'short', year: '2-digit' }),
-        input: monthInput,
-        output: monthOutput,
-        balance: monthOutput - monthInput,
       })
     }
+
+    // Single query for all 12 months — replaces 12 sequential awaits
+    const allMonthlyEntries = await db.select({
+      type: vatEntries.type,
+      vatAmount: vatEntries.vatAmount,
+      period: vatEntries.period,
+    })
+      .from(vatEntries)
+      .where(and(
+        eq(vatEntries.companyId, companyId),
+        inArray(vatEntries.period, last12Periods),
+      ))
+
+    // Aggregate in-memory by period
+    const periodMap = new Map<string, { input: number; output: number }>()
+    for (const e of allMonthlyEntries) {
+      if (!periodMap.has(e.period)) periodMap.set(e.period, { input: 0, output: 0 })
+      const bucket = periodMap.get(e.period)!
+      const amount = parseFloat(e.vatAmount) || 0
+      if (e.type === 'input') bucket.input += amount
+      else if (e.type === 'output') bucket.output += amount
+    }
+
+    const monthlyData = monthMeta.map(({ period, label }) => {
+      const bucket = periodMap.get(period) ?? { input: 0, output: 0 }
+      return {
+        period,
+        label,
+        input: bucket.input,
+        output: bucket.output,
+        balance: bucket.output - bucket.input,
+      }
+    })
 
     return NextResponse.json({
       entries: {
@@ -107,16 +136,14 @@ export async function POST(req: NextRequest) {
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   try {
-    const body = await req.json()
+    const rawBody = await req.json().catch(() => null)
+    if (!rawBody) return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
 
-    // Validate required fields
-    if (!body.type || !body.netAmount || !body.vatAmount || !body.vatRate || !body.period) {
-      return NextResponse.json({ error: 'Missing required fields: type, netAmount, vatAmount, vatRate, period' }, { status: 400 })
+    const parsed = CreateVatEntrySchema.safeParse(rawBody)
+    if (!parsed.success) {
+      return NextResponse.json({ error: 'Invalid input', details: parsed.error.flatten().fieldErrors }, { status: 400 })
     }
-
-    if (!['input', 'output'].includes(body.type)) {
-      return NextResponse.json({ error: 'type must be "input" or "output"' }, { status: 400 })
-    }
+    const body = parsed.data
 
     // Get user's company
     const memberResult = await db.select({ companyId: companyMembers.companyId })
@@ -131,17 +158,17 @@ export async function POST(req: NextRequest) {
     const [entry] = await db.insert(vatEntries).values({
       companyId: memberResult[0].companyId,
       userId,
-      invoiceId: body.invoiceId || null,
+      invoiceId: body.invoiceId ?? null,
       type: body.type,
       period: body.period,
       netAmount: String(body.netAmount),
       vatAmount: String(body.vatAmount),
       vatRate: body.vatRate,
-      counterpartyName: body.counterpartyName || null,
-      counterpartyNip: body.counterpartyNip || null,
-      documentNumber: body.documentNumber || null,
-      documentDate: body.documentDate || null,
-      deductible: body.deductible !== false,
+      counterpartyName: body.counterpartyName ?? null,
+      counterpartyNip: body.counterpartyNip ?? null,
+      documentNumber: body.documentNumber ?? null,
+      documentDate: body.documentDate ?? null,
+      deductible: body.deductible,
     }).returning()
 
     return NextResponse.json({ entry })

@@ -22,6 +22,8 @@ import {
   Loader2,
   DollarSign,
   BarChart3,
+  AlertTriangle,
+  AlertCircle,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -44,6 +46,8 @@ interface BudgetData {
   } | null
   totalSpent: number
   categoryBreakdown: CategoryBreakdown[]
+  alerts: { type: 'critical' | 'warning'; category: string; spent: number; budgeted: number; pct: number }[]
+  monthProgress: number
   month: string
 }
 
@@ -74,7 +78,7 @@ export default function BudgetPage() {
     fetch('/api/data/settings')
       .then(r => r.json())
       .then(d => { if (d?.settings?.currency) setCurrency(d.settings.currency.toUpperCase()) })
-      .catch(() => {})
+      .catch((err) => console.error('Failed to fetch settings:', err))
   }, [])
 
   const fetchBudget = useCallback(async () => {
@@ -92,10 +96,11 @@ export default function BudgetPage() {
         setSavingsTarget('')
       }
     } catch {
-      toast.error('Failed to load budget')
+      toast.error(t('errors.loadBudget'))
     } finally {
       setLoading(false)
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [month])
 
   useEffect(() => {
@@ -124,7 +129,7 @@ export default function BudgetPage() {
       toast.success(t('settings.saved'))
       fetchBudget()
     } catch {
-      toast.error('Failed to save budget')
+      toast.error(t('errors.saveBudget'))
     } finally {
       setSaving(false)
     }
@@ -140,6 +145,16 @@ export default function BudgetPage() {
   const unallocated = income - totalBudgeted - savings
   const savingsRate = income > 0 ? ((income - totalSpent) / income) * 100 : 0
 
+  // Budget pace: how much should we have spent by this point in the month?
+  const monthProgress = data?.monthProgress || 0
+  const totalBudgetAmt = data?.budget ? parseFloat(data.budget.totalBudget || '0') : 0
+  const expectedSpent = totalBudgetAmt * monthProgress
+  const paceDiff = totalBudgetAmt > 0 ? totalSpent - expectedSpent : null
+  const paceStatus: 'over' | 'on' | 'under' | null = paceDiff === null ? null
+    : paceDiff > totalBudgetAmt * 0.05 ? 'over'
+    : paceDiff < -totalBudgetAmt * 0.05 ? 'under'
+    : 'on'
+
   const monthLabel = (() => {
     const [y, m] = month.split('-').map(Number)
     const d = new Date(y, m - 1, 1)
@@ -150,6 +165,7 @@ export default function BudgetPage() {
     hidden: { opacity: 0, y: 20 },
     show: (i: number) => ({
       opacity: 1, y: 0,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       transition: { duration: 0.45, delay: i * 0.07, ease: [0.22, 1, 0.36, 1] as any },
     }),
   }
@@ -181,6 +197,7 @@ export default function BudgetPage() {
             size="icon"
             onClick={() => navigateMonth(-1)}
             className="min-h-[44px] min-w-[44px]"
+            aria-label={t('budget.previousMonth')}
           >
             <ChevronLeft className="h-5 w-5" />
           </Button>
@@ -192,6 +209,7 @@ export default function BudgetPage() {
             size="icon"
             onClick={() => navigateMonth(1)}
             className="min-h-[44px] min-w-[44px]"
+            aria-label={t('budget.nextMonth')}
           >
             <ChevronRight className="h-5 w-5" />
           </Button>
@@ -249,6 +267,80 @@ export default function BudgetPage() {
               ))}
             </div>
           </motion.div>
+
+          {/* Budget pace indicator */}
+          {paceStatus && (
+            <motion.div custom={2.2} initial="hidden" animate="show" variants={fadeUp}>
+              <div className={`flex items-center gap-3 rounded-xl border px-4 py-3 text-sm ${
+                paceStatus === 'over' ? 'border-orange-500/30 bg-orange-500/8' :
+                paceStatus === 'under' ? 'border-emerald-500/30 bg-emerald-500/8' :
+                'border-primary/20 bg-primary/5'
+              }`}>
+                <span className="text-lg">
+                  {paceStatus === 'over' ? '⚡' : paceStatus === 'under' ? '🐌' : '✅'}
+                </span>
+                <div className="flex-1">
+                  <p className={`font-medium ${
+                    paceStatus === 'over' ? 'text-orange-700 dark:text-orange-400' :
+                    paceStatus === 'under' ? 'text-emerald-700 dark:text-emerald-400' :
+                    'text-primary'
+                  }`} suppressHydrationWarning>
+                    {paceStatus === 'over'
+                      ? t('budget.spendingFaster')
+                      : paceStatus === 'under'
+                      ? t('budget.spendingSlower')
+                      : t('budget.onTrack')
+                    }
+                  </p>
+                  <p className="text-xs text-muted-foreground" suppressHydrationWarning>
+                    {Math.round(monthProgress * 100)}% {t('budget.monthElapsed')}
+                    {' · '}
+                    {t('budget.expected')}: {expectedSpent.toFixed(0)} {currency}
+                    {paceDiff !== null && Math.abs(paceDiff) > 1 && (
+                      <span className={paceStatus === 'over' ? ' text-orange-600' : ' text-emerald-600'}>
+                        {' '}({paceStatus === 'over' ? '+' : ''}{paceDiff.toFixed(0)} {currency})
+                      </span>
+                    )}
+                  </p>
+                </div>
+              </div>
+            </motion.div>
+          )}
+
+          {/* Budget alerts */}
+          {data?.alerts && data.alerts.length > 0 && (
+            <motion.div custom={2.5} initial="hidden" animate="show" variants={fadeUp} className="space-y-2">
+              {data.alerts.map((alert, i) => (
+                <div
+                  key={i}
+                  className={`flex items-start gap-3 rounded-xl border px-4 py-3 ${alert.type === 'critical' ? 'bg-red-500/8 border-red-500/30' : 'bg-orange-500/8 border-orange-500/30'}`}
+                >
+                  {alert.type === 'critical'
+                    ? <AlertCircle className="h-4 w-4 text-red-500 flex-shrink-0 mt-0.5" />
+                    : <AlertTriangle className="h-4 w-4 text-orange-500 flex-shrink-0 mt-0.5" />
+                  }
+                  <div className="flex-1 min-w-0">
+                    <p className={`text-sm font-semibold ${alert.type === 'critical' ? 'text-red-600 dark:text-red-400' : 'text-orange-600 dark:text-orange-400'}`}>
+                      {alert.category === '__total__'
+                        ? t('budget.monthlyBudgetExceeded')
+                        : alert.type === 'critical'
+                          ? `${t('budget.budgetExceeded')}: ${alert.category}`
+                          : `${t('budget.approachingLimit')}: ${alert.category}`
+                      }
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {t('budget.spentOf')
+                        .replace('%spent', alert.spent.toFixed(0))
+                        .replace('%budgeted', alert.budgeted.toFixed(0))
+                        .replace('%currency', currency)
+                        .replace('%pct', String(Math.round(alert.pct * 100)))
+                      }
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </motion.div>
+          )}
 
           {/* Income & Savings setup */}
           <motion.div custom={3} initial="hidden" animate="show" variants={fadeUp}>

@@ -12,6 +12,7 @@ export async function POST(
 
   const { id } = await params
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let body: any
   try {
     body = await request.json()
@@ -44,18 +45,25 @@ export async function POST(
       note: note || null,
     })
 
-    // Update the goal's current amount
-    const newAmount = parseFloat(goal.currentAmount || '0') + amount
+    // Atomic increment — avoids read-modify-write race between concurrent deposits
+    const [updated] = await db
+      .update(savingsGoals)
+      .set({
+        currentAmount: sql`(COALESCE(${savingsGoals.currentAmount}, '0')::numeric + ${String(amount)}::numeric)::text`,
+      })
+      .where(and(eq(savingsGoals.id, id), eq(savingsGoals.userId, userId)))
+      .returning({ currentAmount: savingsGoals.currentAmount })
+
+    const newAmount = parseFloat(updated?.currentAmount || '0')
     const targetAmount = parseFloat(goal.targetAmount || '0')
     const completed = newAmount >= targetAmount
 
-    await db
-      .update(savingsGoals)
-      .set({
-        currentAmount: String(newAmount.toFixed(2)),
-        ...(completed ? { isCompleted: true, completedAt: new Date() } : {}),
-      })
-      .where(eq(savingsGoals.id, id))
+    if (completed && !goal.isCompleted) {
+      await db
+        .update(savingsGoals)
+        .set({ isCompleted: true, completedAt: new Date() })
+        .where(and(eq(savingsGoals.id, id), eq(savingsGoals.userId, userId)))
+    }
 
     return NextResponse.json({
       success: true,

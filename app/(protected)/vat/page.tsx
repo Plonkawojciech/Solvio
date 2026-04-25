@@ -7,23 +7,19 @@ import { useProductType } from '@/hooks/use-product-type'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
+import { Skeleton } from '@/components/ui/skeleton'
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table'
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from '@/components/ui/select'
 import {
   AlertCircle, RefreshCw, FileDown, ChevronLeft, ChevronRight,
   ArrowDownLeft, ArrowUpRight, Scale, BarChart3, Loader2,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { VatSummaryCard } from '@/components/protected/business/vat-summary-card'
-import { cn } from '@/lib/utils'
 import dynamic from 'next/dynamic'
 
-const ChartSkeleton = () => <div className="h-[300px] w-full animate-pulse rounded-lg bg-muted" />;
+const ChartSkeleton = () => <Skeleton className="h-[300px] w-full rounded-lg" />;
 const VatChart = dynamic(() => import('./vat-chart').then(m => ({ default: m.VatChart })), { ssr: false, loading: ChartSkeleton })
 
 // i18n keys:
@@ -62,28 +58,28 @@ interface MonthlyData {
 // ---- Skeleton ----
 function VatSkeleton() {
   return (
-    <div className="flex flex-col gap-4 sm:gap-6 animate-pulse">
+    <div className="flex flex-col gap-4 sm:gap-6" role="status" aria-busy="true" aria-live="polite">
       <div className="space-y-2">
-        <div className="h-8 w-40 rounded bg-muted" />
-        <div className="h-4 w-64 rounded bg-muted" />
+        <Skeleton className="h-8 w-40" />
+        <Skeleton className="h-4 w-64" />
       </div>
       <div className="grid gap-3 grid-cols-1 sm:grid-cols-3">
         {Array.from({ length: 3 }).map((_, i) => (
           <div key={i} className="rounded-xl border bg-card p-4 space-y-3">
-            <div className="h-3 w-24 rounded bg-muted" />
-            <div className="h-8 w-32 rounded bg-muted" />
-            <div className="h-3 w-40 rounded bg-muted" />
+            <Skeleton className="h-3 w-24" />
+            <Skeleton className="h-8 w-32" />
+            <Skeleton className="h-3 w-40" />
           </div>
         ))}
       </div>
       <div className="rounded-xl border bg-card p-6 space-y-3">
-        <div className="h-5 w-36 rounded bg-muted" />
-        <div className="h-64 rounded-lg bg-muted" />
+        <Skeleton className="h-5 w-36" />
+        <Skeleton className="h-64 rounded-lg" />
       </div>
       <div className="rounded-xl border bg-card p-4 space-y-3">
-        <div className="h-5 w-32 rounded bg-muted" />
+        <Skeleton className="h-5 w-32" />
         {Array.from({ length: 4 }).map((_, i) => (
-          <div key={i} className="h-10 rounded bg-muted" />
+          <Skeleton key={i} className="h-10" />
         ))}
       </div>
     </div>
@@ -177,6 +173,7 @@ export default function VatPage() {
       setOutputEntries(data.entries?.output || [])
       setSummary(data.summary || { vatInput: 0, vatOutput: 0, balance: 0 })
       setMonthlyData(data.monthly || [])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
       if (err.name === 'AbortError') return
       setError(err instanceof Error ? err.message : 'Unknown error')
@@ -218,6 +215,7 @@ export default function VatPage() {
       window.URL.revokeObjectURL(url)
 
       toast.success(t('vat.jpkSuccess'))
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
       toast.error(err.message || t('vat.jpkError'))
     } finally {
@@ -285,14 +283,14 @@ export default function VatPage() {
       {/* Period Selector */}
       <motion.div custom={1} initial="hidden" animate="show" variants={fadeUp}>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="icon" onClick={() => navigatePeriod(-1)} className="h-9 w-9">
-            <ChevronLeft className="h-4 w-4" />
+          <Button variant="outline" size="icon" onClick={() => navigatePeriod(-1)} className="h-9 w-9" aria-label={t('vat.previousPeriod')}>
+            <ChevronLeft className="h-4 w-4" aria-hidden="true" />
           </Button>
           <div className="px-4 py-2 rounded-lg border bg-card font-medium text-sm min-w-[180px] text-center capitalize">
             {periodLabel}
           </div>
-          <Button variant="outline" size="icon" onClick={() => navigatePeriod(1)} className="h-9 w-9">
-            <ChevronRight className="h-4 w-4" />
+          <Button variant="outline" size="icon" onClick={() => navigatePeriod(1)} className="h-9 w-9" aria-label={t('vat.nextPeriod')}>
+            <ChevronRight className="h-4 w-4" aria-hidden="true" />
           </Button>
         </div>
       </motion.div>
@@ -312,7 +310,7 @@ export default function VatPage() {
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2" suppressHydrationWarning>
-                <BarChart3 className="h-5 w-5" />
+                <BarChart3 className="h-5 w-5" aria-hidden="true" />
                 {t('vat.chartTitle')}
               </CardTitle>
               <CardDescription suppressHydrationWarning>{t('vat.chartDesc')}</CardDescription>
@@ -334,7 +332,7 @@ export default function VatPage() {
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2" suppressHydrationWarning>
-                    <ArrowDownLeft className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+                    <ArrowDownLeft className="h-5 w-5 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
                     {t('vat.inputTable')}
                   </CardTitle>
                 </CardHeader>
@@ -376,7 +374,7 @@ export default function VatPage() {
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2" suppressHydrationWarning>
-                    <ArrowUpRight className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                    <ArrowUpRight className="h-5 w-5 text-blue-600 dark:text-blue-400" aria-hidden="true" />
                     {t('vat.outputTable')}
                   </CardTitle>
                 </CardHeader>

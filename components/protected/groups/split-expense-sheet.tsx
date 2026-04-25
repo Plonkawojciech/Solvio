@@ -91,7 +91,7 @@ export function SplitExpenseSheet({
         if (Array.isArray(data)) setExpenses(data.slice(0, 50))
         else if (Array.isArray(data?.expenses)) setExpenses(data.expenses.slice(0, 50))
       })
-      .catch(() => {})
+      .catch((err) => console.error('Failed to fetch expenses:', err))
   }, [open])
 
   // Reset on open

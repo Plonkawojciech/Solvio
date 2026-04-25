@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label'
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table'
-import { Plus, Trash2, Edit2, Check, X, RefreshCw, Smile } from 'lucide-react'
+import { Plus, Trash2, Edit2, Check, X, RefreshCw, Smile, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
@@ -41,6 +41,7 @@ function IconPicker({
   onChange: (icon: string) => void
 }) {
   const [open, setOpen] = useState(false)
+  const { t } = useTranslation()
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -55,17 +56,17 @@ function IconPicker({
           {value || <Smile className="h-4 w-4 text-muted-foreground" />}
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-72 p-2" align="start">
-        <p className="text-xs text-muted-foreground mb-2 px-1">Pick an icon</p>
-        <div className="grid grid-cols-8 gap-1">
+      <PopoverContent className="w-[18rem] p-3" align="start">
+        <p className="font-mono text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-2">{t('settings.pickIcon')}</p>
+        <div className="grid grid-cols-6 gap-1.5 sm:grid-cols-8">
           {/* Empty / clear option */}
           <Button
             type="button"
             variant={!value ? 'secondary' : 'ghost'}
-            size="icon"
-            className="h-8 w-8 text-muted-foreground"
+            size="icon-sm"
+            className="text-muted-foreground"
             onClick={() => { onChange(''); setOpen(false) }}
-            aria-label="No icon"
+            aria-label="Clear icon"
           >
             <X className="h-3 w-3" />
           </Button>
@@ -74,9 +75,10 @@ function IconPicker({
               key={emoji}
               type="button"
               variant={value === emoji ? 'secondary' : 'ghost'}
-              size="icon"
-              className="h-8 w-8 text-base"
+              size="icon-sm"
+              className="text-base"
               onClick={() => { onChange(emoji); setOpen(false) }}
+              aria-label={`Select ${emoji}`}
             >
               {emoji}
             </Button>
@@ -91,10 +93,11 @@ const rowVariants = {
   hidden: { opacity: 0, y: -8 },
   visible: { opacity: 1, y: 0, transition: { duration: 0.25 } },
   exit: { opacity: 0, x: -16, transition: { duration: 0.2 } },
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 } as any
 
 export function CategoriesManager({ initialCategories }: { initialCategories: Category[] }) {
-  const { t, lang } = useTranslation()
+  const { t } = useTranslation()
   const [categories, setCategories] = useState<Category[]>(initialCategories)
   const [newCategoryName, setNewCategoryName] = useState('')
   const [newCategoryIcon, setNewCategoryIcon] = useState('')
@@ -112,14 +115,14 @@ export function CategoriesManager({ initialCategories }: { initialCategories: Ca
       const data = await response.json()
 
       if (!response.ok) {
-        toast.error(lang === 'pl' ? 'Nie udało się załadować kategorii' : 'Failed to seed categories', {
-          description: data.error || (lang === 'pl' ? 'Nieznany błąd' : 'Unknown error'),
+        toast.error(t('settings.categoriesSeedFailed'), {
+          description: data.error || t('settings.unknownError'),
         })
         return
       }
 
-      toast.success(lang === 'pl' ? 'Kategorie zaktualizowane!' : 'Categories updated!', {
-        description: data.message || (lang === 'pl' ? 'Kategorie domyślne zostały załadowane.' : 'Default categories have been loaded.'),
+      toast.success(t('settings.categoriesUpdated'), {
+        description: data.message || t('settings.categoriesUpdatedDesc'),
       })
 
       // Refresh categories list
@@ -135,8 +138,8 @@ export function CategoriesManager({ initialCategories }: { initialCategories: Ca
 
       setTimeout(() => window.location.reload(), 1000)
     } catch (error) {
-      toast.error(lang === 'pl' ? 'Nie udało się załadować kategorii' : 'Failed to seed categories', {
-        description: error instanceof Error ? error.message : (lang === 'pl' ? 'Nieznany błąd' : 'Unknown error'),
+      toast.error(t('settings.categoriesSeedFailed'), {
+        description: error instanceof Error ? error.message : t('settings.unknownError'),
       })
     } finally {
       setSeeding(false)
@@ -146,7 +149,7 @@ export function CategoriesManager({ initialCategories }: { initialCategories: Ca
   const addCategory = async () => {
     const name = newCategoryName.trim()
     if (!name) {
-      toast.error(lang === 'pl' ? 'Nazwa kategorii jest wymagana' : 'Category name is required')
+      toast.error(t('settings.categoryNameRequired'))
       return
     }
 
@@ -162,9 +165,9 @@ export function CategoriesManager({ initialCategories }: { initialCategories: Ca
       setCategories(prev => [...prev, { id: data.id, name: data.name, icon: data.icon ?? null }])
       setNewCategoryName('')
       setNewCategoryIcon('')
-      toast.success(lang === 'pl' ? 'Kategoria dodana pomyślnie' : 'Category added successfully')
+      toast.success(t('settings.categoryAdded'))
     } catch {
-      toast.error(lang === 'pl' ? 'Nie udało się dodać kategorii' : 'Failed to add category')
+      toast.error(t('settings.categoryAddFailed'))
     } finally {
       setLoading(false)
     }
@@ -185,7 +188,7 @@ export function CategoriesManager({ initialCategories }: { initialCategories: Ca
   const saveCategory = async (id: string) => {
     const name = editName.trim()
     if (!name) {
-      toast.error(lang === 'pl' ? 'Nazwa kategorii nie może być pusta' : 'Category name cannot be empty')
+      toast.error(t('settings.categoryNameEmpty'))
       return
     }
 
@@ -201,9 +204,9 @@ export function CategoriesManager({ initialCategories }: { initialCategories: Ca
         prev.map(c => c.id === id ? { ...c, name, icon: editIcon || null } : c)
       )
       cancelEditing()
-      toast.success(lang === 'pl' ? 'Kategoria zaktualizowana' : 'Category updated')
+      toast.success(t('settings.categoryUpdated'))
     } catch {
-      toast.error(lang === 'pl' ? 'Nie udało się zaktualizować kategorii' : 'Failed to update category')
+      toast.error(t('settings.categoryUpdateFailed'))
     } finally {
       setLoading(false)
     }
@@ -221,9 +224,9 @@ export function CategoriesManager({ initialCategories }: { initialCategories: Ca
       })
       if (!res.ok) throw new Error('Failed to delete category')
       setCategories(prev => prev.filter(c => c.id !== deleteId))
-      toast.success(lang === 'pl' ? 'Kategoria usunięta' : 'Category deleted')
+      toast.success(t('settings.categoryDeleted'))
     } catch {
-      toast.error(lang === 'pl' ? 'Nie udało się usunąć kategorii' : 'Failed to delete category')
+      toast.error(t('settings.categoryDeleteFailed'))
     } finally {
       setDeleteId(null)
       setLoading(false)
@@ -233,13 +236,13 @@ export function CategoriesManager({ initialCategories }: { initialCategories: Ca
   return (
     <div className="space-y-4">
       {/* Seed Default Categories */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 border rounded-lg bg-muted/50">
-        <div>
-          <p className="font-medium text-sm">{t('settings.defaultCategories')}</p>
-          <p className="text-xs text-muted-foreground mt-0.5">{t('settings.defaultCategoriesDesc')}</p>
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 rounded-md border-2 border-dashed border-foreground/40 bg-secondary/40 p-4">
+        <div className="min-w-0">
+          <p className="font-extrabold text-sm">{t('settings.defaultCategories')}</p>
+          <p className="text-xs text-muted-foreground mt-0.5 leading-snug">{t('settings.defaultCategoriesDesc')}</p>
         </div>
         <Button onClick={seedCategories} disabled={seeding} variant="outline" size="sm" className="shrink-0">
-          <RefreshCw className={`h-4 w-4 mr-2 ${seeding ? 'animate-spin' : ''}`} />
+          <RefreshCw className={seeding ? 'size-4 animate-spin' : 'size-4'} />
           {seeding ? t('settings.loadingDefaults') : t('settings.loadDefaults')}
         </Button>
       </div>
@@ -254,9 +257,7 @@ export function CategoriesManager({ initialCategories }: { initialCategories: Ca
           <Label htmlFor="new-category" className="sr-only">{t('settings.categoryName')}</Label>
           <Input
             id="new-category"
-            placeholder={lang === 'pl'
-              ? 'Nazwa kategorii (np. Elektronika, Jedzenie)'
-              : 'Category name (e.g., Electronics, Food)'}
+            placeholder={t('settings.categoryNamePlaceholder')}
             value={newCategoryName}
             onChange={(e) => setNewCategoryName(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') addCategory() }}
@@ -274,12 +275,12 @@ export function CategoriesManager({ initialCategories }: { initialCategories: Ca
       </div>
 
       {/* Categories Table */}
-      <div className="border rounded-lg overflow-hidden">
+      <div className="rounded-md border-2 border-foreground bg-card overflow-hidden shadow-[3px_3px_0_hsl(var(--foreground))]">
         <Table>
           <TableHeader>
             <TableRow>
               <TableHead className="w-12 pl-4">
-                {lang === 'pl' ? 'Ikona' : 'Icon'}
+                {t('settings.icon')}
               </TableHead>
               <TableHead>{t('settings.categoryName')}</TableHead>
               <TableHead className="w-36 text-right pr-4">{t('expenses.actions')}</TableHead>
@@ -360,21 +361,22 @@ export function CategoriesManager({ initialCategories }: { initialCategories: Ca
                         <div className="flex justify-end gap-1">
                           <Button
                             variant="ghost"
-                            size="icon"
+                            size="icon-sm"
                             onClick={() => startEditing(cat)}
                             disabled={loading}
-                            aria-label="Edit"
+                            aria-label={`Edit ${cat.name}`}
                           >
-                            <Edit2 className="h-4 w-4" />
+                            <Edit2 className="size-4" />
                           </Button>
                           <Button
                             variant="ghost"
-                            size="icon"
+                            size="icon-sm"
                             onClick={() => setDeleteId(cat.id)}
                             disabled={loading}
-                            aria-label="Delete"
+                            aria-label={`Delete ${cat.name}`}
+                            className="hover:bg-destructive hover:text-destructive-foreground"
                           >
-                            <Trash2 className="h-4 w-4 text-destructive" />
+                            <Trash2 className="size-4 text-destructive hover:text-inherit" />
                           </Button>
                         </div>
                       )}
@@ -388,18 +390,20 @@ export function CategoriesManager({ initialCategories }: { initialCategories: Ca
       </div>
 
       {/* Delete Confirmation Dialog */}
-      <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
+      <AlertDialog open={!!deleteId} onOpenChange={(open) => !open && !loading && setDeleteId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{t('settings.deleteCategory')}</AlertDialogTitle>
             <AlertDialogDescription>{t('settings.deleteCategoryDesc')}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+            <AlertDialogCancel disabled={loading}>{t('common.cancel')}</AlertDialogCancel>
             <AlertDialogAction
-              onClick={deleteCategory}
+              onClick={(e) => { e.preventDefault(); deleteCategory() }}
+              disabled={loading}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
+              {loading && <Loader2 className="size-4 animate-spin" />}
               {t('common.delete')}
             </AlertDialogAction>
           </AlertDialogFooter>

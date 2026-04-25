@@ -11,6 +11,7 @@ struct SavingsHubView: View {
     @EnvironmentObject private var router: AppRouter
     @EnvironmentObject private var toast: ToastCenter
     @EnvironmentObject private var locale: AppLocale
+    @EnvironmentObject private var store: AppDataStore
     @StateObject private var vm = SavingsHubViewModel()
     @State private var showBudgetEdit = false
 
@@ -39,7 +40,25 @@ struct SavingsHubView: View {
         }
         .background(Theme.background)
         .refreshable { await vm.loadAll() }
-        .task { if vm.needsInitialLoad { await vm.loadAll() } }
+        .task {
+            // Hand the store to the VM on first appearance. Goals / loyalty /
+            // challenges are already prefetched on login, so these load calls
+            // are essentially free — they just sync the VM mirror.
+            vm.bind(store: store)
+            if vm.needsInitialLoad { await vm.loadAll() }
+        }
+        // Keep the VM mirror in sync as the store's prefetch lands. Without
+        // these watchers, the tab would show empty data until the user
+        // pulled to refresh.
+        .onChange(of: store.goals) { _ in vm.syncFromStore() }
+        .onChange(of: store.loyalty) { _ in vm.syncFromStore() }
+        .onChange(of: store.challenges) { _ in vm.syncFromStore() }
+        // Budget / health / promotions live on the store too now — watch
+        // their `loadedAt` timestamp instead of the payload itself, since
+        // the response types aren't `Equatable`.
+        .onChange(of: store.budgetLoadedAt) { _ in vm.syncFromStore() }
+        .onChange(of: store.financialHealthLoadedAt) { _ in vm.syncFromStore() }
+        .onChange(of: store.promotionsLoadedAt) { _ in vm.syncFromStore() }
         .sheet(isPresented: $showBudgetEdit) {
             BudgetEditSheet(
                 month: vm.currentMonth,
@@ -49,7 +68,10 @@ struct SavingsHubView: View {
                     do {
                         _ = try await BudgetRepo.upsert(body)
                         toast.success(locale.t("savings.budgetSaved"))
-                        await vm.loadBudget()
+                        // Triggers force refresh of budget + financial health
+                        // (score depends on budget). The onChange watchers
+                        // above sync the new values into the VM mirror.
+                        store.didMutateBudget()
                     } catch {
                         toast.error(locale.t("savings.saveFailed"), description: error.localizedDescription)
                     }
@@ -202,8 +224,8 @@ struct SavingsHubView: View {
 
             if vm.isGoalsLoading && vm.goals.isEmpty {
                 NBLoadingCard()
-            } else if let err = vm.goalsError {
-                NBErrorCard(message: err) { Task { await vm.loadGoals() } }
+            } else if let err = vm.goalsError, vm.goals.isEmpty {
+                NBErrorCard(message: err) { Task { await vm.loadGoals(force: true) } }
             } else if vm.activeGoals.isEmpty {
                 NBEmptyState(
                     systemImage: "target",
@@ -314,8 +336,8 @@ struct SavingsHubView: View {
 
             if vm.isBudgetLoading && vm.budget == nil {
                 NBLoadingCard()
-            } else if let err = vm.budgetError {
-                NBErrorCard(message: err) { Task { await vm.loadBudget() } }
+            } else if let err = vm.budgetError, vm.budget == nil {
+                NBErrorCard(message: err) { Task { await vm.loadBudget(force: true) } }
             } else if let b = vm.budget {
                 budgetSummaryCard(b)
                 if !b.alerts.isEmpty {
@@ -461,8 +483,8 @@ struct SavingsHubView: View {
 
             if vm.isChallengesLoading && vm.challenges.isEmpty {
                 NBLoadingCard()
-            } else if let err = vm.challengesError {
-                NBErrorCard(message: err) { Task { await vm.loadChallenges() } }
+            } else if let err = vm.challengesError, vm.challenges.isEmpty {
+                NBErrorCard(message: err) { Task { await vm.loadChallenges(force: true) } }
             } else if vm.activeChallenges.isEmpty {
                 NBEmptyState(
                     systemImage: "trophy.fill",
@@ -549,8 +571,8 @@ struct SavingsHubView: View {
 
             if vm.isLoyaltyLoading && vm.loyaltyCards.isEmpty {
                 NBLoadingCard()
-            } else if let err = vm.loyaltyError {
-                NBErrorCard(message: err) { Task { await vm.loadLoyalty() } }
+            } else if let err = vm.loyaltyError, vm.loyaltyCards.isEmpty {
+                NBErrorCard(message: err) { Task { await vm.loadLoyalty(force: true) } }
             } else if vm.loyaltyCards.isEmpty {
                 NBEmptyState(
                     systemImage: "creditcard.fill",
@@ -611,8 +633,8 @@ struct SavingsHubView: View {
 
             if vm.isPromotionsLoading && vm.promotions == nil {
                 NBLoadingCard()
-            } else if let err = vm.promotionsError {
-                NBErrorCard(message: err) { Task { await vm.loadPromotions() } }
+            } else if let err = vm.promotionsError, vm.promotions == nil {
+                NBErrorCard(message: err) { Task { await vm.loadPromotions(force: true) } }
             } else if let promos = vm.promotions {
                 if let potential = promos.totalPotentialSavings, potential > 0 {
                     potentialSavingsTile(potential)
@@ -650,7 +672,7 @@ struct SavingsHubView: View {
                 .foregroundColor(Theme.foreground)
             Spacer()
             Button {
-                Task { await vm.loadPromotions() }
+                Task { await vm.loadPromotions(force: true) }
             } label: {
                 HStack(spacing: 4) {
                     Image(systemName: "arrow.clockwise")
@@ -765,7 +787,13 @@ final class SavingsHubViewModel: ObservableObject {
 
     @Published var activeTab: Tab = .goals
 
-    // Goals
+    /// Reference to the central store. Set via `bind(store:)` from the view's
+    /// `.task`. Goals / loyalty / challenges are mirrored from the store
+    /// (already prefetched on login) instead of re-fetched here. Saves 3
+    /// network calls every time the user opens this tab.
+    weak var store: AppDataStore?
+
+    // Goals (mirrored from store.goals)
     @Published var goals: [SavingsGoal] = []
     @Published var isGoalsLoading = false
     @Published var goalsError: String?
@@ -805,9 +833,13 @@ final class SavingsHubViewModel: ObservableObject {
         return df.string(from: Date())
     }
 
-    /// Fallback currency — first goal wins, then budget income units, then PLN.
+    /// Fallback currency — first goal wins, then dashboard's user setting,
+    /// then PLN. Dashboard's currency is the source of truth for the rest of
+    /// the app, so we delegate to it whenever we don't have a goal-level
+    /// currency in scope.
     var currency: String {
-        goals.first?.currency ?? "PLN"
+        if let g = goals.first?.currency, !g.isEmpty { return g }
+        return store?.currency ?? "PLN"
     }
 
     var activeGoals: [SavingsGoal] { goals.filter { $0.isCompleted != true } }
@@ -840,7 +872,46 @@ final class SavingsHubViewModel: ObservableObject {
 
     // MARK: - Loaders
 
+    /// Bind the central store. Idempotent — safe to call from `.task` on
+    /// every view appearance. Pulls the latest cached values immediately so
+    /// the tab paints with data from the prefetch instead of an empty state.
+    func bind(store: AppDataStore) {
+        self.store = store
+        syncFromStore()
+    }
+
+    /// Mirror the store's slices into this VM's `@Published` fields.
+    /// Called from `bind(store:)` and from the view's `onChange` watchers.
+    func syncFromStore() {
+        guard let store else { return }
+        goals = store.goals
+        loyaltyCards = store.loyalty
+        challenges = store.challenges
+        budget = store.budget
+        if let h = store.financialHealth {
+            healthScore = h.score
+            healthTips = h.tips
+        }
+        promotions = store.promotions
+
+        // Surface store-side errors only when the slice has nothing to show.
+        goalsError = (store.goals.isEmpty ? store.goalsError : nil)
+        loyaltyError = (store.loyalty.isEmpty ? store.loyaltyError : nil)
+        challengesError = (store.challenges.isEmpty ? store.challengesError : nil)
+        budgetError = (store.budget == nil ? store.budgetError : nil)
+        promotionsError = (store.promotions == nil ? store.promotionsError : nil)
+
+        isGoalsLoading = store.goalsLoading && store.goals.isEmpty
+        isLoyaltyLoading = store.loyaltyLoading && store.loyalty.isEmpty
+        isChallengesLoading = store.challengesLoading && store.challenges.isEmpty
+        isBudgetLoading = store.budgetLoading && store.budget == nil
+        isPromotionsLoading = store.promotionsLoading && store.promotions == nil
+    }
+
     func loadAll() async {
+        // Every slice now lives on the central store and is prefetched on
+        // login. These calls collapse to fast cache reads if the prefetch
+        // already landed, otherwise they await the in-flight task.
         await withTaskGroup(of: Void.self) { group in
             group.addTask { await self.loadGoals() }
             group.addTask { await self.loadBudget() }
@@ -852,69 +923,46 @@ final class SavingsHubViewModel: ObservableObject {
         hasLoadedOnce = true
     }
 
-    func loadLoyalty() async {
-        isLoyaltyLoading = true
-        loyaltyError = nil
-        defer { isLoyaltyLoading = false }
-        do {
-            loyaltyCards = try await LoyaltyRepo.list()
-        } catch {
-            loyaltyError = error.localizedDescription
-        }
+    func loadLoyalty(force: Bool = false) async {
+        guard let store else { return }
+        await store.awaitLoyalty(force: force)
+        syncFromStore()
     }
 
-    func loadGoals() async {
-        isGoalsLoading = true
-        goalsError = nil
-        defer { isGoalsLoading = false }
-        do {
-            goals = try await GoalsRepo.list()
-        } catch {
-            goalsError = error.localizedDescription
-        }
+    func loadGoals(force: Bool = false) async {
+        guard let store else { return }
+        await store.awaitGoals(force: force)
+        syncFromStore()
     }
 
-    func loadBudget() async {
-        isBudgetLoading = true
+    func loadBudget(force: Bool = false) async {
+        guard let store else { return }
+        // Flip the loading flag locally so the spinner shows while the store
+        // task is in-flight; syncFromStore() will reset it once data lands.
+        if store.budget == nil { isBudgetLoading = true }
         budgetError = nil
-        defer { isBudgetLoading = false }
-        do {
-            budget = try await BudgetRepo.fetch(month: currentMonth)
-        } catch {
-            budgetError = error.localizedDescription
-        }
+        await store.awaitBudget(force: force)
+        syncFromStore()
     }
 
-    func loadFinancialHealth() async {
-        do {
-            let res = try await FinancialHealthRepo.fetch()
-            healthScore = res.score
-            healthTips = res.tips
-        } catch {
-            // Non-fatal — keep default score.
-        }
+    func loadFinancialHealth(force: Bool = false) async {
+        guard let store else { return }
+        await store.awaitFinancialHealth(force: force)
+        syncFromStore()
     }
 
-    func loadChallenges() async {
-        isChallengesLoading = true
-        challengesError = nil
-        defer { isChallengesLoading = false }
-        do {
-            challenges = try await ChallengesRepo.list()
-        } catch {
-            challengesError = error.localizedDescription
-        }
+    func loadChallenges(force: Bool = false) async {
+        guard let store else { return }
+        await store.awaitChallenges(force: force)
+        syncFromStore()
     }
 
-    func loadPromotions() async {
-        isPromotionsLoading = true
+    func loadPromotions(force: Bool = false) async {
+        guard let store else { return }
+        if store.promotions == nil { isPromotionsLoading = true }
         promotionsError = nil
-        defer { isPromotionsLoading = false }
-        do {
-            promotions = try await PromotionsRepo.fetch(lang: nil, currency: currency)
-        } catch {
-            promotionsError = error.localizedDescription
-        }
+        await store.awaitPromotions(force: force)
+        syncFromStore()
     }
 
     // MARK: - Helpers

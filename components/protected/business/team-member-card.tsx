@@ -85,6 +85,7 @@ export function TeamMemberCard({
     <motion.div
       initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       transition={{ duration: 0.4, delay: index * 0.05, ease: [0.22, 1, 0.36, 1] as any }}
     >
       <Card className={cn(
@@ -167,8 +168,8 @@ export function TeamMemberCard({
             {(onEdit || onRemove) && role !== 'owner' && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                    <MoreHorizontal className="h-4 w-4" />
+                  <Button variant="ghost" size="sm" className="h-8 w-8 p-0" aria-label={t('team.memberActions')}>
+                    <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">

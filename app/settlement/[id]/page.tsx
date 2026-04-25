@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { paymentRequests, groupMembers, groups } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import { notFound } from 'next/navigation'
+import { getSession } from '@/lib/session'
 import { SettlementPageClient } from './client'
 
 export const dynamic = 'force-dynamic'
@@ -14,12 +15,35 @@ const MEMBER_COLORS = [
 
 export async function generateMetadata({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>
+  searchParams: Promise<{ token?: string }>
 }): Promise<Metadata> {
   const { id } = await params
+  // SECURITY FIX: OG metadata must not expose amounts/names without token verification
+  const { token } = await searchParams
   const [request] = await db.select().from(paymentRequests).where(eq(paymentRequests.id, id))
   if (!request) return { title: 'Payment request not found — Solvio' }
+
+  // Only reveal details if token is valid OR the user is an authenticated group member
+  const hasValidToken = request.shareToken ? token === request.shareToken : false
+  if (!hasValidToken) {
+    // Check if authenticated user is a group member
+    const session = await getSession()
+    let isMember = false
+    if (session && request.groupId) {
+      const members = await db.select().from(groupMembers).where(eq(groupMembers.groupId, request.groupId))
+      isMember = members.some((m) => m.userId === session.userId)
+    }
+    if (!isMember) {
+      // Return generic metadata — do not leak financial data
+      return {
+        title: 'Payment request — Solvio',
+        description: 'View your payment request on Solvio',
+      }
+    }
+  }
 
   let fromName = 'Someone'
   let toName = 'Someone'
@@ -70,6 +94,22 @@ export default async function SettlementPage({
   const [request] = await db.select().from(paymentRequests).where(eq(paymentRequests.id, id))
   if (!request) notFound()
 
+  // SECURITY FIX: Move token check to server-side before ANY data is passed to client.
+  // When shareToken is NULL, require session auth + group membership check.
+  // Data is only passed to the client after access is verified.
+  let hasValidToken = false
+  if (request.shareToken) {
+    // Public share-token path
+    hasValidToken = token === request.shareToken
+  } else {
+    // No shareToken: require authenticated session + group membership
+    const session = await getSession()
+    if (session && request.groupId) {
+      const memberRows = await db.select().from(groupMembers).where(eq(groupMembers.groupId, request.groupId))
+      hasValidToken = memberRows.some((m) => m.userId === session.userId)
+    }
+  }
+
   // Fetch member and group data
   let group: typeof groups.$inferSelect | null = null
   let members: Array<typeof groupMembers.$inferSelect> = []
@@ -77,7 +117,10 @@ export default async function SettlementPage({
   if (request.groupId) {
     const [g] = await db.select().from(groups).where(eq(groups.id, request.groupId))
     group = g || null
-    members = await db.select().from(groupMembers).where(eq(groupMembers.groupId, request.groupId))
+    // Avoid a second DB round-trip if we already fetched members above
+    if (members.length === 0) {
+      members = await db.select().from(groupMembers).where(eq(groupMembers.groupId, request.groupId))
+    }
   }
 
   const fromMember = members.find((m) => m.id === request.fromMemberId)
@@ -85,29 +128,33 @@ export default async function SettlementPage({
   const fromIdx = members.findIndex((m) => m.id === request.fromMemberId)
   const toIdx = members.findIndex((m) => m.id === request.toMemberId)
 
+  // Only pass sensitive fields to the client if access is verified
   const data = {
     id: request.id,
-    fromName: fromMember?.displayName ?? 'Unknown',
+    fromName: hasValidToken ? (fromMember?.displayName ?? 'Unknown') : 'Unknown',
     fromColor: fromMember?.color || MEMBER_COLORS[fromIdx >= 0 ? fromIdx % MEMBER_COLORS.length : 0],
-    toName: toMember?.displayName ?? 'Unknown',
+    toName: hasValidToken ? (toMember?.displayName ?? 'Unknown') : 'Unknown',
     toColor: toMember?.color || MEMBER_COLORS[toIdx >= 0 ? toIdx % MEMBER_COLORS.length : 0],
-    amount: parseFloat(String(request.amount)),
+    amount: hasValidToken ? parseFloat(String(request.amount)) : 0,
     currency: request.currency,
     status: request.status,
-    note: request.note,
-    bankAccount: request.bankAccount,
-    itemBreakdown: request.itemBreakdown as Array<{
-      itemName: string
-      store: string
-      date: string
-      amount: number
-      share: number
-    }> | null,
+    note: hasValidToken ? request.note : null,
+    bankAccount: hasValidToken ? request.bankAccount : null,
+    itemBreakdown: hasValidToken
+      ? (request.itemBreakdown as Array<{
+          itemName: string
+          store: string
+          date: string
+          amount: number
+          share: number
+        }> | null)
+      : null,
     settledAt: request.settledAt?.toISOString() ?? null,
     settledBy: request.settledBy,
     createdAt: request.createdAt.toISOString(),
-    shareToken: request.shareToken,
-    group: group
+    // Never pass shareToken to the client — it's only needed server-side
+    shareToken: null as null,
+    group: hasValidToken && group
       ? {
           name: group.name,
           emoji: group.emoji,
@@ -118,8 +165,6 @@ export default async function SettlementPage({
         }
       : null,
   }
-
-  const hasValidToken = !request.shareToken || token === request.shareToken
 
   return <SettlementPageClient data={data} hasValidToken={hasValidToken} token={token || null} />
 }

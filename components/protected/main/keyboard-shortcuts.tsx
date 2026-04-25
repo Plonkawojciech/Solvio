@@ -71,6 +71,7 @@ interface ShortcutsModalProps {
 
 function ShortcutsModal({ open, onClose, lang }: ShortcutsModalProps) {
   const isPl = lang === 'pl'
+  const { t } = useTranslation()
 
   return (
     <AnimatePresence>
@@ -137,7 +138,7 @@ function ShortcutsModal({ open, onClose, lang }: ShortcutsModalProps) {
                             <React.Fragment key={k}>
                               <KeyBadge>{k}</KeyBadge>
                               {i < sc.keys.length - 1 && (
-                                <span className="text-[10px] text-muted-foreground">then</span>
+                                <span className="text-[10px] text-muted-foreground">{t('shortcuts.then')}</span>
                               )}
                             </React.Fragment>
                           ))}

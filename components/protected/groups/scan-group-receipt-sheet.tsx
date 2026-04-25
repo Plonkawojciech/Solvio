@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion } from 'framer-motion'
 import { toast } from 'sonner'
 import { useTranslation } from '@/lib/i18n'
 import {
@@ -21,7 +21,8 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Label } from '@/components/ui/label'
-import { Camera, Upload, Loader2, Check, Image as ImageIcon, Receipt } from 'lucide-react'
+import { Camera, Upload, Loader2, Check, Receipt } from 'lucide-react'
+import Image from 'next/image'
 
 const MEMBER_COLORS = [
   '#6366f1', '#ec4899', '#f59e0b', '#10b981',
@@ -101,7 +102,7 @@ export function ScanGroupReceiptSheet({
     if (!f) return
 
     if (f.size > 10 * 1024 * 1024) {
-      toast.error('File too large (max 10MB)')
+      toast.error(t('errors.fileTooLarge'))
       return
     }
 
@@ -208,10 +209,13 @@ export function ScanGroupReceiptSheet({
                 {previewUrl ? (
                   <div className="space-y-3">
                     <div className="relative mx-auto w-32 h-32 rounded-lg overflow-hidden border">
-                      <img
+                      <Image
                         src={previewUrl}
                         alt="Receipt preview"
                         className="w-full h-full object-cover"
+                        width={128}
+                        height={128}
+                        unoptimized
                       />
                     </div>
                     <p className="text-sm font-medium">{file?.name}</p>
@@ -278,6 +282,7 @@ export function ScanGroupReceiptSheet({
             >
               <motion.div
                 animate={{ rotate: 360 }}
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 transition={{ duration: 2, repeat: Infinity, ease: 'linear' as any }}
               >
                 <Loader2 className="h-10 w-10 text-primary" />

@@ -1,8 +1,41 @@
 import { auth } from '@/lib/auth-compat'
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { invoices, companies, companyMembers, userSettings } from '@/lib/db/schema'
+import { invoices, companyMembers, userSettings } from '@/lib/db/schema'
 import { eq, and, desc, ilike, or, sql } from 'drizzle-orm'
+import { z } from 'zod'
+
+const CreateInvoiceSchema = z.object({
+  invoiceNumber: z.string().max(100).optional().nullable(),
+  vendorName: z.string().max(255).optional().nullable(),
+  vendorNip: z.string().max(10).optional().nullable(),
+  buyerName: z.string().max(255).optional().nullable(),
+  buyerNip: z.string().max(10).optional().nullable(),
+  issueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
+  dueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
+  paymentDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
+  netAmount: z.number().nonnegative().optional().nullable(),
+  vatAmount: z.number().nonnegative().optional().nullable(),
+  grossAmount: z.number().nonnegative().optional().nullable(),
+  vatRate: z.enum(['23%', '8%', '5%', '0%', 'zw']).optional().default('23%'),
+  currency: z.string().length(3).optional().default('PLN'),
+  deductibility: z.enum(['kup', 'nkup']).optional().default('kup'),
+  splitPayment: z.boolean().optional().default(false),
+  paymentMethod: z.enum(['transfer', 'cash', 'card']).optional().nullable(),
+  imageUrl: z.string().url().optional().nullable(),
+  rawOcr: z.unknown().optional().nullable(),
+  items: z.array(z.object({
+    name: z.string().max(500),
+    quantity: z.number().nonnegative(),
+    unit: z.string().max(20),
+    unitPrice: z.number().nonnegative(),
+    netAmount: z.number().nonnegative(),
+    vatRate: z.string().max(10),
+    vatAmount: z.number().nonnegative(),
+    grossAmount: z.number().nonnegative(),
+  })).optional().nullable(),
+  notes: z.string().max(2000).optional().nullable(),
+})
 
 export async function GET(req: NextRequest) {
   const { userId } = await auth()
@@ -95,9 +128,16 @@ export async function POST(req: NextRequest) {
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   try {
-    const body = await req.json()
+    const rawBody = await req.json().catch(() => null)
+    if (!rawBody) return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
 
-    // Validate required fields
+    const parsed = CreateInvoiceSchema.safeParse(rawBody)
+    if (!parsed.success) {
+      return NextResponse.json({ error: 'Invalid input', details: parsed.error.flatten().fieldErrors }, { status: 400 })
+    }
+    const body = parsed.data
+
+    // Validate at least one identifying field
     if (!body.vendorName && !body.invoiceNumber) {
       return NextResponse.json({ error: 'Vendor name or invoice number required' }, { status: 400 })
     }
@@ -113,28 +153,28 @@ export async function POST(req: NextRequest) {
     const [invoice] = await db.insert(invoices).values({
       userId,
       companyId,
-      invoiceNumber: body.invoiceNumber || null,
-      vendorName: body.vendorName || null,
-      vendorNip: body.vendorNip || null,
-      buyerName: body.buyerName || null,
-      buyerNip: body.buyerNip || null,
-      issueDate: body.issueDate || null,
-      dueDate: body.dueDate || null,
-      paymentDate: body.paymentDate || null,
-      netAmount: body.netAmount ? String(body.netAmount) : null,
-      vatAmount: body.vatAmount ? String(body.vatAmount) : null,
-      grossAmount: body.grossAmount ? String(body.grossAmount) : null,
-      vatRate: body.vatRate || '23%',
-      currency: body.currency || 'PLN',
-      deductibility: body.deductibility || 'kup',
-      splitPayment: body.splitPayment || false,
-      paymentMethod: body.paymentMethod || 'transfer',
-      imageUrl: body.imageUrl || null,
-      rawOcr: body.rawOcr || null,
-      items: body.items || null,
+      invoiceNumber: body.invoiceNumber ?? null,
+      vendorName: body.vendorName ?? null,
+      vendorNip: body.vendorNip ?? null,
+      buyerName: body.buyerName ?? null,
+      buyerNip: body.buyerNip ?? null,
+      issueDate: body.issueDate ?? null,
+      dueDate: body.dueDate ?? null,
+      paymentDate: body.paymentDate ?? null,
+      netAmount: body.netAmount != null ? String(body.netAmount) : null,
+      vatAmount: body.vatAmount != null ? String(body.vatAmount) : null,
+      grossAmount: body.grossAmount != null ? String(body.grossAmount) : null,
+      vatRate: body.vatRate,
+      currency: body.currency,
+      deductibility: body.deductibility,
+      splitPayment: body.splitPayment,
+      paymentMethod: body.paymentMethod ?? null,
+      imageUrl: body.imageUrl ?? null,
+      rawOcr: body.rawOcr ?? null,
+      items: body.items ?? null,
       status: 'pending',
       submittedBy: userId,
-      notes: body.notes || null,
+      notes: body.notes ?? null,
     }).returning()
 
     return NextResponse.json({ invoice })

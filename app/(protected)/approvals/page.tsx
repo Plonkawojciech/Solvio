@@ -7,9 +7,10 @@ import { useProductType } from '@/hooks/use-product-type'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Skeleton } from '@/components/ui/skeleton'
 import {
   AlertCircle, RefreshCw, CheckCircle2, XCircle, Clock,
-  Check, Loader2, ClipboardCheck,
+  Check, Loader2,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { ApprovalCard, type Approval } from '@/components/protected/business/approval-card'
@@ -34,14 +35,14 @@ interface Counts {
 // ---- Skeleton ----
 function ApprovalsSkeleton() {
   return (
-    <div className="flex flex-col gap-4 sm:gap-6 animate-pulse">
+    <div className="flex flex-col gap-4 sm:gap-6" role="status" aria-busy="true" aria-live="polite">
       <div className="space-y-2">
-        <div className="h-8 w-44 rounded bg-muted" />
-        <div className="h-4 w-64 rounded bg-muted" />
+        <Skeleton className="h-8 w-44" />
+        <Skeleton className="h-4 w-64" />
       </div>
       <div className="flex gap-2">
         {Array.from({ length: 3 }).map((_, i) => (
-          <div key={i} className="h-9 w-32 rounded-lg bg-muted" />
+          <Skeleton key={i} className="h-9 w-32 rounded-lg" />
         ))}
       </div>
       <div className="space-y-3">
@@ -49,17 +50,17 @@ function ApprovalsSkeleton() {
           <div key={i} className="rounded-xl border bg-card p-4 space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="h-5 w-5 rounded border bg-muted" />
+                <Skeleton className="h-5 w-5 rounded border" />
                 <div className="space-y-1.5">
-                  <div className="h-4 w-32 rounded bg-muted" />
-                  <div className="h-3 w-44 rounded bg-muted" />
+                  <Skeleton className="h-4 w-32" />
+                  <Skeleton className="h-3 w-44" />
                 </div>
               </div>
-              <div className="h-5 w-20 rounded bg-muted" />
+              <Skeleton className="h-5 w-20" />
             </div>
             <div className="flex gap-2 pt-2 border-t">
-              <div className="h-8 w-24 rounded bg-muted" />
-              <div className="h-8 w-24 rounded bg-muted" />
+              <Skeleton className="h-8 w-24" />
+              <Skeleton className="h-8 w-24" />
             </div>
           </div>
         ))}
@@ -162,6 +163,7 @@ export default function ApprovalsPage() {
       setApprovals(data.approvals || [])
       setCounts(data.counts || { pending: 0, approved: 0, rejected: 0 })
       setSelectedIds(new Set())
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
       if (err.name === 'AbortError') return
       setError(err instanceof Error ? err.message : 'Unknown error')
@@ -190,6 +192,7 @@ export default function ApprovalsPage() {
       }
       toast.success(t('approvals.approveSuccess'))
       fetchData()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
       toast.error(err.message || t('approvals.actionError'))
     }
@@ -208,6 +211,7 @@ export default function ApprovalsPage() {
       }
       toast.success(t('approvals.rejectSuccess'))
       fetchData()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
       toast.error(err.message || t('approvals.actionError'))
     }

@@ -8,6 +8,7 @@ import {
   ChartTooltip,
   ChartTooltipContent,
 } from "@/components/ui/chart"
+import { formatAmount } from "@/lib/format"
 
 type ChartData = {
   name: string
@@ -35,7 +36,7 @@ export function SpendingByCategoryChart({ data, currency }: { data: ChartData[];
     <div className="w-full">
       <ChartContainer
         config={chartConfig}
-        className="mx-auto aspect-square max-h-[300px]"
+        className="mx-auto aspect-square max-h-[160px] md:max-h-[250px]"
       >
         <PieChart>
           <ChartTooltip
@@ -43,10 +44,7 @@ export function SpendingByCategoryChart({ data, currency }: { data: ChartData[];
             content={
               <ChartTooltipContent
                 hideLabel
-                formatter={(value) => {
-                  const numericValue = Number(value)
-                  return `${numericValue.toFixed(2)} ${currency}`
-                }}
+                formatter={(value) => formatAmount(Number(value), currency)}
               />
             }
           />
@@ -75,14 +73,14 @@ export function SpendingByCategoryChart({ data, currency }: { data: ChartData[];
       </ChartContainer>
 
       {/* Legenda pod wykresem */}
-      <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-sm mt-4">
+      <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 md:gap-x-4 md:gap-y-2 text-xs md:text-sm mt-2 md:mt-4">
         {data.map((item, index) => {
           const colorVar = CHART_COLOR_VARS[index % CHART_COLOR_VARS.length]
 
           return (
-            <div key={item.name} className="flex items-center gap-2">
+            <div key={item.name} className="flex items-center gap-1 md:gap-2">
               <span
-                className="h-3 w-3 rounded-full"
+                className="h-2 w-2 md:h-3 md:w-3 rounded-full shrink-0"
                 style={{ backgroundColor: `hsl(var(${colorVar}))` }}
               />
               <span>{item.name}</span>

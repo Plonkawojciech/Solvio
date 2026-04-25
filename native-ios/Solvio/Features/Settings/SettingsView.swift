@@ -31,7 +31,10 @@ struct SettingsView: View {
 
                 if vm.isLoading && vm.bundle == nil {
                     NBLoadingCard()
-                } else if let message = vm.errorMessage {
+                } else if let message = vm.errorMessage, vm.bundle == nil {
+                    // Only block the screen with an error when we have
+                    // nothing cached. Otherwise keep the existing settings
+                    // visible and let pull-to-refresh retry silently.
                     NBErrorCard(message: message) { Task { await vm.load() } }
                 } else if vm.bundle != nil {
                     accountCard
@@ -196,7 +199,7 @@ struct SettingsView: View {
                 let filename = suggestedName ?? fallback
                 let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(filename)
                 try data.write(to: tmp, options: .atomic)
-                await presentShareSheet(url: tmp)
+                presentShareSheet(url: tmp)
                 toast.success(locale.t("settings.exportSuccess"), description: filename)
             } catch {
                 toast.error(locale.t("settings.exportFailed"), description: error.localizedDescription)

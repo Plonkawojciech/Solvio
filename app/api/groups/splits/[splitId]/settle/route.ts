@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth-compat'
 import { db } from '@/lib/db'
-import { expenseSplits, paymentRequests } from '@/lib/db/schema'
+import { expenseSplits, paymentRequests, groupMembers } from '@/lib/db/schema'
 import { eq, and } from 'drizzle-orm'
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ splitId: string }> }) {
@@ -13,11 +13,19 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ sp
     const [split] = await db.select().from(expenseSplits).where(eq(expenseSplits.id, splitId))
     if (!split) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
+    // SECURITY FIX: Verify user is a member of the group before allowing settle
+    const members = await db.select().from(groupMembers).where(eq(groupMembers.groupId, split.groupId))
+    const isMember = members.some((m) => m.userId === userId)
+    if (!isMember) {
+      return NextResponse.json({ error: 'Forbidden — not a member of this group' }, { status: 403 })
+    }
+
     const updatedSplits = (split.splits as Array<{ memberId: string; amount: number; settled: boolean; settledAt?: string }>).map(s =>
       s.memberId === memberId ? { ...s, settled: true, settledAt: new Date().toISOString() } : s
     )
 
-    await db.update(expenseSplits).set({ splits: updatedSplits }).where(eq(expenseSplits.id, splitId))
+    // SECURITY FIX: Defense-in-depth — add groupId to UPDATE WHERE
+    await db.update(expenseSplits).set({ splits: updatedSplits }).where(and(eq(expenseSplits.id, splitId), eq(expenseSplits.groupId, split.groupId)))
     await db.update(paymentRequests)
       .set({ status: 'settled', settledAt: new Date() })
       .where(and(eq(paymentRequests.splitId, splitId), eq(paymentRequests.toMemberId, memberId)))

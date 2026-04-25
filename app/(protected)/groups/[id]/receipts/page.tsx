@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useTranslation } from '@/lib/i18n'
 import { Button } from '@/components/ui/button'
@@ -52,7 +52,6 @@ interface GroupMember {
 export default function GroupReceiptsPage() {
   const { t } = useTranslation()
   const params = useParams()
-  const router = useRouter()
   const groupId = params?.id as string
 
   const [receipts, setReceipts] = useState<GroupReceipt[]>([])
@@ -97,13 +96,8 @@ export default function GroupReceiptsPage() {
     fetchReceipts()
   }, [groupId, fetchReceipts])
 
-  const handleScanned = (receiptId: string) => {
-    fetchReceipts().then(() => {
-      // Auto-open the assigner for the new receipt
-      const newReceipt = receipts.find((r) => r.id === receiptId)
-      // Will open on next render since we re-fetch
-    })
-  }
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const handleScanned = (_receiptId: string) => { fetchReceipts() }
 
   const getAssignedMemberIds = (receipt: GroupReceipt): string[] => {
     const memberIds = new Set<string>()
@@ -124,10 +118,10 @@ export default function GroupReceiptsPage() {
       >
         <Link
           href={`/groups/${groupId}`}
-          className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+          className="inline-flex items-center gap-1.5 text-sm font-semibold text-muted-foreground hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/50 rounded-md px-1 -ml-1"
         >
-          <ArrowLeft className="h-4 w-4" />
-          {t('groups.backToGroups')}
+          <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+          {t('groups.backToGroup')}
         </Link>
 
         <div className="flex items-center justify-between gap-4">
@@ -158,11 +152,8 @@ export default function GroupReceiptsPage() {
           transition={{ duration: 0.4 }}
           className="flex flex-col items-center justify-center py-24 gap-5 text-center"
         >
-          <div className="relative">
-            <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-primary/10">
-              <Receipt className="h-10 w-10 text-primary" />
-            </div>
-            <div className="absolute -inset-4 rounded-full border-2 border-primary/10 animate-pulse" />
+          <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-primary/10">
+            <Receipt className="h-10 w-10 text-primary" aria-hidden="true" />
           </div>
           <div className="space-y-1.5">
             <h2 className="text-xl font-semibold">{t('groups.noReceipts')}</h2>

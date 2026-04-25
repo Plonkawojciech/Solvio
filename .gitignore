@@ -40,3 +40,11 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# claude code agent state
+.claude/
+
+# Xcode build artifacts + per-user IDE state (no source)
+native-ios/build/
+**/xcuserdata/
+*.xcuserstate

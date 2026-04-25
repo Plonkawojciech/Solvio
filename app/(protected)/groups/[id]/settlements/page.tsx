@@ -21,10 +21,10 @@ export default function GroupSettlementsPage() {
       >
         <Link
           href={`/groups/${groupId}`}
-          className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+          className="inline-flex items-center gap-1.5 text-sm font-semibold text-muted-foreground hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/50 rounded-md px-1 -ml-1"
         >
-          <ArrowLeft className="h-4 w-4" />
-          {t('groups.backToGroups')}
+          <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+          {t('groups.backToGroup')}
         </Link>
 
         <h1 className="text-2xl font-bold tracking-tight mt-3">

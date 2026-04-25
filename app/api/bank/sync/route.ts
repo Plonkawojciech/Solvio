@@ -1,6 +1,6 @@
 // ══════════════════════════════════════════════════════════════════════════════
 // POST /api/bank/sync
-// Trigger transaction sync for a given bank account.
+// Trigger transaction sync for a given bank account via Nordigen.
 // Body: { accountId: string }
 // Returns sync stats.
 // ══════════════════════════════════════════════════════════════════════════════
@@ -10,7 +10,7 @@ import { auth } from '@/lib/auth-compat'
 import { db } from '@/lib/db'
 import { bankAccounts } from '@/lib/db/schema'
 import { eq, and } from 'drizzle-orm'
-import { syncTransactions } from '@/lib/pko/sync'
+import { syncTransactions } from '@/lib/nordigen/sync'
 
 export async function POST(request: NextRequest) {
   const { userId } = await auth()
@@ -62,7 +62,6 @@ export async function POST(request: NextRequest) {
     })
   } catch (err) {
     console.error('[bank/sync POST]', err)
-    const message = err instanceof Error ? err.message : 'Sync failed'
-    return NextResponse.json({ error: message }, { status: 500 })
+    return NextResponse.json({ error: 'Operation failed' }, { status: 500 })
   }
 }

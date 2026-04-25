@@ -8,10 +8,11 @@ import Charts
 struct AnalysisView: View {
     @EnvironmentObject private var toast: ToastCenter
     @EnvironmentObject private var locale: AppLocale
+    @EnvironmentObject private var store: AppDataStore
     @State private var isLoading = false
     @State private var result: AnalysisResponse?
     @State private var errorMessage: String?
-    @State private var currency: String = "PLN"
+    private var currency: String { store.currency }
 
     /// Mirrors web `Period` type in `app/(protected)/analysis/page.tsx`.
     enum Period: String, CaseIterable, Hashable {
@@ -24,6 +25,31 @@ struct AnalysisView: View {
     }
     @State private var period: Period = .m3
 
+    /// Per-(period · currency · lang) cache of analysis results. The AI call
+    /// is the most expensive request the app makes (~10–15 s on a cache
+    /// miss), and the user routinely flips through periods to compare. With
+    /// this cache, switching to a period you've already viewed is instant —
+    /// only the *first* visit per period pays the AI cost.
+    ///
+    /// TTL = 15 minutes. Long enough that period-tabbing stays cheap, short
+    /// enough that a session-long sit on the screen still picks up new
+    /// expense data on the next manual run. Pull-to-refresh always forces.
+    @State private var analysisCache: [String: CachedAnalysis] = [:]
+    private static let analysisCacheTTL: TimeInterval = 900
+
+    private struct CachedAnalysis {
+        let result: AnalysisResponse
+        let loadedAt: Date
+    }
+
+    /// Stable cache key — must include every input that changes the AI
+    /// output. Currency and language affect the *content* (the AI writes
+    /// in the user's language and quotes amounts in their currency), so
+    /// they belong in the key.
+    private var currentCacheKey: String {
+        "\(period.rawValue)|\(currency)|\(locale.language.rawValue)"
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Theme.Spacing.md) {
@@ -34,7 +60,7 @@ struct AnalysisView: View {
                     NBLoadingCard()
                 }
                 if let msg = errorMessage, result == nil {
-                    NBErrorCard(message: msg) { Task { await run() } }
+                    NBErrorCard(message: msg) { Task { await run(force: true) } }
                 }
                 if let r = result {
                     if let summary = r.summary, !summary.isEmpty {
@@ -69,15 +95,19 @@ struct AnalysisView: View {
         .background(Theme.background)
         .navigationTitle(locale.t("analysis.navTitle"))
         .navigationBarTitleDisplayMode(.inline)
-        .task { await loadCurrency() }
-        .refreshable { await run() }
-    }
-
-    private func loadCurrency() async {
-        guard let bundle = try? await SettingsRepo.fetch(),
-              let code = bundle.settings?.currency,
-              !code.isEmpty else { return }
-        currency = code
+        .task {
+            store.ensureDashboard()
+            // First mount: hydrate from cache if a previous visit (or a
+            // different navigation path back into this screen) already
+            // analyzed this period. The user sees data immediately rather
+            // than the empty CTA card.
+            if result == nil, let cached = cachedResultForCurrentKey() {
+                result = cached
+            }
+        }
+        // Pull-to-refresh always forces a real run — the user explicitly
+        // wants the latest numbers, even if the cache is still warm.
+        .refreshable { await run(force: true) }
     }
 
     // MARK: - Period selector (mirrors web chip row: 7d / 30d / 3m / 6m / 1y / All)
@@ -92,10 +122,17 @@ struct AnalysisView: View {
                 }
             )
             .onChange(of: period) { _ in
-                // Re-run analysis when period changes (matches web UX: selecting a tab
-                // refreshes the filtered data set). Guard against spam while in flight.
+                // Period change: serve from cache if we've already analyzed
+                // this combination recently — instant tab swap, no spinner,
+                // no second AI bill. If the cache is empty/stale, fall back
+                // to a real run.
                 guard !isLoading else { return }
-                Task { await run() }
+                if let cached = cachedResultForCurrentKey() {
+                    result = cached
+                    errorMessage = nil
+                } else {
+                    Task { await run() }
+                }
             }
         }
     }
@@ -117,7 +154,10 @@ struct AnalysisView: View {
                 .foregroundColor(Theme.mutedForeground)
                 .fixedSize(horizontal: false, vertical: true)
             Button {
-                Task { await run() }
+                // The "Regenerate" label implies a fresh run — bypass the
+                // cache so the user actually sees updated data. First-run
+                // case (no result yet) likewise just runs.
+                Task { await run(force: result != nil) }
             } label: {
                 HStack {
                     if isLoading { ProgressView().tint(Theme.background) }
@@ -605,16 +645,39 @@ struct AnalysisView: View {
 
     // MARK: - Run
 
-    private func run() async {
+    /// Returns the cached result for the current key if it's still inside
+    /// the TTL, otherwise nil. Pure read — never mutates state.
+    private func cachedResultForCurrentKey() -> AnalysisResponse? {
+        guard let entry = analysisCache[currentCacheKey] else { return nil }
+        guard Date().timeIntervalSince(entry.loadedAt) < Self.analysisCacheTTL else {
+            return nil
+        }
+        return entry.result
+    }
+
+    /// Run analysis. `force == false` and a fresh cache entry → no network
+    /// call, just paint from cache. `force == true` always hits the AI.
+    private func run(force: Bool = false) async {
+        let key = currentCacheKey
+        if !force, let cached = cachedResultForCurrentKey() {
+            result = cached
+            errorMessage = nil
+            return
+        }
         isLoading = true
         errorMessage = nil
         defer { isLoading = false }
         do {
-            result = try await AnalysisRepo.run(
+            let fresh = try await AnalysisRepo.run(
                 lang: locale.language.rawValue,
                 currency: currency,
                 period: period.rawValue
             )
+            result = fresh
+            // Cache by the key in scope when the call started — protects
+            // against the user flipping period mid-flight (we don't want
+            // to write a 7d response under a 30d key).
+            analysisCache[key] = CachedAnalysis(result: fresh, loadedAt: Date())
         } catch {
             errorMessage = error.localizedDescription
             toast.error(locale.t("analysis.failed"), description: error.localizedDescription)

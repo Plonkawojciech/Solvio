@@ -76,10 +76,10 @@ export async function PUT(
       })
       .where(eq(expenseApprovals.id, id))
 
-    // Update expense approval status
+    // SECURITY FIX: Defense-in-depth — add userId to UPDATE WHERE
     await db.update(expenses)
       .set({ approvalStatus: newStatus })
-      .where(eq(expenses.id, approval.expenseId))
+      .where(and(eq(expenses.id, approval.expenseId), eq(expenses.userId, approval.submittedBy)))
 
     return NextResponse.json({ success: true, status: newStatus })
   } catch (err) {

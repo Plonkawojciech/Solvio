@@ -1,15 +1,29 @@
 import { auth } from '@/lib/auth-compat'
 import { NextResponse } from 'next/server'
-import { db, expenses, monthlyBudgets, categoryBudgets, savingsGoals } from '@/lib/db'
+import { db, expenses, monthlyBudgets, savingsGoals } from '@/lib/db'
 import { eq, and, gte, lte, sql } from 'drizzle-orm'
-import OpenAI from 'openai'
-
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+import { getAIClient } from '@/lib/ai-client'
+import { rateLimit } from '@/lib/rate-limit'
 
 export async function POST(request: Request) {
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+  // SECURITY FIX: Rate limiting for OpenAI-powered endpoint
+  const rl = rateLimit(`ai:afford:${userId}`, { maxRequests: 20, windowMs: 60 * 60 * 1000 })
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { error: 'Rate limit exceeded. Try again later.' },
+      { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } },
+    )
+  }
+
+  const ai = getAIClient()
+  if (!ai) {
+    return NextResponse.json({ error: 'AI service not configured' }, { status: 503 })
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let body: any
   try {
     body = await request.json()
@@ -93,8 +107,8 @@ Evaluate if the user can afford this. Return JSON:
   "impact": ["impact on budget", "impact on savings goals"]
 }`
 
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
+    const completion = await ai.client.chat.completions.create({
+      model: ai.model,
       messages: [
         { role: 'system', content: 'You are a helpful financial advisor. Return only valid JSON.' },
         { role: 'user', content: prompt },

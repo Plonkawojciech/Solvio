@@ -1,6 +1,7 @@
 'use client'
 
 import { motion } from 'framer-motion'
+import { AlertCircle, AlertTriangle, Info } from 'lucide-react'
 import { useTranslation } from '@/lib/i18n'
 
 type Budget = {
@@ -40,7 +41,13 @@ function BudgetProgressBar({ percentage }: { percentage: number }) {
       : 'bg-emerald-100 dark:bg-emerald-950/40'
 
   return (
-    <div className={`relative h-3 w-full overflow-hidden rounded-full ${trackClass}`}>
+    <div
+      role="progressbar"
+      aria-valuenow={clamped}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      className={`relative h-3 w-full overflow-hidden rounded-full ${trackClass}`}
+    >
       <motion.div
         className={`h-full rounded-full ${colorClass}`}
         initial={{ width: 0 }}
@@ -114,7 +121,13 @@ export function BudgetOverview({ data, currency }: { data: Budget[]; currency: s
         </div>
 
         <div className="space-y-1.5">
-          <div className={`relative h-2.5 w-full overflow-hidden rounded-full ${summaryTrackColor}`}>
+          <div
+            role="progressbar"
+            aria-valuenow={Math.min(totalProgress, 100)}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            className={`relative h-2.5 w-full overflow-hidden rounded-full ${summaryTrackColor}`}
+          >
             <motion.div
               className={`h-full rounded-full ${summaryProgressColor}`}
               initial={{ width: 0 }}
@@ -145,12 +158,15 @@ export function BudgetOverview({ data, currency }: { data: Budget[]; currency: s
 
         const statusColor =
           percentage >= 100
-            ? 'text-red-500'
+            ? 'text-red-600 dark:text-red-400'
             : percentage >= 90
-            ? 'text-yellow-500'
+            ? 'text-yellow-600 dark:text-yellow-400'
             : percentage >= 70
-            ? 'text-amber-500'
+            ? 'text-amber-600 dark:text-amber-400'
             : ''
+
+        const StatusIcon =
+          percentage >= 100 ? AlertCircle : percentage >= 90 ? AlertTriangle : percentage >= 70 ? Info : null
 
         return (
           <motion.div
@@ -172,8 +188,11 @@ export function BudgetOverview({ data, currency }: { data: Budget[]; currency: s
             <BudgetProgressBar percentage={percentage} />
 
             <div className="flex items-center justify-between">
-              {statusLabel ? (
-                <p className={`text-xs font-medium ${statusColor}`}>{statusLabel}</p>
+              {statusLabel && StatusIcon ? (
+                <p className={`text-xs font-medium flex items-center gap-1 ${statusColor}`} role="status">
+                  <StatusIcon className="h-3 w-3 shrink-0" aria-hidden="true" />
+                  {statusLabel}
+                </p>
               ) : (
                 <span />
               )}

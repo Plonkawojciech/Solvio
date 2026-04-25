@@ -3,11 +3,30 @@ import SwiftUI
 /// Expense browser with search, category + date-range filters, vendor + amount
 /// filters, sort presets with direction indicators, batch selection + delete,
 /// and top Scan Receipt / Add Expense CTAs. Mirrors PWA `/expenses`.
+///
+/// **Reads from `AppDataStore.dashboard.expenses`** — the dashboard payload is
+/// the single source of truth for expenses + categories + settings, so this
+/// screen no longer issues its own `/api/data/expenses` request. Tab switches
+/// to this view are now instant when the dashboard is warm.
 struct ExpensesListView: View {
     @EnvironmentObject private var router: AppRouter
     @EnvironmentObject private var toast: ToastCenter
     @EnvironmentObject private var locale: AppLocale
-    @StateObject private var vm = ExpensesListViewModel()
+    @EnvironmentObject private var store: AppDataStore
+
+    // MARK: - Filter / sort UI state (was on the old view-model)
+
+    @State private var search: String = ""
+    @State private var dateRange: DateRange = .all
+    @State private var categoryFilter: String? = nil
+    @State private var sortField: SortField = .date
+    @State private var sortDir: SortDir = .desc
+    @State private var amountFrom: String = ""
+    @State private var amountTo: String = ""
+    @State private var vendorFilter: String = ""
+    @State private var selectedIds: Set<String> = []
+
+    // MARK: - Sheet / alert state
 
     @State private var showCreate = false
     @State private var pendingDelete: Expense?
@@ -15,6 +34,21 @@ struct ExpensesListView: View {
     @State private var activePanel: TopPanel = .none
 
     enum TopPanel { case none, filters, sort }
+    enum DateRange: Hashable { case all, thisMonth, last30, thisYear }
+    enum SortField: Hashable { case date, amount, title, vendor }
+    enum SortDir: Hashable { case asc, desc }
+
+    // MARK: - Derived state pulled from the store
+
+    private var expenses: [Expense] { store.expenses }
+    private var categories: [Category] { store.categories }
+    private var defaultCurrency: String { store.currency }
+    private var isLoading: Bool { store.dashboardLoading }
+    private var errorMessage: String? { store.dashboardError }
+
+    private var categoryById: [String: Category] {
+        Dictionary(uniqueKeysWithValues: categories.map { ($0.id, $0) })
+    }
 
     var body: some View {
         List {
@@ -39,17 +73,17 @@ struct ExpensesListView: View {
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
         .background(Theme.background)
-        .refreshable { await vm.load() }
-        .task { if vm.expenses.isEmpty { await vm.load() } }
+        .refreshable { await store.awaitDashboard(force: true) }
+        .task { store.ensureDashboard() }
         .animation(.nbSpring, value: activePanel)
-        .animation(.nbSpring, value: vm.selectedIds)
+        .animation(.nbSpring, value: selectedIds)
         .sheet(isPresented: $showCreate) {
-            ExpenseCreateSheet(categories: vm.categories) { payload in
+            ExpenseCreateSheet(categories: categories) { payload in
                 Task {
                     do {
                         _ = try await ExpensesRepo.create(payload)
                         toast.success(locale.t("toast.created"))
-                        await vm.load()
+                        store.didMutateExpenses()
                     } catch {
                         toast.error(locale.t("toast.error"), description: error.localizedDescription)
                     }
@@ -68,12 +102,16 @@ struct ExpensesListView: View {
             Button(locale.t("common.cancel"), role: .cancel) {}
             Button(locale.t("common.delete"), role: .destructive) {
                 Task {
+                    // Optimistic UI: drop the row instantly, refresh in bg.
+                    store.removeExpensesOptimistic(ids: [e.id])
                     do {
                         try await ExpensesRepo.delete(ids: [e.id])
                         toast.success(locale.t("toast.deleted"))
-                        await vm.load()
+                        store.didMutateExpenses()
                     } catch {
                         toast.error(locale.t("toast.error"), description: error.localizedDescription)
+                        // Force-refresh to restore the optimistically-dropped row.
+                        store.didMutateExpenses()
                     }
                 }
             }
@@ -97,7 +135,7 @@ struct ExpensesListView: View {
         NBScreenHeader(
             eyebrow: locale.t("expenses.eyebrow"),
             title: locale.t("expenses.title"),
-            subtitle: "\(vm.visible.count) \(locale.t("dashboard.transactions"))"
+            subtitle: "\(visible.count) \(locale.t("dashboard.transactions"))"
         )
     }
 
@@ -105,16 +143,16 @@ struct ExpensesListView: View {
 
     @ViewBuilder
     private var bulkDeleteBar: some View {
-        if !vm.selectedIds.isEmpty {
+        if !selectedIds.isEmpty {
             HStack(spacing: Theme.Spacing.xs) {
-                Text("\(vm.selectedIds.count) \(locale.t("expenses.selectionMode"))")
+                Text("\(selectedIds.count) \(locale.t("expenses.selectionMode"))")
                     .font(AppFont.mono(11))
                     .tracking(0.5)
                     .textCase(.uppercase)
                     .foregroundColor(Theme.mutedForeground)
                 Spacer()
                 Button(locale.t("expenses.deselectAll")) {
-                    vm.clearSelection()
+                    selectedIds.removeAll()
                 }
                 .buttonStyle(.plain)
                 .font(AppFont.mono(11))
@@ -135,7 +173,7 @@ struct ExpensesListView: View {
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: "trash")
-                        Text("\(locale.t("expenses.deleteSelected")) (\(vm.selectedIds.count))")
+                        Text("\(locale.t("expenses.deleteSelected")) (\(selectedIds.count))")
                     }
                     .font(AppFont.mono(11))
                     .tracking(0.5)
@@ -161,12 +199,12 @@ struct ExpensesListView: View {
         HStack(spacing: Theme.Spacing.xs) {
             Image(systemName: "magnifyingglass")
                 .foregroundColor(Theme.mutedForeground)
-            TextField(locale.t("expenses.searchPlaceholder"), text: $vm.search)
+            TextField(locale.t("expenses.searchPlaceholder"), text: $search)
                 .font(AppFont.body)
                 .autocorrectionDisabled()
                 .textInputAutocapitalization(.never)
-            if !vm.search.isEmpty {
-                Button { vm.search = "" } label: {
+            if !search.isEmpty {
+                Button { search = "" } label: {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundColor(Theme.mutedForeground)
                 }
@@ -244,11 +282,11 @@ struct ExpensesListView: View {
     }
 
     private var hasActiveFilters: Bool {
-        vm.dateRange != .all
-            || vm.categoryFilter != nil
-            || !vm.amountFrom.isEmpty
-            || !vm.amountTo.isEmpty
-            || !vm.vendorFilter.isEmpty
+        dateRange != .all
+            || categoryFilter != nil
+            || !amountFrom.isEmpty
+            || !amountTo.isEmpty
+            || !vendorFilter.isEmpty
     }
 
     @ViewBuilder
@@ -272,12 +310,12 @@ struct ExpensesListView: View {
                 }
             }
 
-            if !vm.categories.isEmpty {
+            if !categories.isEmpty {
                 panelSectionLabel(locale.t("expenses.category").uppercased())
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 6) {
                         categoryChip(id: nil, label: locale.t("expenses.allCategories"))
-                        ForEach(vm.categories) { c in
+                        ForEach(categories) { c in
                             categoryChip(id: c.id, label: c.name)
                         }
                     }
@@ -292,11 +330,11 @@ struct ExpensesListView: View {
 
             if hasActiveFilters {
                 Button {
-                    vm.dateRange = .all
-                    vm.categoryFilter = nil
-                    vm.amountFrom = ""
-                    vm.amountTo = ""
-                    vm.vendorFilter = ""
+                    dateRange = .all
+                    categoryFilter = nil
+                    amountFrom = ""
+                    amountTo = ""
+                    vendorFilter = ""
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: "xmark.circle")
@@ -342,13 +380,13 @@ struct ExpensesListView: View {
     }
 
     private func sortOptionRow(
-        _ field: ExpensesListViewModel.SortField,
+        _ field: SortField,
         label: String
     ) -> some View {
-        let active = vm.sortField == field
-        let arrow = active ? (vm.sortDir == .asc ? "chevron.up" : "chevron.down") : ""
+        let active = sortField == field
+        let arrow = active ? (sortDir == .asc ? "chevron.up" : "chevron.down") : ""
         return Button {
-            vm.toggleSort(field)
+            toggleSort(field)
         } label: {
             HStack(spacing: 8) {
                 Text(label)
@@ -356,7 +394,7 @@ struct ExpensesListView: View {
                     .foregroundColor(Theme.foreground)
                 Spacer()
                 if active {
-                    Text(vm.sortDir == .asc ? locale.t("expenses.sortAsc") : locale.t("expenses.sortDesc"))
+                    Text(sortDir == .asc ? locale.t("expenses.sortAsc") : locale.t("expenses.sortDesc"))
                         .font(AppFont.mono(10))
                         .tracking(0.5)
                         .textCase(.uppercase)
@@ -386,7 +424,7 @@ struct ExpensesListView: View {
 
     private var amountRangeRow: some View {
         HStack(spacing: Theme.Spacing.xs) {
-            TextField(locale.t("expenses.amountFrom"), text: $vm.amountFrom)
+            TextField(locale.t("expenses.amountFrom"), text: $amountFrom)
                 .keyboardType(.decimalPad)
                 .font(AppFont.body)
                 .padding(.horizontal, Theme.Spacing.sm)
@@ -400,7 +438,7 @@ struct ExpensesListView: View {
             Text("–")
                 .font(AppFont.body)
                 .foregroundColor(Theme.mutedForeground)
-            TextField(locale.t("expenses.amountTo"), text: $vm.amountTo)
+            TextField(locale.t("expenses.amountTo"), text: $amountTo)
                 .keyboardType(.decimalPad)
                 .font(AppFont.body)
                 .padding(.horizontal, Theme.Spacing.sm)
@@ -411,10 +449,10 @@ struct ExpensesListView: View {
                     RoundedRectangle(cornerRadius: Theme.Radius.md)
                         .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
                 )
-            if !vm.amountFrom.isEmpty || !vm.amountTo.isEmpty {
+            if !amountFrom.isEmpty || !amountTo.isEmpty {
                 Button {
-                    vm.amountFrom = ""
-                    vm.amountTo = ""
+                    amountFrom = ""
+                    amountTo = ""
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundColor(Theme.mutedForeground)
@@ -430,12 +468,12 @@ struct ExpensesListView: View {
         HStack(spacing: Theme.Spacing.xs) {
             Image(systemName: "building.2")
                 .foregroundColor(Theme.mutedForeground)
-            TextField(locale.t("expenses.vendorPlaceholder"), text: $vm.vendorFilter)
+            TextField(locale.t("expenses.vendorPlaceholder"), text: $vendorFilter)
                 .font(AppFont.body)
                 .autocorrectionDisabled()
                 .textInputAutocapitalization(.never)
-            if !vm.vendorFilter.isEmpty {
-                Button { vm.vendorFilter = "" } label: {
+            if !vendorFilter.isEmpty {
+                Button { vendorFilter = "" } label: {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundColor(Theme.mutedForeground)
                 }
@@ -452,16 +490,16 @@ struct ExpensesListView: View {
         )
     }
 
-    private func dateChip(_ range: ExpensesListViewModel.DateRange, label: String) -> some View {
-        Button { vm.dateRange = range } label: {
-            chipStyled(label, active: vm.dateRange == range)
+    private func dateChip(_ range: DateRange, label: String) -> some View {
+        Button { dateRange = range } label: {
+            chipStyled(label, active: dateRange == range)
         }
         .buttonStyle(.plain)
     }
 
     private func categoryChip(id: String?, label: String) -> some View {
-        Button { vm.categoryFilter = id } label: {
-            chipStyled(label, active: vm.categoryFilter == id)
+        Button { categoryFilter = id } label: {
+            chipStyled(label, active: categoryFilter == id)
         }
         .buttonStyle(.plain)
     }
@@ -484,7 +522,7 @@ struct ExpensesListView: View {
 
     @ViewBuilder
     private var content: some View {
-        if vm.isLoading && vm.expenses.isEmpty {
+        if isLoading && expenses.isEmpty {
             Section {
                 NBLoadingCard()
                     .padding(.horizontal, Theme.Spacing.md)
@@ -492,21 +530,23 @@ struct ExpensesListView: View {
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
             .listRowInsets(EdgeInsets())
-        } else if let message = vm.errorMessage {
+        } else if let message = errorMessage, expenses.isEmpty {
             Section {
-                NBErrorCard(message: message) { Task { await vm.load() } }
-                    .padding(.horizontal, Theme.Spacing.md)
+                NBErrorCard(message: message) {
+                    Task { await store.awaitDashboard(force: true) }
+                }
+                .padding(.horizontal, Theme.Spacing.md)
             }
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
             .listRowInsets(EdgeInsets())
-        } else if vm.visible.isEmpty {
+        } else if visible.isEmpty {
             Section {
                 NBEmptyState(
                     systemImage: "tray",
-                    title: vm.search.isEmpty ? locale.t("expenses.noExpensesUpper") : locale.t("common.empty"),
-                    subtitle: vm.search.isEmpty ? locale.t("expenses.addFirst") : locale.t("expenses.clearFilters"),
-                    action: vm.search.isEmpty ? (label: locale.t("expenses.newExpense"), run: { showCreate = true }) : nil
+                    title: search.isEmpty ? locale.t("expenses.noExpensesUpper") : locale.t("common.empty"),
+                    subtitle: search.isEmpty ? locale.t("expenses.addFirst") : locale.t("expenses.clearFilters"),
+                    action: search.isEmpty ? (label: locale.t("expenses.newExpense"), run: { showCreate = true }) : nil
                 )
                 .padding(.horizontal, Theme.Spacing.md)
             }
@@ -515,7 +555,7 @@ struct ExpensesListView: View {
             .listRowInsets(EdgeInsets())
         } else {
             Section {
-                ForEach(vm.visible) { e in
+                ForEach(visible) { e in
                     row(e)
                         .listRowBackground(Color.clear)
                         .listRowSeparator(.hidden)
@@ -544,11 +584,11 @@ struct ExpensesListView: View {
     }
 
     private func row(_ e: Expense) -> some View {
-        let isSelected = vm.selectedIds.contains(e.id)
-        let selectionActive = !vm.selectedIds.isEmpty
+        let isSelected = selectedIds.contains(e.id)
+        let selectionActive = !selectedIds.isEmpty
         return Button {
             if selectionActive {
-                vm.toggleSelection(e.id)
+                toggleSelection(e.id)
             } else {
                 router.push(.expenseDetail(id: e.id))
             }
@@ -593,7 +633,7 @@ struct ExpensesListView: View {
                     .foregroundColor(Theme.mutedForeground)
                 }
                 Spacer()
-                Text(Fmt.amount(e.amount, currency: e.currency ?? vm.defaultCurrency))
+                Text(Fmt.amount(e.amount, currency: e.currency ?? defaultCurrency))
                     .font(AppFont.bodyMedium)
                     .foregroundColor(Theme.foreground)
             }
@@ -607,12 +647,12 @@ struct ExpensesListView: View {
         .buttonStyle(.plain)
         .simultaneousGesture(
             LongPressGesture(minimumDuration: 0.4).onEnded { _ in
-                vm.toggleSelection(e.id)
+                toggleSelection(e.id)
             }
         )
         .contextMenu {
             Button {
-                vm.toggleSelection(e.id)
+                toggleSelection(e.id)
             } label: {
                 Label(
                     isSelected ? locale.t("expenses.deselectAll") : locale.t("expenses.selectionMode"),
@@ -627,60 +667,13 @@ struct ExpensesListView: View {
         }
     }
 
-    private func performBulkDelete() async {
-        let ids = Array(vm.selectedIds)
-        guard !ids.isEmpty else { return }
-        do {
-            try await ExpensesRepo.delete(ids: ids)
-            toast.success(locale.t("toast.deleted"))
-            vm.clearSelection()
-            await vm.load()
-        } catch {
-            toast.error(locale.t("toast.error"), description: error.localizedDescription)
-        }
+    // MARK: - Selection helpers
+
+    private func toggleSelection(_ id: String) {
+        if selectedIds.contains(id) { selectedIds.remove(id) } else { selectedIds.insert(id) }
     }
 
-    private func iconName(for e: Expense) -> String {
-        if let icon = e.categoryIcon, !icon.isEmpty { return icon }
-        if let id = e.categoryId, let c = vm.categoryById[id], let icon = c.icon, !icon.isEmpty { return icon }
-        return e.receiptId != nil ? "doc.text" : "creditcard"
-    }
-
-    private func categoryName(for e: Expense) -> String? {
-        if let n = e.categoryName, !n.isEmpty { return n }
-        if let id = e.categoryId, let c = vm.categoryById[id] { return c.name }
-        return nil
-    }
-}
-
-// MARK: - View model
-
-@MainActor
-final class ExpensesListViewModel: ObservableObject {
-    enum DateRange: Hashable { case all, thisMonth, last30, thisYear }
-    enum SortField: Hashable { case date, amount, title, vendor }
-    enum SortDir: Hashable { case asc, desc }
-
-    @Published var expenses: [Expense] = []
-    @Published var categories: [Category] = []
-    @Published var search: String = ""
-    @Published var dateRange: DateRange = .all
-    @Published var categoryFilter: String? = nil
-    @Published var sortField: SortField = .date
-    @Published var sortDir: SortDir = .desc
-    @Published var amountFrom: String = ""
-    @Published var amountTo: String = ""
-    @Published var vendorFilter: String = ""
-    @Published var selectedIds: Set<String> = []
-    @Published var isLoading = false
-    @Published var errorMessage: String?
-    @Published var defaultCurrency: String = "PLN"
-
-    var categoryById: [String: Category] {
-        Dictionary(uniqueKeysWithValues: categories.map { ($0.id, $0) })
-    }
-
-    func toggleSort(_ field: SortField) {
+    private func toggleSort(_ field: SortField) {
         if sortField == field {
             sortDir = (sortDir == .asc) ? .desc : .asc
         } else {
@@ -689,15 +682,43 @@ final class ExpensesListViewModel: ObservableObject {
         }
     }
 
-    func toggleSelection(_ id: String) {
-        if selectedIds.contains(id) { selectedIds.remove(id) } else { selectedIds.insert(id) }
-    }
-
-    func clearSelection() {
+    private func performBulkDelete() async {
+        let ids = Array(selectedIds)
+        guard !ids.isEmpty else { return }
+        let idSet = Set(ids)
+        // Optimistic: clear the selection + drop the rows immediately so the
+        // UI feels instant. A failed delete will trigger a refresh that
+        // restores the rows.
         selectedIds.removeAll()
+        store.removeExpensesOptimistic(ids: idSet)
+        do {
+            try await ExpensesRepo.delete(ids: ids)
+            toast.success(locale.t("toast.deleted"))
+            store.didMutateExpenses()
+        } catch {
+            toast.error(locale.t("toast.error"), description: error.localizedDescription)
+            store.didMutateExpenses()
+        }
     }
 
-    var visible: [Expense] {
+    private func iconName(for e: Expense) -> String {
+        if let icon = e.categoryIcon, !icon.isEmpty { return icon }
+        if let id = e.categoryId, let c = categoryById[id], let icon = c.icon, !icon.isEmpty { return icon }
+        return e.receiptId != nil ? "doc.text" : "creditcard"
+    }
+
+    private func categoryName(for e: Expense) -> String? {
+        if let n = e.categoryName, !n.isEmpty { return n }
+        if let id = e.categoryId, let c = categoryById[id] { return c.name }
+        return nil
+    }
+
+    // MARK: - Filtered + sorted view of the expenses
+
+    /// Mirrors the old `ExpensesListViewModel.visible` but pulls from
+    /// `store.expenses` so updates propagate the moment the store
+    /// publishes a new dashboard payload.
+    private var visible: [Expense] {
         let q = search.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
         let vq = vendorFilter.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
         let minAmt = Double(amountFrom.replacingOccurrences(of: ",", with: "."))
@@ -744,20 +765,6 @@ final class ExpensesListViewModel: ObservableObject {
                 cmp = lv.localizedCaseInsensitiveCompare(rv).rawValue
             }
             return sortDir == .asc ? cmp < 0 : cmp > 0
-        }
-    }
-
-    func load() async {
-        isLoading = true
-        errorMessage = nil
-        defer { isLoading = false }
-        do {
-            let response = try await ExpensesRepo.list()
-            expenses = response.expenses
-            categories = response.categories ?? categories
-            if let c = response.settings?.currency { defaultCurrency = c }
-        } catch {
-            errorMessage = error.localizedDescription
         }
     }
 

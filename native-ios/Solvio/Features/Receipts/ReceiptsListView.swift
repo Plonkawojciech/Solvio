@@ -10,15 +10,21 @@ struct ReceiptsListView: View {
     @EnvironmentObject private var router: AppRouter
     @EnvironmentObject private var toast: ToastCenter
     @EnvironmentObject private var locale: AppLocale
-    @StateObject private var vm = ReceiptsListViewModel()
+    /// Receipts now live in the central store. The list reads from
+    /// `store.receipts` and only triggers a background refresh when
+    /// the cache is stale — no more spinner on every navigation.
+    @EnvironmentObject private var store: AppDataStore
+    /// Multi-image background scanner. The single-shot OCR-confirm flow
+    /// has been retired in favour of dropping all photos straight into
+    /// the queue; the user reviews / edits them later from receipt detail.
+    @EnvironmentObject private var scanQueue: ScanQueueManager
 
     @State private var showCamera = false
     @State private var showPhotoPicker = false
-    @State private var pickedItem: PhotosPickerItem?
+    @State private var pickedItems: [PhotosPickerItem] = []
     @State private var showCreateVirtual = false
     @State private var showSourcePicker = false
     @State private var pendingDelete: Receipt?
-    @State private var ocrDraft: OcrDraft?
 
     var body: some View {
         List {
@@ -27,7 +33,7 @@ struct ReceiptsListView: View {
                     NBScreenHeader(
                         eyebrow: locale.t("receipts.eyebrow"),
                         title: locale.t("receipts.title"),
-                        subtitle: vm.receipts.isEmpty ? locale.t("receipts.getStarted") : "\(vm.receipts.count) \(locale.t("receipts.savedSuffix"))"
+                        subtitle: store.receipts.isEmpty ? locale.t("receipts.getStarted") : "\(store.receipts.count) \(locale.t("receipts.savedSuffix"))"
                     )
                     ctaRow
                 }
@@ -53,8 +59,8 @@ struct ReceiptsListView: View {
         .background(Theme.background)
         .navigationTitle(locale.t("receipts.title"))
         .navigationBarTitleDisplayMode(.inline)
-        .refreshable { await vm.load() }
-        .task { if vm.receipts.isEmpty { await vm.load() } }
+        .refreshable { await store.awaitReceipts(force: true) }
+        .task { store.ensureReceipts() }
         .confirmationDialog(locale.t("receipts.chooseSource"), isPresented: $showSourcePicker, titleVisibility: .visible) {
             if UIImagePickerController.isSourceTypeAvailable(.camera) {
                 Button(locale.t("receipts.takePhoto")) { showCamera = true }
@@ -63,54 +69,46 @@ struct ReceiptsListView: View {
             Button(locale.t("common.cancel"), role: .cancel) {}
         }
         .sheet(isPresented: $showCamera) {
-            CameraPicker { image in handle(image: image) }
+            CameraPicker { image in
+                scanQueue.enqueue([image])
+                toast.success(locale.t("scanQueue.batchSavedSingle"))
+            }
         }
         .sheet(isPresented: $showCreateVirtual) {
             NavigationStack {
                 VirtualReceiptCreateView { created in
-                    Task {
-                        await vm.load()
-                        toast.success(locale.t("receipts.saved"), description: created.vendor ?? locale.t("receipts.virtualReceipt"))
-                        router.push(.receiptDetail(id: created.id))
+                    store.didMutateReceipts()
+                    toast.success(locale.t("receipts.saved"), description: created.vendor ?? locale.t("receipts.virtualReceipt"))
+                    router.push(.receiptDetail(id: created.id))
+                }
+            }
+            .environmentObject(locale)
+        }
+        .photosPicker(
+            isPresented: $showPhotoPicker,
+            selection: $pickedItems,
+            maxSelectionCount: 20,
+            matching: .images
+        )
+        .onChange(of: pickedItems) { newItems in
+            guard !newItems.isEmpty else { return }
+            let captured = newItems
+            pickedItems = []
+            Task {
+                var images: [UIImage] = []
+                for item in captured {
+                    if let data = try? await item.loadTransferable(type: Data.self),
+                       let ui = UIImage(data: data) {
+                        images.append(ui)
                     }
                 }
-            }
-            .environmentObject(locale)
-        }
-        .sheet(item: $ocrDraft) { draft in
-            OcrConfirmSheet(draft: draft) { saved in
-                Task {
-                    await vm.load()
-                    toast.success(locale.t("receipts.saved"), description: saved.vendor ?? locale.t("receipts.savedScan"))
-                    ocrDraft = nil
-                    router.push(.receiptDetail(id: saved.id))
+                guard !images.isEmpty else { return }
+                scanQueue.enqueue(images)
+                if images.count == 1 {
+                    toast.success(locale.t("scanQueue.batchSavedSingle"))
+                } else {
+                    toast.success(String(format: locale.t("scanQueue.batchSaved"), images.count))
                 }
-            } onCancel: {
-                ocrDraft = nil
-            }
-            .environmentObject(locale)
-        }
-        .photosPicker(isPresented: $showPhotoPicker, selection: $pickedItem, matching: .images)
-        .onChange(of: pickedItem) { newItem in
-            guard let newItem else { return }
-            Task {
-                if let data = try? await newItem.loadTransferable(type: Data.self),
-                   let ui = UIImage(data: data) {
-                    handle(image: ui)
-                }
-                pickedItem = nil
-            }
-        }
-        .overlay {
-            if vm.isScanning {
-                VStack(spacing: Theme.Spacing.sm) {
-                    ProgressView().tint(Theme.foreground)
-                    Text(locale.t("receipts.scanning"))
-                        .font(AppFont.bodyMedium)
-                        .foregroundColor(Theme.foreground)
-                }
-                .padding(Theme.Spacing.md)
-                .nbCard(radius: Theme.Radius.md, shadow: Theme.Shadow.lg)
             }
         }
         .confirmationDialog(
@@ -120,7 +118,7 @@ struct ReceiptsListView: View {
         ) {
             Button(locale.t("common.delete"), role: .destructive) {
                 if let r = pendingDelete {
-                    Task { await vm.delete(id: r.id, locale: locale, toast: toast) }
+                    Task { await deleteReceipt(id: r.id) }
                 }
                 pendingDelete = nil
             }
@@ -133,12 +131,30 @@ struct ReceiptsListView: View {
     // MARK: - Prominent CTA row
 
     private var ctaRow: some View {
-        ctaTile(
-            icon: "square.and.pencil",
-            title: locale.t("virtualReceipt.eyebrow").capitalized,
-            subtitle: locale.t("receipts.virtualSubtitle"),
-            primary: false
-        ) { showCreateVirtual = true }
+        VStack(spacing: Theme.Spacing.sm) {
+            ctaTile(
+                icon: "doc.text.viewfinder",
+                title: locale.t("receipts.takePhoto"),
+                subtitle: locale.t("receipts.scanMultipleSubtitle"),
+                primary: true
+            ) { showSourcePicker = true }
+            ctaTile(
+                icon: "square.and.pencil",
+                title: locale.t("virtualReceipt.eyebrow").capitalized,
+                subtitle: locale.t("receipts.virtualSubtitle"),
+                primary: false
+            ) { showCreateVirtual = true }
+        }
+    }
+
+    private func deleteReceipt(id: String) async {
+        do {
+            try await ReceiptsRepo.delete(id: id)
+            store.didMutateReceipts()
+            toast.success(locale.t("toast.deleted"))
+        } catch {
+            toast.error(locale.t("toast.error"), description: error.localizedDescription)
+        }
     }
 
     private func ctaTile(icon: String, title: String, subtitle: String, primary: Bool, action: @escaping () -> Void) -> some View {
@@ -179,7 +195,7 @@ struct ReceiptsListView: View {
 
     @ViewBuilder
     private var content: some View {
-        if vm.isLoading && vm.receipts.isEmpty {
+        if store.receiptsLoading && store.receipts.isEmpty {
             Section {
                 NBLoadingCard()
                     .padding(.horizontal, Theme.Spacing.md)
@@ -187,15 +203,17 @@ struct ReceiptsListView: View {
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
             .listRowInsets(EdgeInsets())
-        } else if let message = vm.errorMessage {
+        } else if let message = store.receiptsError, store.receipts.isEmpty {
             Section {
-                NBErrorCard(message: message) { Task { await vm.load() } }
-                    .padding(.horizontal, Theme.Spacing.md)
+                NBErrorCard(message: message) {
+                    Task { await store.awaitReceipts(force: true) }
+                }
+                .padding(.horizontal, Theme.Spacing.md)
             }
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
             .listRowInsets(EdgeInsets())
-        } else if vm.receipts.isEmpty {
+        } else if store.receipts.isEmpty {
             Section {
                 NBEmptyState(
                     systemImage: "doc.text.viewfinder",
@@ -218,7 +236,7 @@ struct ReceiptsListView: View {
             .listRowInsets(EdgeInsets())
 
             Section {
-                ForEach(vm.receipts) { r in
+                ForEach(store.receipts) { r in
                     receiptRow(r)
                         .listRowBackground(Color.clear)
                         .listRowSeparator(.hidden)
@@ -301,80 +319,11 @@ struct ReceiptsListView: View {
         }
     }
 
-    // MARK: - OCR handler
-
-    private func handle(image: UIImage) {
-        let resized = ScanFlowViewModel.resizeForUpload(image)
-        guard let jpeg = ScanFlowViewModel.compressForUpload(resized) else {
-            toast.error(locale.t("receipts.imageConversionFailed"))
-            return
-        }
-        Task {
-            await vm.scan(jpeg: jpeg, locale: locale, toast: toast) { draft in
-                ocrDraft = draft
-            }
-        }
-    }
 }
 
-// MARK: - ViewModel
-
-@MainActor
-final class ReceiptsListViewModel: ObservableObject {
-    @Published var receipts: [Receipt] = []
-    @Published var isLoading = false
-    @Published var isScanning = false
-    @Published var errorMessage: String?
-
-    func load() async {
-        isLoading = true
-        errorMessage = nil
-        defer { isLoading = false }
-        do {
-            receipts = try await ReceiptsRepo.list()
-            #if DEBUG
-            print("[Receipts] Loaded \(receipts.count) receipts")
-            #endif
-        } catch {
-            #if DEBUG
-            print("[Receipts] Load FAILED: \(error)")
-            #endif
-            errorMessage = error.localizedDescription
-        }
-    }
-
-    func delete(id: String, locale: AppLocale, toast: ToastCenter) async {
-        do {
-            try await ReceiptsRepo.delete(id: id)
-            toast.success(locale.t("toast.deleted"))
-            await load()
-        } catch {
-            toast.error(locale.t("toast.error"), description: error.localizedDescription)
-        }
-    }
-
-    /// Uploads the JPEG to `/api/v1/ocr-receipt` (multipart `files` field).
-    /// The backend already persists a receipt row and returns its id plus
-    /// the extracted data — we surface that as an `OcrDraft` so the user
-    /// can review/edit before keeping it (or discard it).
-    func scan(jpeg: Data, locale: AppLocale, toast: ToastCenter, completion: @escaping (OcrDraft) -> Void) async {
-        isScanning = true
-        defer { isScanning = false }
-        do {
-            let response = try await ReceiptsRepo.scan(imageData: jpeg)
-            guard let first = response.firstSuccess,
-                  let receiptId = first.receiptId else {
-                let msg = response.results.first?.error ?? locale.t("receipts.noReceiptDetected")
-                toast.error(locale.t("receipts.scanFailed"), description: msg)
-                return
-            }
-            let draft = OcrDraft(receiptId: receiptId, data: first.data)
-            completion(draft)
-        } catch {
-            toast.error(locale.t("receipts.scanFailed"), description: error.localizedDescription)
-        }
-    }
-}
+// NOTE: The legacy `ReceiptsListViewModel` was removed as part of the
+// AppDataStore migration — the view now reads from `store.receipts`
+// directly and pushes uploads through `ScanQueueManager`.
 
 // MARK: - OCR draft + confirm sheet
 

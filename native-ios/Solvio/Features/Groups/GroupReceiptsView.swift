@@ -16,7 +16,7 @@ struct GroupReceiptsView: View {
             VStack(alignment: .leading, spacing: Theme.Spacing.md) {
                 if vm.isLoading && vm.data == nil {
                     NBLoadingCard()
-                } else if let message = vm.errorMessage {
+                } else if let message = vm.errorMessage, vm.data == nil {
                     NBErrorCard(message: message) { Task { await vm.load(groupId: groupId) } }
                 } else if let data = vm.data {
                     header(data)

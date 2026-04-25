@@ -30,7 +30,10 @@ struct ReportsView: View {
                 header
                 if isLoading && yearBlocks.isEmpty {
                     NBLoadingCard()
-                } else if let msg = errorMessage {
+                } else if let msg = errorMessage, yearBlocks.isEmpty {
+                    // Error card only when there's nothing on screen. If
+                    // reports are already loaded a transient refresh fail
+                    // shouldn't replace them with an error UI.
                     NBErrorCard(message: msg) { Task { await loadData() } }
                 } else if yearBlocks.isEmpty {
                     emptyState

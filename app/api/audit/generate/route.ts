@@ -2,7 +2,9 @@ import { auth } from '@/lib/auth-compat'
 import { NextResponse } from 'next/server'
 import { db, expenses, receipts, categories } from '@/lib/db'
 import { eq, gte, and, desc } from 'drizzle-orm'
-import OpenAI from 'openai'
+import { getAIClient } from '@/lib/ai-client'
+import { rateLimit } from '@/lib/rate-limit'
+import { GROCERY_STORES } from '@/lib/stores'
 
 interface ReceiptItem {
   name: string
@@ -24,6 +26,15 @@ export async function POST(request: Request) {
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+  // RATE LIMIT: 5 requests per hour per userId
+  const rl = rateLimit(`ai:audit:${userId}`, { maxRequests: 5, windowMs: 60 * 60 * 1000 })
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { error: 'Rate limit exceeded. Try again later.' },
+      { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } },
+    )
+  }
+
   const { lang = 'en', currency = 'PLN' } = await request.json().catch(() => ({}))
   const isPolish = lang === 'pl'
 
@@ -33,7 +44,13 @@ export async function POST(request: Request) {
   const sinceStr = since.toISOString().slice(0, 10)
 
   const [receiptsData, expensesData, cats] = await Promise.all([
-    db.select().from(receipts)
+    db.select({
+      id: receipts.id,
+      vendor: receipts.vendor,
+      date: receipts.date,
+      total: receipts.total,
+      items: receipts.items,
+    }).from(receipts)
       .where(and(eq(receipts.userId, userId), gte(receipts.date, sinceStr)))
       .orderBy(desc(receipts.createdAt))
       .limit(100),
@@ -61,6 +78,7 @@ export async function POST(request: Request) {
   for (const receipt of receiptsData) {
     if (!receipt.items) continue
     try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const items: ReceiptItem[] = Array.isArray(receipt.items) ? receipt.items : (receipt.items as any).items || []
       for (const item of items) {
         if (!item.name || !item.price || item.price <= 0) continue
@@ -135,7 +153,7 @@ Odpowiedz TYLKO w formacie JSON (bez markdown, bez backticks):
     {
       "product": "nazwa produktu",
       "pricePaid": 0.00,
-      "prices": { "Biedronka": 0.00, "Lidl": 0.00, "Kaufland": 0.00, "Auchan": 0.00 },
+      "prices": { ${GROCERY_STORES.slice(0, 6).map(s => `"${s}": 0.00`).join(', ')} },
       "cheapestStore": "nazwa sklepu",
       "cheapestPrice": 0.00,
       "potentialSaving": 0.00,
@@ -159,7 +177,7 @@ Respond ONLY in JSON format (no markdown, no backticks):
     {
       "product": "product name",
       "pricePaid": 0.00,
-      "prices": { "Biedronka": 0.00, "Lidl": 0.00, "Kaufland": 0.00, "Auchan": 0.00 },
+      "prices": { ${GROCERY_STORES.slice(0, 6).map(s => `"${s}": 0.00`).join(', ')} },
       "cheapestStore": "store name",
       "cheapestPrice": 0.00,
       "potentialSaving": 0.00,
@@ -174,31 +192,42 @@ Respond ONLY in JSON format (no markdown, no backticks):
 }`
 
   try {
-    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+    const ai = getAIClient()
+    if (!ai) {
+      return NextResponse.json({ error: 'AI service not configured' }, { status: 503 })
+    }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let webData: any = null
 
-    // Try web search with Responses API
-    try {
-      const webResponse = await openai.responses.create({
-        model: 'gpt-4o',
-        tools: [{ type: 'web_search_preview' }],
-        input: searchPrompt,
-      } as any)
-      const rawText = (webResponse as any).output_text || ''
-      // Extract JSON from the response
-      const jsonMatch = rawText.match(/\{[\s\S]*\}/)
-      if (jsonMatch) {
-        webData = JSON.parse(jsonMatch[0])
+    // Web search only available with OpenAI direct (Azure doesn't support Responses API)
+    if (ai.backend === 'openai') {
+      try {
+        const webSearchCall = ai.client.responses.create({
+          model: ai.model,
+          tools: [{ type: 'web_search_preview' }],
+          input: searchPrompt,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        } as any)
+        const webSearchTimeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), 15000))
+        const webResponse = await Promise.race([webSearchCall, webSearchTimeout])
+        if (webResponse) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const rawText = (webResponse as any).output_text || ''
+          const jsonMatch = rawText.match(/\{[\s\S]*\}/)
+          if (jsonMatch) {
+            webData = JSON.parse(jsonMatch[0])
+          }
+        }
+      } catch {
+        // Web search unavailable, fall back to chat completions
       }
-    } catch {
-      // Web search unavailable, fall back to chat completions
     }
 
     // Fallback: use chat completions without web search
     if (!webData) {
-      const completion = await openai.chat.completions.create({
-        model: 'gpt-4o-mini',
+      const completion = await ai.client.chat.completions.create({
+        model: ai.model,
         messages: [{
           role: 'user',
           content: searchPrompt + (isPolish
@@ -211,27 +240,18 @@ Respond ONLY in JSON format (no markdown, no backticks):
       webData = JSON.parse(completion.choices[0]?.message?.content || '{}')
     }
 
-    // Generate AI summary
-    const summaryPrompt = isPolish
-      ? `Na podstawie tych danych finansowych użytkownika, napisz krótkie (3-4 zdania) podsumowanie audytu tygodniowego po polsku:
-- Łącznie wydano: ${totalSpent.toFixed(2)} ${currency} w ${transactionCount} transakcjach
-- Potencjalne oszczędności: ${webData.totalPotentialSaving?.toFixed(2) || '?'} ${currency}
-- Najlepszy sklep: ${webData.bestStore || '?'}
-- Kategorie: ${JSON.stringify(categoryMap)}
-Bądź przyjazny, konkretny i motywujący. Zaadresuj bezpośrednio do użytkownika ("Ty").`
-      : `Based on the user's financial data, write a short (3-4 sentence) weekly audit summary in English:
-- Total spent: ${totalSpent.toFixed(2)} ${currency} in ${transactionCount} transactions
-- Potential savings: ${webData.totalPotentialSaving?.toFixed(2) || '?'} ${currency}
-- Best store: ${webData.bestStore || '?'}
-- Categories: ${JSON.stringify(categoryMap)}
-Be friendly, specific and motivating. Address the user directly ("you").`
+    // Generate summary from template instead of a second OpenAI call (saves 2-3s)
+    const saving = webData.totalPotentialSaving?.toFixed(2) || '0.00'
+    const bestStoreText = webData.bestStore || (isPolish ? 'nieznany' : 'unknown')
+    const topCats = Object.entries(categoryMap)
+      .sort((a, b) => (b[1] as number) - (a[1] as number))
+      .slice(0, 2)
+      .map(([cat]) => cat)
+      .join(isPolish ? ' i ' : ' and ')
 
-    const summaryCompletion = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [{ role: 'user', content: summaryPrompt }],
-      temperature: 0.5,
-    })
-    const aiSummary = summaryCompletion.choices[0]?.message?.content || ''
+    const aiSummary = isPolish
+      ? `W ostatnich 30 dniach wydałeś ${totalSpent.toFixed(2)} ${currency} w ${transactionCount} transakcjach. Twoje główne kategorie to ${topCats}. Możesz potencjalnie zaoszczędzić ${saving} ${currency} robiąc zakupy w ${bestStoreText}. ${webData.topTip || 'Sprawdzaj gazetki promocyjne przed zakupami!'}`
+      : `Over the last 30 days you spent ${totalSpent.toFixed(2)} ${currency} across ${transactionCount} transactions. Your top categories are ${topCats}. You could potentially save ${saving} ${currency} by shopping at ${bestStoreText}. ${webData.topTip || 'Check weekly flyers before shopping!'}`
 
     return NextResponse.json({
       period: { from: sinceStr, to: new Date().toISOString().slice(0, 10) },

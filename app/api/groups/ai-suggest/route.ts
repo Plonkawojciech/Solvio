@@ -1,12 +1,20 @@
 import { auth } from '@/lib/auth-compat'
 import { NextResponse } from 'next/server'
-import OpenAI from 'openai'
+import { getAIClient } from '@/lib/ai-client'
+import { rateLimit } from '@/lib/rate-limit'
 
 export async function POST(request: Request) {
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+  // SECURITY FIX: Rate limit AI endpoint to prevent cost abuse
+  const rl = rateLimit(`ai:${userId}`, { maxRequests: 10, windowMs: 3600000 })
+  if (!rl.allowed) return NextResponse.json({ error: 'Too many requests' }, { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } })
+
+  const ai = getAIClient()
+  if (!ai) {
+    return NextResponse.json({ error: 'AI service not configured' }, { status: 503 })
+  }
 
   try {
     const { items, members, context, lang = 'en' } = await request.json()
@@ -48,8 +56,8 @@ Return ONLY valid JSON (no markdown, no extra text):
   "summary": "1-2 sentence summary of the suggested split"
 }`
 
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
+    const completion = await ai.client.chat.completions.create({
+      model: ai.model,
       messages: [{ role: 'user', content: prompt }],
       temperature: 0.3,
       max_tokens: 1000,

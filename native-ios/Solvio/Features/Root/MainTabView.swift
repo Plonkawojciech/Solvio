@@ -13,14 +13,16 @@ struct MainTabView: View {
     @EnvironmentObject private var router: AppRouter
     @EnvironmentObject private var locale: AppLocale
     @EnvironmentObject private var toast: ToastCenter
-    @StateObject private var scanFlow = ScanFlowViewModel()
+    @EnvironmentObject private var scanQueue: ScanQueueManager
 
     @State private var showCamera = false
     @State private var showLibrary = false
     @State private var showVirtual = false
     @State private var showQuickSplit = false
     @State private var quickSplitPrefill: QuickSplitPrefill?
-    @State private var pickedItem: PhotosPickerItem?
+    /// Multi-select picker — the user can grab as many receipts as they want
+    /// in one go and they upload in the background via `ScanQueueManager`.
+    @State private var pickedItems: [PhotosPickerItem] = []
 
     struct QuickSplitPrefill: Identifiable, Hashable {
         let id = UUID()
@@ -36,7 +38,14 @@ struct MainTabView: View {
             ZStack(alignment: .bottom) {
                 contentStack
                     .padding(.bottom, 64) // reserve for custom tab bar
-                NBTabBar()
+                VStack(spacing: 0) {
+                    // Floating progress widget for active scans. Sits above
+                    // the tab bar so it's visible no matter what tab the
+                    // user is on. Hides itself when the queue is empty.
+                    ScanQueueWidget()
+                        .padding(.bottom, 6)
+                    NBTabBar()
+                }
             }
         }
         .background(Theme.background)
@@ -58,19 +67,40 @@ struct MainTabView: View {
         }
         .fullScreenCover(isPresented: $showCamera) {
             CameraPicker { image in
-                Task { await scanFlow.run(image: image, locale: locale, toast: toast) }
+                // Camera is single-shot. Push it through the background queue
+                // so the user gets the same floating-chip UX as multi-pick.
+                scanQueue.enqueue([image])
+                toast.success(locale.t("scanQueue.batchSavedSingle"))
             }
             .ignoresSafeArea()
         }
-        .photosPicker(isPresented: $showLibrary, selection: $pickedItem, matching: .images)
-        .onChange(of: pickedItem) { newItem in
-            guard let newItem else { return }
+        .photosPicker(
+            isPresented: $showLibrary,
+            selection: $pickedItems,
+            maxSelectionCount: 20,
+            matching: .images
+        )
+        .onChange(of: pickedItems) { newItems in
+            guard !newItems.isEmpty else { return }
+            // Snapshot + clear immediately so the picker dismisses cleanly,
+            // then load the data off-main and hand it to the queue.
+            let captured = newItems
+            pickedItems = []
             Task {
-                if let data = try? await newItem.loadTransferable(type: Data.self),
-                   let ui = UIImage(data: data) {
-                    await scanFlow.run(image: ui, locale: locale, toast: toast)
+                var images: [UIImage] = []
+                for item in captured {
+                    if let data = try? await item.loadTransferable(type: Data.self),
+                       let ui = UIImage(data: data) {
+                        images.append(ui)
+                    }
                 }
-                pickedItem = nil
+                guard !images.isEmpty else { return }
+                scanQueue.enqueue(images)
+                if images.count == 1 {
+                    toast.success(locale.t("scanQueue.batchSavedSingle"))
+                } else {
+                    toast.success(String(format: locale.t("scanQueue.batchSaved"), images.count))
+                }
             }
         }
         .sheet(isPresented: $showVirtual) {
@@ -80,24 +110,6 @@ struct MainTabView: View {
                     showVirtual = false
                     router.push(.receiptDetail(id: created.id))
                 }
-            }
-            .environmentObject(locale)
-        }
-        .sheet(item: $scanFlow.ocrDraft) { draft in
-            OcrConfirmSheet(draft: draft) { saved in
-                scanFlow.ocrDraft = nil
-                toast.success(locale.t("receipts.saved"), description: saved.vendor ?? locale.t("receipts.savedScan"))
-                router.push(.receiptDetail(id: saved.id))
-            } onSplit: { saved in
-                scanFlow.ocrDraft = nil
-                quickSplitPrefill = QuickSplitPrefill(
-                    total: saved.total?.double,
-                    description: saved.vendor,
-                    currency: saved.currency,
-                    receiptId: saved.id
-                )
-            } onCancel: {
-                scanFlow.ocrDraft = nil
             }
             .environmentObject(locale)
         }
@@ -115,18 +127,6 @@ struct MainTabView: View {
             )
             .environmentObject(locale)
             .environmentObject(toast)
-        }
-        .overlay {
-            if scanFlow.isScanning {
-                VStack(spacing: Theme.Spacing.sm) {
-                    ProgressView().tint(Theme.foreground)
-                    Text(locale.t("receipts.scanning"))
-                        .font(AppFont.bodyMedium)
-                        .foregroundColor(Theme.foreground)
-                }
-                .padding(Theme.Spacing.md)
-                .nbCard(radius: Theme.Radius.md, shadow: Theme.Shadow.lg)
-            }
         }
     }
 
@@ -626,6 +626,10 @@ final class ScanFlowViewModel: ObservableObject {
                 return
             }
             ocrDraft = OcrDraft(receiptId: receiptId, data: first.data)
+        } catch ApiError.cancelled {
+            // User dismissed the scan flow (camera sheet closed, view torn
+            // down) before the upload finished — don't surface a "Scan
+            // failed" toast for what's effectively a user cancellation.
         } catch {
             toast.error(locale.t("receipts.scanFailed"), description: error.localizedDescription)
         }

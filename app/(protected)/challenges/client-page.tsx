@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion } from 'framer-motion'
 import { useTranslation } from '@/lib/i18n'
 import { useProductType } from '@/hooks/use-product-type'
 import { useRouter } from 'next/navigation'
@@ -29,6 +29,7 @@ import {
   Sparkles,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 
 interface Challenge {
   id: string
@@ -51,6 +52,7 @@ interface ChallengeTemplate {
   type: string
   defaultDays: number
   targetAmount?: number
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   icon: any
 }
 
@@ -86,6 +88,8 @@ export default function ChallengesPage() {
     return d.toISOString().slice(0, 10)
   })
   const [creating, setCreating] = useState(false)
+  const [challengeToDelete, setChallengeToDelete] = useState<string | null>(null)
+  const [deletingChallenge, setDeletingChallenge] = useState(false)
 
   // Redirect business users
   useEffect(() => {
@@ -99,7 +103,7 @@ export default function ChallengesPage() {
     fetch('/api/data/settings')
       .then(r => r.json())
       .then(d => { if (d?.settings?.currency) setCurrency(d.settings.currency.toUpperCase()) })
-      .catch(() => {})
+      .catch((err) => console.error('Failed to fetch settings:', err))
   }, [])
 
   const fetchChallenges = useCallback(async () => {
@@ -109,10 +113,11 @@ export default function ChallengesPage() {
       const data = await res.json()
       setChallenges(data.challenges || [])
     } catch {
-      toast.error('Failed to load challenges')
+      toast.error(t('errors.loadChallenges'))
     } finally {
       setLoading(false)
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
@@ -120,7 +125,7 @@ export default function ChallengesPage() {
   }, [fetchChallenges])
 
   function applyTemplate(tmpl: ChallengeTemplate) {
-    setFormName(t(`challenges.templates.${tmpl.key}` as any))
+    setFormName(t(`challenges.templates.${tmpl.key}` as any))  // eslint-disable-line @typescript-eslint/no-explicit-any
     setFormEmoji(tmpl.emoji)
     setFormType(tmpl.type)
     if (tmpl.targetAmount) setFormTargetAmount(String(tmpl.targetAmount))
@@ -163,7 +168,7 @@ export default function ChallengesPage() {
       setNewOpen(false)
       fetchChallenges()
     } catch {
-      toast.error('Failed to create challenge')
+      toast.error(t('errors.createChallenge'))
     } finally {
       setCreating(false)
     }
@@ -194,18 +199,22 @@ export default function ChallengesPage() {
       toast.success(t('challenges.checkIn'))
       fetchChallenges()
     } catch {
-      toast.error('Failed to check in')
+      toast.error(t('errors.checkIn'))
     }
   }
 
-  async function handleDelete(id: string) {
-    if (!confirm(t('challenges.deleteConfirm'))) return
+  async function confirmDeleteChallenge() {
+    if (!challengeToDelete) return
+    setDeletingChallenge(true)
     try {
-      await fetch(`/api/personal/challenges/${id}`, { method: 'DELETE' })
-      setChallenges(prev => prev.filter(c => c.id !== id))
+      await fetch(`/api/personal/challenges/${challengeToDelete}`, { method: 'DELETE' })
+      setChallenges(prev => prev.filter(c => c.id !== challengeToDelete))
       toast.success(t('common.delete'))
+      setChallengeToDelete(null)
     } catch {
-      toast.error('Failed to delete')
+      toast.error(t('errors.deleteFailed'))
+    } finally {
+      setDeletingChallenge(false)
     }
   }
 
@@ -227,6 +236,7 @@ export default function ChallengesPage() {
     hidden: { opacity: 0, y: 20 },
     show: (i: number) => ({
       opacity: 1, y: 0,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       transition: { duration: 0.45, delay: i * 0.07, ease: [0.22, 1, 0.36, 1] as any },
     }),
   }
@@ -304,13 +314,12 @@ export default function ChallengesPage() {
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2 text-base">
               <Sparkles className="h-5 w-5 text-primary" />
-              {lang === 'pl' ? 'Szablony wyzwań' : 'Challenge templates'}
+              {t('challenges.templatesTitle')}
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
               {TEMPLATES.map(tmpl => {
-                const Icon = tmpl.icon
                 return (
                   <button
                     key={tmpl.key}
@@ -319,7 +328,7 @@ export default function ChallengesPage() {
                   >
                     <span className="text-2xl">{tmpl.emoji}</span>
                     <span className="text-[11px] text-center font-medium leading-tight">
-                      {t(`challenges.templates.${tmpl.key}` as any)}
+                      {t(`challenges.templates.${tmpl.key}` as Parameters<typeof t>[0])}
                     </span>
                   </button>
                 )
@@ -373,7 +382,7 @@ export default function ChallengesPage() {
                 challenge={c}
                 index={i}
                 onCheckIn={handleCheckIn}
-                onDelete={handleDelete}
+                onDelete={(cid: string) => setChallengeToDelete(cid)}
                 currency={currency}
               />
             ))}
@@ -395,7 +404,7 @@ export default function ChallengesPage() {
                 challenge={c}
                 index={i}
                 onCheckIn={() => {}}
-                onDelete={handleDelete}
+                onDelete={(cid: string) => setChallengeToDelete(cid)}
                 currency={currency}
               />
             ))}
@@ -512,6 +521,16 @@ export default function ChallengesPage() {
           </form>
         </SheetContent>
       </Sheet>
+      <ConfirmDialog
+        open={challengeToDelete !== null}
+        onOpenChange={(open) => !open && !deletingChallenge && setChallengeToDelete(null)}
+        title={t('challenges.deleteConfirm')}
+        confirmLabel={t('common.delete')}
+        cancelLabel={t('common.cancel')}
+        destructive
+        loading={deletingChallenge}
+        onConfirm={confirmDeleteChallenge}
+      />
     </div>
   )
 }

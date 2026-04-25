@@ -517,3 +517,55 @@ enum ExportDataRepo {
         try await ApiClient.shared.download("/api/personal/export-data")
     }
 }
+
+// MARK: - Maintenance (seed defaults, recategorize old data)
+
+/// Endpoints that bring an account up to date — used on every cold start
+/// and login because iOS clients bypass the web `(protected)/layout.tsx`
+/// that does this for browser users.
+enum MaintenanceRepo {
+    private struct EmptyResp: Decodable {}
+
+    /// POST `/api/v1/seed-categories` — idempotent. If the user already has
+    /// categories, the backend no-ops; otherwise it inserts a default set
+    /// (PL or EN, defaults to PL).
+    static func seedCategories() async throws {
+        try await ApiClient.shared.postEmptyVoid("/api/v1/seed-categories")
+    }
+
+    struct RecategorizeBody: Encodable {
+        let force: Bool
+        let lang: String
+    }
+
+    struct RecategorizeResult: Decodable {
+        let ok: Bool?
+        let processed: Int?
+        let itemsUpdated: Int?
+        let itemsAttempted: Int?
+        let expensesUpdated: Int?
+    }
+
+    /// POST `/api/v1/recategorize-receipts` — runs AI categorization on
+    /// items in existing receipts whose `category_id` is null. Idempotent
+    /// at the data level, but rate-limited server-side to 3 runs/hour.
+    /// `force=true` re-categorizes even items that already have a category.
+    @discardableResult
+    static func recategorize(force: Bool = false, lang: String = "pl") async throws -> RecategorizeResult {
+        try await ApiClient.shared.post(
+            "/api/v1/recategorize-receipts",
+            body: RecategorizeBody(force: force, lang: lang)
+        )
+    }
+
+    struct PendingCount: Decodable {
+        let totalReceipts: Int
+        let pendingReceipts: Int
+        let pendingItems: Int
+    }
+
+    /// GET equivalent — quick summary of how much would be processed.
+    static func pendingCount() async throws -> PendingCount {
+        try await ApiClient.shared.get("/api/v1/recategorize-receipts")
+    }
+}

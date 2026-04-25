@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { auth } from '@/lib/auth-compat'
-import { getSession, SESSION_COOKIE } from '@/lib/session'
+import { getSession, SESSION_COOKIE, buildSignedSession } from '@/lib/session'
 import { setProductType, type ProductType } from '@/lib/product-type'
 import { db, companies, companyMembers } from '@/lib/db'
 import { eq } from 'drizzle-orm'
@@ -71,10 +71,11 @@ export async function POST(req: Request) {
     }
 
     // Update the session cookie to include productType (used by middleware for route gating)
-    const payload = Buffer.from(JSON.stringify({
+    // SECURITY FIX: HMAC-signed session cookie
+    const payload = buildSignedSession({
       email: session?.email,
       productType,
-    })).toString('base64')
+    })
 
     const res = NextResponse.json({ success: true })
     res.cookies.set(SESSION_COOKIE, payload, {

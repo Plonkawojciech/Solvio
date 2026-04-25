@@ -116,7 +116,7 @@ export interface RequestHeaderBase {
   tppId: string
 }
 
-export interface RequestHeaderWithoutToken extends RequestHeaderBase {}
+export type RequestHeaderWithoutToken = RequestHeaderBase
 
 export interface RequestHeaderWithoutTokenAS extends RequestHeaderBase {
   isCompanyContext?: boolean

@@ -1,6 +1,17 @@
 # Solvio — Expense Tracking App
 ---
 
+## Ownership — Programo s.c.
+
+> **Programo s.c.** to spółka cywilna dwóch **równych wspólników**:
+>
+> | Wspólnik | GitHub | Rola |
+> |----------|--------|------|
+> | **Wojciech Płonka** | `Plonkawojciech` | Co-founder, full admin |
+> | **Bartosz Kolaj** | `bkolaj` | Co-founder, full admin |
+>
+> Obaj mają **identyczne uprawnienia** do tego projektu — code review, merge, deploy, konfiguracja, architektura. Żaden nie jest nadrzędny. Decyzje podejmowane wspólnie.
+
 ## 100% AI Codebase — Instrukcja dla agentów
 
 > Ten codebase jest w **100% pisany i utrzymywany przez agenty AI** (Claude opus-4.6 / sonnet) via Claude Code. Nie ma kodu pisanego ręcznie przez człowieka.
@@ -26,7 +37,7 @@ Production URL: `https://solvio-lac.vercel.app`
 - **ORM**: Drizzle ORM + drizzle-kit
 - **Auth**: Custom cookie-based session (`solvio_session` — base64-encoded email, 30-day expiry). Uses `lib/session.ts` + `lib/auth-compat.ts`
 - **File Storage**: Vercel Blob (`@vercel/blob`) for reports/receipts
-- **AI**: OpenAI API (categorization, analysis, audit)
+- **AI**: Azure OpenAI (primary, uses `AZURE_OPENAI_*` env) with OpenAI direct API as fallback. Unified via `lib/ai-client.ts` → `getAIClient()`.
 - **OCR**: Azure Document Intelligence (receipt scanning)
 - **Reports**: pdf-lib, pdfkit, docx (CSV/PDF/DOCX generation)
 - **Theme**: next-themes (light/dark), Geist font
@@ -47,15 +58,27 @@ Required in `.env.local`:
 
 ```
 DATABASE_URL=           # Neon PostgreSQL connection string
-OPENAI_API_KEY=         # OpenAI API key (analysis, categorization, audit)
+SESSION_SECRET=         # 32+ char random string for HMAC-signing session cookies (required in prod)
+# AI — set one of:
+# Option A (preferred): Azure OpenAI
+AZURE_OPENAI_ENDPOINT=     # https://<resource>.openai.azure.com/
+AZURE_OPENAI_API_KEY=      # Azure OpenAI resource key
+AZURE_OPENAI_DEPLOYMENT=   # Deployment name (e.g. gpt-4o-mini)
+AZURE_OPENAI_API_VERSION=  # Optional, defaults to 2024-10-21
+# Option B (fallback): OpenAI direct
+OPENAI_API_KEY=            # Used only if Azure vars not set
 AZURE_OCR_ENDPOINT=     # Azure Document Intelligence endpoint
 AZURE_OCR_KEY=          # Azure Document Intelligence key
 BLOB_READ_WRITE_TOKEN=  # Vercel Blob token (reports storage)
+GOCARDLESS_SECRET_ID=   # GoCardless Bank Account Data (Nordigen) secret ID
+GOCARDLESS_SECRET_KEY=  # GoCardless Bank Account Data (Nordigen) secret key
 ```
 
 Optional:
 ```
 NEXT_PUBLIC_APP_URL=    # App base URL (falls back to VERCEL_URL)
+HUB_INTEGRATION_SECRET= # Shared secret for Programo Hub server-to-server API calls
+PKO_ENCRYPTION_KEY=     # Legacy — was used for PKO direct PSD2, kept for backward compat
 ```
 
 ## Directory Structure
@@ -101,13 +124,11 @@ components/
     settings/                  # Settings forms
   landing_page/
     landing-page.tsx           # Full marketing landing page
-    join_access_list.tsx       # Waitlist form
   auth-layout.tsx              # Auth page layout wrapper
   login-form.tsx               # Login form component
   header.tsx / footer.tsx      # Marketing header/footer
   language-switcher.tsx        # PL/EN language toggle
-  dark-mode-toggle.tsx         # Theme toggle
-  theme-switcher.tsx           # Mobile theme switcher
+  theme-switcher.tsx           # Mobile theme switcher (uses ui/theme-toggle.tsx)
 lib/
   db/
     index.ts                   # Lazy Neon DB singleton (Proxy pattern)

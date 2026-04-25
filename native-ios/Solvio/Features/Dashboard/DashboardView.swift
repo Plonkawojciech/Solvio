@@ -11,17 +11,23 @@ struct DashboardView: View {
     @EnvironmentObject private var session: SessionStore
     @EnvironmentObject private var locale: AppLocale
     @EnvironmentObject private var toast: ToastCenter
-    @StateObject private var vm = DashboardViewModel()
+    /// Reads dashboard payload from the central store. The store handles
+    /// stale-while-revalidate, retries, and cache invalidation — this view
+    /// just maps the raw response into a render-ready `DashboardDisplay`.
+    @EnvironmentObject private var store: AppDataStore
+    @State private var display: DashboardDisplay?
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Theme.Spacing.md) {
                 header
-                if vm.isLoading && vm.display == nil {
+                if display == nil && store.dashboardLoading {
                     NBLoadingCard()
-                } else if vm.display == nil, let message = vm.errorMessage {
-                    NBErrorCard(message: message) { Task { await vm.load(toast: toast) } }
-                } else if let d = vm.display {
+                } else if display == nil, let message = store.dashboardError {
+                    NBErrorCard(message: message) {
+                        store.ensureDashboard(force: true)
+                    }
+                } else if let d = display {
                     hero(d)
                     noRecentDataCard(d)
                     recentExpenses(d)
@@ -40,12 +46,34 @@ struct DashboardView: View {
             }
             .padding(.horizontal, Theme.Spacing.md)
             .padding(.top, Theme.Spacing.md)
-            .animation(.spring(response: 0.35, dampingFraction: 0.85), value: vm.display?.totalTransactions)
+            .animation(.spring(response: 0.35, dampingFraction: 0.85), value: display?.totalTransactions)
         }
         .background(Theme.background)
-        .refreshable { await vm.load(toast: toast) }
-        .task { if vm.display == nil { await vm.load(toast: toast) } }
+        .refreshable {
+            await store.awaitDashboard(force: true)
+            rebuildDisplay()
+        }
+        .task {
+            store.ensureDashboard()
+            rebuildDisplay()
+        }
+        // One watcher is enough — every successful refresh bumps
+        // `dashboardLoadedAt`, and that's the only signal we need.
+        .onChange(of: store.dashboardLoadedAt) { _ in rebuildDisplay() }
     }
+
+    /// Off-main aggregation, then assign on main. Mirrors the previous
+    /// view-model behaviour but pulls the raw response from the store.
+    private func rebuildDisplay() {
+        guard let raw = store.dashboard else { return }
+        Task.detached(priority: .userInitiated) {
+            let built = DashboardDisplay.build(from: raw)
+            await MainActor.run { self.display = built }
+        }
+    }
+
+    private var totalReceipts: Int { store.receiptsCountFromDashboard }
+    private var totalExpenses: Int { store.dashboard?.expenses.count ?? 0 }
 
     // MARK: - Header
 
@@ -56,7 +84,10 @@ struct DashboardView: View {
             subtitle: session.currentUser?.email,
             trailing: AnyView(
                 Button {
-                    Task { await vm.load(toast: toast) }
+                    Task {
+                        await store.awaitDashboard(force: true)
+                        rebuildDisplay()
+                    }
                 } label: {
                     Image(systemName: "arrow.clockwise")
                         .font(.system(size: 16, weight: .semibold))
@@ -156,7 +187,7 @@ struct DashboardView: View {
     /// looks empty and points to the full receipts/expenses archive.
     @ViewBuilder
     private func noRecentDataCard(_ d: DashboardDisplay) -> some View {
-        let hasHistory = vm.totalReceipts > 0 || vm.totalExpenses > 0
+        let hasHistory = totalReceipts > 0 || totalExpenses > 0
         if d.totalTransactions == 0 && hasHistory {
             VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
                 HStack(alignment: .top, spacing: Theme.Spacing.sm) {
@@ -172,11 +203,11 @@ struct DashboardView: View {
                 }
 
                 LazyVGrid(columns: [GridItem(.flexible(), spacing: Theme.Spacing.sm), GridItem(.flexible(), spacing: Theme.Spacing.sm)], spacing: Theme.Spacing.sm) {
-                    if vm.totalReceipts > 0 {
-                        archiveStat(icon: "doc.text.fill", value: "\(vm.totalReceipts)", label: locale.t("dashboard.totalReceipts"))
+                    if totalReceipts > 0 {
+                        archiveStat(icon: "doc.text.fill", value: "\(totalReceipts)", label: locale.t("dashboard.totalReceipts"))
                     }
-                    if vm.totalExpenses > 0 {
-                        archiveStat(icon: "creditcard.fill", value: "\(vm.totalExpenses)", label: locale.t("dashboard.totalExpenses"))
+                    if totalExpenses > 0 {
+                        archiveStat(icon: "creditcard.fill", value: "\(totalExpenses)", label: locale.t("dashboard.totalExpenses"))
                     }
                 }
 
@@ -714,75 +745,6 @@ struct NBProgressBar: View {
             )
         }
         .frame(height: 10)
-    }
-}
-
-// MARK: - View Model (aggregation mirrors web client)
-
-@MainActor
-final class DashboardViewModel: ObservableObject {
-    @Published var display: DashboardDisplay?
-    @Published var isLoading = false
-    @Published var errorMessage: String?
-    /// Total receipts across all time (fetched separately from the
-    /// dashboard's 30-day-window count). Lets us show "you have X
-    /// receipts in archive" even when the dashboard window is empty.
-    @Published var totalReceipts: Int = 0
-    /// Total expenses across all time.
-    @Published var totalExpenses: Int = 0
-
-    func load(toast: ToastCenter? = nil) async {
-        isLoading = true
-        if display == nil { errorMessage = nil }
-        defer { isLoading = false }
-
-        // Retry up to 2 times for transient errors (Neon cold start, timeouts)
-        let maxAttempts = 3
-        var lastError: Error?
-        for attempt in 1...maxAttempts {
-            do {
-                #if DEBUG
-                print("[Dashboard] Fetching (since=all) attempt \(attempt)/\(maxAttempts)…")
-                #endif
-                let raw = try await DashboardRepo.fetch()
-
-                totalReceipts = raw.receiptsCount
-                totalExpenses = raw.expenses.count
-
-                #if DEBUG
-                print("[Dashboard] Got \(raw.expenses.count) expenses, \(raw.categories.count) categories, receiptsCount=\(raw.receiptsCount)")
-                #endif
-                let built = await Task.detached { DashboardDisplay.build(from: raw) }.value
-                display = built
-                errorMessage = nil
-                #if DEBUG
-                print("[Dashboard] Display built OK: total=\(built.totalSpent) txns=\(built.totalTransactions)")
-                #endif
-                return
-            } catch {
-                lastError = error
-                #if DEBUG
-                print("[Dashboard] attempt \(attempt) FAILED: \(error)")
-                if let api = error as? ApiError, case let .decoding(inner) = api {
-                    print("[Dashboard] decoding detail: \(inner)")
-                }
-                #endif
-                // Only retry on retryable errors (timeout, server 5xx, no connection)
-                if let api = error as? ApiError, api.isRetryable, attempt < maxAttempts {
-                    try? await Task.sleep(nanoseconds: UInt64(attempt) * 1_000_000_000) // 1s, 2s
-                    continue
-                }
-                break
-            }
-        }
-        // All attempts exhausted
-        if let lastError {
-            if display == nil {
-                errorMessage = lastError.localizedDescription
-            } else {
-                toast?.error(lastError.localizedDescription)
-            }
-        }
     }
 }
 

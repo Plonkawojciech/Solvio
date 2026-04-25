@@ -2,7 +2,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 
 export default function SavingsLoading() {
   return (
-    <div className="flex flex-col gap-4 sm:gap-6 animate-pulse">
+    <div className="flex flex-col gap-4 sm:gap-6" role="status" aria-busy="true" aria-live="polite">
       <div className="space-y-2">
         <Skeleton className="h-9 w-56" />
         <Skeleton className="h-5 w-72" />

@@ -128,7 +128,7 @@ export async function POST(request: NextRequest) {
     })
   } catch (err) {
     console.error('[bank/match POST]', err)
-    const message = err instanceof Error ? err.message : 'Match failed'
-    return NextResponse.json({ error: message }, { status: 500 })
+    // SECURITY FIX: Don't expose internal error details to client
+    return NextResponse.json({ error: 'Operation failed' }, { status: 500 })
   }
 }

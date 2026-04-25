@@ -84,7 +84,7 @@ export function NewGoalSheet({ open, onOpenChange, onCreated, currency }: NewGoa
       onOpenChange(false)
       onCreated()
     } catch {
-      toast.error('Error creating goal')
+      toast.error(t('errors.createGoal'))
     } finally {
       setLoading(false)
     }
@@ -108,7 +108,7 @@ export function NewGoalSheet({ open, onOpenChange, onCreated, currency }: NewGoa
               id="goal-name"
               value={name}
               onChange={e => setName(e.target.value)}
-              placeholder="iPhone 16, Vacation, Emergency fund..."
+              placeholder={t('goals.goalNamePlaceholder')}
               required
               className="min-h-[44px]"
             />
@@ -131,7 +131,7 @@ export function NewGoalSheet({ open, onOpenChange, onCreated, currency }: NewGoa
                 >
                   <span className="text-xl">{emo}</span>
                   <span className="text-[10px] text-muted-foreground leading-tight">
-                    {t(`goals.category.${key}` as any)}
+                    {t(`goals.category.${key}` as Parameters<typeof t>[0])}
                   </span>
                 </button>
               ))}
@@ -184,14 +184,17 @@ export function NewGoalSheet({ open, onOpenChange, onCreated, currency }: NewGoa
 
           {/* Color */}
           <div className="space-y-2">
-            <Label>{t('goals.color')}</Label>
-            <div className="flex flex-wrap gap-2">
+            <Label id="goal-color-label">{t('goals.color')}</Label>
+            <div className="flex flex-wrap gap-2" role="radiogroup" aria-labelledby="goal-color-label">
               {GOAL_COLORS.map(c => (
                 <button
                   key={c}
                   type="button"
+                  role="radio"
+                  aria-checked={color === c}
+                  aria-label={t('goals.colorAria').replace('{color}', c)}
                   onClick={() => setColor(c)}
-                  className={`h-8 w-8 rounded-full transition-all ${
+                  className={`h-11 w-11 rounded-full transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-foreground ${
                     color === c ? 'ring-2 ring-offset-2 ring-primary scale-110' : 'hover:scale-105'
                   }`}
                   style={{ backgroundColor: c }}

@@ -84,12 +84,17 @@ final class SessionStore: ObservableObject {
 
     /// Email-only login. `/api/auth/session` returns `{ok, userId}`;
     /// the email we sent is authoritative.
+    ///
+    /// We also send `lang` so the backend seeds default categories in
+    /// the right language on first login (iOS users bypass the web-only
+    /// `(protected)/layout.tsx` that does this seed on the web).
     func login(email: String) async throws {
-        struct LoginBody: Encodable { let email: String }
+        struct LoginBody: Encodable { let email: String; let lang: String }
         let trimmed = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let lang = UserDefaults.standard.string(forKey: "solvio.language") ?? "pl"
         let response: SessionLoginResponse = try await ApiClient.shared.post(
             "/api/auth/session",
-            body: LoginBody(email: trimmed)
+            body: LoginBody(email: trimmed, lang: lang)
         )
         let user = CurrentUser(email: trimmed, userId: response.userId)
         currentUser = user

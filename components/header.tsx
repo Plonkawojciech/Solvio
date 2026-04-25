@@ -18,11 +18,11 @@ export default function Header() {
   const isMarketing = pathname === '/' || pathname === ''
 
   return (
-    <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/80 backdrop-blur-md">
+    <header className="sticky top-0 z-50 w-full border-b-2 border-foreground bg-background/95 backdrop-blur-md">
       <div className="mx-auto flex max-w-7xl items-center justify-between px-5 sm:px-8 py-3 sm:py-4">
         {/* Logo */}
-        <Link href="/" className="flex items-center gap-2 text-lg sm:text-xl font-bold tracking-tight">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+        <Link href="/" className="flex items-center gap-2 text-lg sm:text-xl font-black tracking-tight">
+          <div className="flex h-9 w-9 items-center justify-center rounded-md border-2 border-foreground bg-foreground text-background shadow-[2px_2px_0_hsl(var(--foreground))] font-mono">
             <Wallet className="h-4 w-4" />
           </div>
           <span>Solvio</span>
@@ -30,11 +30,11 @@ export default function Header() {
 
         {/* Nav links — only on marketing pages */}
         {isMarketing && !email && (
-          <nav className="hidden md:flex items-center gap-6 text-sm text-muted-foreground">
-            <a href="#features" className="hover:text-foreground transition-colors">
+          <nav className="hidden md:flex items-center gap-6 font-mono text-[11px] font-bold uppercase tracking-widest">
+            <a href="#features" className="text-muted-foreground hover:text-foreground transition-colors">
               {lang === 'pl' ? 'Funkcje' : 'Features'}
             </a>
-            <a href="#how" className="hover:text-foreground transition-colors">
+            <a href="#how" className="text-muted-foreground hover:text-foreground transition-colors">
               {lang === 'pl' ? 'Jak działa' : 'How it works'}
             </a>
           </nav>

@@ -5,7 +5,6 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { toast } from 'sonner'
 import { useTranslation } from '@/lib/i18n'
 import { Button } from '@/components/ui/button'
-import { Skeleton } from '@/components/ui/skeleton'
 import { Check, Loader2, Receipt, X } from 'lucide-react'
 
 const MEMBER_COLORS = [

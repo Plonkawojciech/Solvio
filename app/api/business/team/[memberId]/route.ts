@@ -3,6 +3,16 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { companyMembers } from '@/lib/db/schema'
 import { eq, and } from 'drizzle-orm'
+import { z } from 'zod'
+
+// SECURITY FIX: Zod schema validation — role must be one of the allowed enum values
+const TeamMemberUpdateSchema = z.object({
+  role: z.enum(['admin', 'manager', 'employee']).optional(),
+  displayName: z.string().min(1).max(100).optional(),
+  departmentId: z.string().uuid().nullable().optional(),
+  spendingLimit: z.union([z.number().nonnegative(), z.string().regex(/^\d+(\.\d+)?$/)]).nullable().optional(),
+  isActive: z.boolean().optional(),
+}).strict()
 
 export async function PUT(
   req: NextRequest,
@@ -14,7 +24,12 @@ export async function PUT(
   const { memberId } = await params
 
   try {
-    const body = await req.json()
+    const rawBody = await req.json()
+    const parsedBody = TeamMemberUpdateSchema.safeParse(rawBody)
+    if (!parsedBody.success) {
+      return NextResponse.json({ error: 'Invalid input' }, { status: 400 })
+    }
+    const body = parsedBody.data
 
     // Get current user's role
     const currentMember = await db.select({
@@ -55,6 +70,7 @@ export async function PUT(
     }
 
     // Build update object
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const updateData: Record<string, any> = {}
     if (body.role !== undefined) updateData.role = body.role
     if (body.displayName !== undefined) updateData.displayName = body.displayName

@@ -77,7 +77,7 @@ export function AddFundsSheet({ open, onOpenChange, goal, onDeposited, currency 
       onOpenChange(false)
       onDeposited()
     } catch {
-      toast.error('Error depositing funds')
+      toast.error(t('errors.depositFunds'))
     } finally {
       setLoading(false)
     }
@@ -127,6 +127,7 @@ export function AddFundsSheet({ open, onOpenChange, goal, onDeposited, currency 
               type="number"
               step="0.01"
               min="0.01"
+              inputMode="decimal"
               value={amount}
               onChange={e => setAmount(e.target.value)}
               placeholder="0.00"

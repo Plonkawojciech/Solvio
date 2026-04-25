@@ -291,10 +291,10 @@ export function NewGroupSheet({ open, onOpenChange, onCreated }: NewGroupSheetPr
                         isActive ? 'text-primary' : 'text-muted-foreground'
                       }`}
                     >
-                      {t(template.labelKey as any)}
+                      {t(template.labelKey as Parameters<typeof t>[0])}
                     </span>
                     <span className="text-[10px] text-muted-foreground leading-tight">
-                      {t(template.descKey as any)}
+                      {t(template.descKey as Parameters<typeof t>[0])}
                     </span>
                     {isActive && (
                       <motion.div
@@ -481,6 +481,7 @@ export function NewGroupSheet({ open, onOpenChange, onCreated }: NewGroupSheetPr
                     className="mt-2 h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive"
                     onClick={() => removeMember(member.id)}
                     disabled={members.length <= 2}
+                    aria-label={t('groups.removeMember')}
                   >
                     <Trash2 className="h-4 w-4" />
                   </Button>

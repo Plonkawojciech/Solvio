@@ -65,11 +65,13 @@ interface SettingsFormProps {
 const containerVariants = {
   hidden: {},
   visible: { transition: { staggerChildren: 0.06 } },
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 } as any
 
 const itemVariants = {
   hidden: { opacity: 0, y: 12 },
   visible: { opacity: 1, y: 0, transition: { duration: 0.3 } },
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 } as any
 
 export function SettingsForm({ initialCurrency, initialLanguage, categoryBudgets }: SettingsFormProps) {
@@ -130,8 +132,8 @@ export function SettingsForm({ initialCurrency, initialLanguage, categoryBudgets
       const budgetErrors = budgetSaveResults.filter(r => r.status === 'rejected')
       if (budgetErrors.length > 0) {
         toast.warning(
-          lang === 'pl' ? 'Ustawienia zapisane częściowo' : 'Settings partially saved',
-          { description: lang === 'pl' ? `${budgetErrors.length} budżet(ów) nie udało się zapisać.` : `${budgetErrors.length} budget(s) failed to save.` }
+          t('settings.partiallySaved'),
+          { description: `${budgetErrors.length} ${t('settings.budgetSaveFailed')}` }
         )
       } else {
         toast.success(t('settings.saved'), { description: t('settings.savedDesc') })
@@ -145,8 +147,8 @@ export function SettingsForm({ initialCurrency, initialLanguage, categoryBudgets
         setTimeout(() => window.location.reload(), 1200)
       }
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : (lang === 'pl' ? 'Nieoczekiwany błąd.' : 'Unexpected error.')
-      toast.error(lang === 'pl' ? 'Nie udało się zapisać ustawień' : 'Failed to save settings', { description: msg })
+      const msg = err instanceof Error ? err.message : t('settings.unexpectedError')
+      toast.error(t('settings.saveFailed'), { description: msg })
     } finally {
       setIsSaving(false)
     }
@@ -181,6 +183,7 @@ export function SettingsForm({ initialCurrency, initialLanguage, categoryBudgets
                     ))}
                   </SelectContent>
                 </Select>
+                <p className="text-xs text-muted-foreground">{t('settings.currencySubtitle')}</p>
                 <FormMessage />
               </FormItem>
             )}
@@ -236,9 +239,7 @@ export function SettingsForm({ initialCurrency, initialLanguage, categoryBudgets
 
           {form.watch("budgets").length === 0 ? (
             <p className="text-sm text-muted-foreground py-4 text-center border rounded-lg bg-muted/20">
-              {lang === 'pl'
-                ? 'Brak kategorii. Najpierw dodaj kategorie poniżej.'
-                : 'No categories available. Add categories in the section below first.'}
+              {t('settings.noCategoriesForBudget')}
             </p>
           ) : (
             <motion.div

@@ -1,16 +1,19 @@
 // app/api/v1/ocr-receipt/route.ts - Azure Document Intelligence
 import { NextRequest } from 'next/server';
 import { auth } from '@/lib/auth-compat';
-import { db, receipts, expenses, categories } from '@/lib/db';
+import { rateLimit } from '@/lib/rate-limit';
+import { db, receipts, expenses, categories, userSettings } from '@/lib/db';
 import { eq, and } from 'drizzle-orm';
 import { put } from '@vercel/blob';
-import OpenAI from 'openai';
+import { getAIClient } from '@/lib/ai-client';
+import { normalizeStoreName } from '@/lib/stores';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60; // Vercel Hobby plan limit
 
 // Helper do logowania (mniej verbose w produkcji)
 const isProduction = process.env.NODE_ENV === 'production';
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const log = (message: string, ...args: any[]) => {
   if (!isProduction || message.includes('✅') || message.includes('❌') || message.includes('ERROR')) {
     console.log(message, ...args);
@@ -19,13 +22,46 @@ const log = (message: string, ...args: any[]) => {
 
 const AZURE_ENDPOINT = process.env.AZURE_OCR_ENDPOINT;
 const AZURE_KEY = process.env.AZURE_OCR_KEY;
-const openai = process.env.OPENAI_API_KEY ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null;
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
     headers: { 'Content-Type': 'application/json' },
   });
+}
+
+// Parses locale-aware decimal strings (Polish "1.234,56" or English "1,234.56" or "12,50").
+// Returns null if input is unparseable.
+function parseLocaleDecimal(raw: string): number | null {
+  if (!raw || typeof raw !== 'string') return null;
+  const cleaned = raw.replace(/[^\d.,-]/g, '').trim();
+  if (!cleaned) return null;
+  const lastComma = cleaned.lastIndexOf(',');
+  const lastDot = cleaned.lastIndexOf('.');
+  let normalized: string;
+  if (lastComma === -1 && lastDot === -1) {
+    normalized = cleaned;
+  } else if (lastComma > lastDot) {
+    const afterComma = cleaned.slice(lastComma + 1);
+    if (afterComma.length === 3 && lastDot === -1) {
+      // "1,200" — comma is thousands separator, not decimal
+      normalized = cleaned.replace(/,/g, '');
+    } else {
+      // "1.234,56" or "12,50" — comma is decimal separator
+      normalized = cleaned.replace(/\./g, '').replace(',', '.');
+    }
+  } else {
+    const afterDot = cleaned.slice(lastDot + 1);
+    if (afterDot.length === 3 && lastComma === -1) {
+      // "1.200" — dot is thousands separator (European)
+      normalized = cleaned.replace(/\./g, '');
+    } else {
+      // "1,234.56" — dot is decimal separator
+      normalized = cleaned.replace(/,/g, '');
+    }
+  }
+  const parsed = parseFloat(normalized);
+  return isNaN(parsed) ? null : parsed;
 }
 
 // --- AZURE OCR ---
@@ -80,18 +116,19 @@ async function processAzureOCR(buffer: Buffer, mimeType: string) {
 
   log('[Azure] Operation-Location:', operationLocation);
 
-  // Krok 2: Polling - Czekaj na wynik (max 50 prób, co 1 sek = max 50 sek)
-  // Vercel ma timeout 60s, więc zostawiamy margines
+  // Krok 2: Polling - Czekaj na wynik (max 30 prób)
+  // Aggressive polling: 150ms × 3, 300ms × 4, then 600ms — typically finishes in 1-3s
   let attempts = 0;
-  const maxAttempts = 50;
+  const maxAttempts = 30;
 
   while (attempts < maxAttempts) {
     attempts++;
-    if (attempts % 5 === 0 || attempts <= 3) {
+    if (attempts % 5 === 0 || attempts <= 2) {
       log(`[Azure] Polling attempt ${attempts}/${maxAttempts}...`);
     }
 
-    await new Promise(resolve => setTimeout(resolve, 1000)); // Czekaj 1 sek
+    const pollInterval = attempts <= 3 ? 150 : attempts <= 7 ? 300 : 600;
+    await new Promise(resolve => setTimeout(resolve, pollInterval));
 
     const getResponse = await fetch(operationLocation, {
       method: 'GET',
@@ -127,131 +164,39 @@ async function processAzureOCR(buffer: Buffer, mimeType: string) {
   throw new Error('Azure OCR timeout - exceeded max polling attempts');
 }
 
-// --- NORMALIZACJA NAZW SKLEPÓW ---
-function normalizeStoreName(merchant: string | null): string {
-  if (!merchant) return 'Unknown Store';
 
-  const normalized = merchant.toLowerCase().trim();
 
-  // Popularne sieci sklepów - rozpoznaj i znormalizuj
-  const storePatterns: Array<[RegExp, string]> = [
-    [/lidl/i, 'Lidl'],
-    [/biedronka/i, 'Biedronka'],
-    [/żabka|zabka/i, 'Żabka'],
-    [/dino/i, 'Dino'],
-    [/kaufland/i, 'Kaufland'],
-    [/carrefour/i, 'Carrefour'],
-    [/tesco/i, 'Tesco'],
-    [/auchan/i, 'Auchan'],
-    [/real/i, 'Real'],
-    [/leclerc/i, 'Leclerc'],
-    [/selgros/i, 'Selgros'],
-    [/makro/i, 'Makro'],
-    [/castorama/i, 'Castorama'],
-    [/leroy.?merlin/i, 'Leroy Merlin'],
-    [/obi/i, 'OBI'],
-    [/ikea/i, 'IKEA'],
-    [/mediamarkt|media.?markt/i, 'MediaMarkt'],
-    [/rtv.?euro.?agd/i, 'RTV Euro AGD'],
-    [/empik/i, 'Empik'],
-    [/rossmann/i, 'Rossmann'],
-    [/hebe/i, 'Hebe'],
-    [/super.?pharm/i, 'Super-Pharm'],
-    [/apteka/i, 'Apteka'],
-    [/ziko/i, 'Ziko Apteka'],
-    [/stokrotka/i, 'Stokrotka'],
-    [/polo.?market/i, 'Polo Market'],
-    [/abc/i, 'ABC'],
-    [/delikatesy/i, 'Delikatesy'],
-    [/spar/i, 'SPAR'],
-    [/netto/i, 'Netto'],
-    [/aldi/i, 'Aldi'],
-    [/penny/i, 'Penny'],
-    [/rewe/i, 'REWE'],
-    [/e.?leclerc/i, 'E.Leclerc'],
-    [/intermarche/i, 'Intermarché'],
-  ];
+// --- EXCHANGE RATES ---
+// Cache exchange rates in-memory (1 hour)
+let rateCache: { rates: Record<string, number>; ts: number } | null = null;
 
-  for (const [pattern, storeName] of storePatterns) {
-    if (pattern.test(normalized)) {
-      return storeName;
-    }
+async function getExchangeRates(): Promise<Record<string, number>> {
+  const now = Date.now();
+  if (rateCache && now - rateCache.ts < 60 * 60 * 1000) return rateCache.rates;
+  try {
+    const res = await fetch('https://api.frankfurter.app/latest?base=EUR&symbols=PLN,USD,GBP,CHF,CZK,SEK,NOK,DKK,HUF,RON', {
+      signal: AbortSignal.timeout(3000),
+    });
+    if (!res.ok) throw new Error('rate fetch failed');
+    const data = await res.json() as { rates: Record<string, number> };
+    rateCache = { rates: { EUR: 1, ...data.rates }, ts: now };
+    return rateCache.rates;
+  } catch {
+    return rateCache?.rates ?? {};
   }
-
-  return merchant;
 }
 
-// --- GPT EKSTRAKCJA NAZWY SKLEPU Z TEKSTU ---
-async function extractStoreNameWithGPT(rawText: string): Promise<string | null> {
-  if (!openai || !rawText || rawText.trim().length < 10) {
-    return null;
-  }
-
-  try {
-    log('[GPT Store Extraction] Próbuję wyciągnąć nazwę sklepu z tekstu...');
-
-    const textSample = rawText.substring(0, 1000).trim();
-
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4o',
-      temperature: 0,
-      max_tokens: 100,
-      messages: [
-        {
-          role: 'system',
-          content: `Jesteś ekspertem w rozpoznawaniu i weryfikowaniu nazw sklepów z paragonów polskich. Twoim zadaniem jest ZAWSZE znaleźć dokładną, czystą nazwę sklepu w tekście paragonu.
-
-KRYTYCZNE ZASADY:
-1. Nazwa sklepu jest ZAWSZE na początku paragonu (pierwsze 3-5 linii)
-2. Zwróć TYLKO czystą nazwę sklepu - bez form prawnych, bez adresów, bez "Zakupy", "Paragon", etc.
-3. Rozpoznaj i zwróć dokładną nazwę popularnych sieci (używaj dokładnie tych nazw):
-   - Lidl (NIE "LIDL", "lidl", "Lidl Market" - TYLKO "Lidl")
-   - Biedronka (NIE "BIEDRONKA" - TYLKO "Biedronka")
-   - Żabka (NIE "ZABKA", "ŻABKA" - TYLKO "Żabka")
-   - Dino, Kaufland, Carrefour, Tesco, Auchan, Real, Leclerc, Selgros, Makro
-   - Castorama, Leroy Merlin, OBI, IKEA, MediaMarkt, RTV Euro AGD
-   - Empik, Rossmann, Hebe, Super-Pharm, Stokrotka, Polo Market, ABC, SPAR, Netto, Aldi, Penny, REWE
-
-4. WAŻNE - rozpoznawanie błędów OCR:
-   - "STOWT LIDL" → "Lidl" (STOWT to błąd OCR)
-   - "OWT LIDL" → "Lidl" (OWT to błąd OCR)
-   - "LIDL SP. Z O.O." → "Lidl"
-   - "BIEDRONKA - Zakupy" → "Biedronka"
-   - "ŻABKA 123" → "Żabka"
-
-5. Jeśli widzisz znaną sieć (nawet z błędami OCR), ZAWSZE zwróć jej poprawną nazwę
-6. Jeśli nie rozpoznajesz, zwróć najczystszą możliwą nazwę sklepu
-7. Jeśli NAPRAWDĘ nie możesz znaleźć nazwy sklepu, zwróć "null"
-
-ZWRÓĆ TYLKO NAZWĘ SKLEPU - bez dodatkowych słów, bez wyjaśnień.`,
-        },
-        {
-          role: 'user',
-          content: `Znajdź i zweryfikuj nazwę sklepu w tym tekście paragonu. Zwróć TYLKO czystą nazwę sklepu:
-
-${textSample}
-
-Nazwa sklepu:`,
-        },
-      ],
-    });
-
-    const response = completion.choices[0]?.message?.content?.trim() || null;
-
-    if (response && response.toLowerCase() !== 'null' && response.length > 1 && response.length < 100) {
-      log(`[GPT Store Extraction] ✅ Znaleziono nazwę sklepu: "${response}"`);
-      return response;
-    }
-
-    log(`[GPT Store Extraction] ❌ Nie znaleziono nazwy sklepu (odpowiedź: "${response}")`);
-    return null;
-  } catch (error) {
-    console.error('[GPT Store Extraction] Błąd:', error);
-    return null;
-  }
+function getExchangeRate(fromCurrency: string, toCurrency: string, rates: Record<string, number>): number | null {
+  if (!fromCurrency || fromCurrency === toCurrency) return null;
+  // rates is EUR-based: to convert from X to Y = rates[Y] / rates[X]
+  const toRate = toCurrency === 'EUR' ? 1 : rates[toCurrency];
+  const fromRate = fromCurrency === 'EUR' ? 1 : rates[fromCurrency];
+  if (!toRate || !fromRate) return null;
+  return toRate / fromRate;
 }
 
 // --- EKSTRAKCJA DANYCH ---
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function extractReceiptData(azureResult: any) {
   const document = azureResult.analyzeResult?.documents?.[0];
   if (!document) {
@@ -267,8 +212,7 @@ async function extractReceiptData(azureResult: any) {
     log(`[Total Extraction] Użyto Total (kwota finalna): ${total}`);
   } else if (fields.Total?.valueString && typeof fields.Total.valueString === 'string') {
     try {
-      const totalStr = fields.Total.valueString.replace(/[^\d.,-]/g, '').replace(',', '.');
-      total = parseFloat(totalStr) || null;
+      total = parseLocaleDecimal(fields.Total.valueString);
       if (total !== null) {
         log(`[Total Extraction] Użyto Total (kwota finalna) z stringa: ${total}`);
       }
@@ -336,8 +280,44 @@ async function extractReceiptData(azureResult: any) {
 
   const date = fields.TransactionDate?.valueDate ?? null;
   const time = fields.TransactionTime?.valueTime ?? null;
-  const currency = fields.Total?.valueCurrency?.currencyCode ?? 'PLN';
+  // Currency detection: Azure returns valueCurrency on currency-typed fields
+  // Try multiple fields to detect currency, then fall back to text-based detection
+  let currency: string = 'PLN';
+  const currencyFromTotal = fields.Total?.valueCurrency?.currencyCode
+    ?? fields.Total?.valueCurrency
+    ?? null;
+  const currencyFromSubtotal = fields.Subtotal?.valueCurrency?.currencyCode
+    ?? fields.Subtotal?.valueCurrency
+    ?? null;
+  const currencyFromAmountDue = fields.AmountDue?.valueCurrency?.currencyCode
+    ?? fields.AmountDue?.valueCurrency
+    ?? null;
 
+  if (typeof currencyFromTotal === 'string' && currencyFromTotal.length === 3) {
+    currency = currencyFromTotal.toUpperCase();
+  } else if (typeof currencyFromSubtotal === 'string' && currencyFromSubtotal.length === 3) {
+    currency = currencyFromSubtotal.toUpperCase();
+  } else if (typeof currencyFromAmountDue === 'string' && currencyFromAmountDue.length === 3) {
+    currency = currencyFromAmountDue.toUpperCase();
+  } else {
+    // Fallback: detect currency from raw text
+    const rawContent = (azureResult.analyzeResult?.content || '').toUpperCase();
+    if (/\bEUR\b|€/.test(rawContent)) currency = 'EUR';
+    else if (/\bUSD\b|\$\s*\d/.test(rawContent)) currency = 'USD';
+    else if (/\bGBP\b|£/.test(rawContent)) currency = 'GBP';
+    else if (/\bCHF\b/.test(rawContent)) currency = 'CHF';
+    else if (/\bCZK\b|Kč/.test(rawContent)) currency = 'CZK';
+    else if (/\bSEK\b/.test(rawContent)) currency = 'SEK';
+    else if (/\bNOK\b/.test(rawContent)) currency = 'NOK';
+    else if (/\bDKK\b/.test(rawContent)) currency = 'DKK';
+    else if (/\bHUF\b|Ft\b/.test(rawContent)) currency = 'HUF';
+    else if (/\bRON\b/.test(rawContent)) currency = 'RON';
+    // else keep PLN default
+  }
+  log(`[Currency Detection] Detected currency: ${currency} (fromTotal=${currencyFromTotal}, fromSubtotal=${currencyFromSubtotal}, fromAmountDue=${currencyFromAmountDue})`);
+
+  // Clean Azure merchant name (OCR prefix removal) but DON'T call GPT here.
+  // GPT store extraction is deferred to run in parallel with categorization.
   let extractedMerchant = merchant;
   log(`[Store Extraction] Oryginalna nazwa z Azure: "${extractedMerchant}"`);
 
@@ -348,37 +328,14 @@ async function extractReceiptData(azureResult: any) {
       .trim();
   }
 
-  if (azureResult.analyzeResult?.content) {
-    log(`[Store Extraction] 🔍 Wysyłam do GPT do weryfikacji nazwy sklepu...`);
-    const gptStoreName = await extractStoreNameWithGPT(azureResult.analyzeResult.content);
-
-    if (gptStoreName && gptStoreName !== 'Unknown Store' && gptStoreName.toLowerCase() !== 'null') {
-      merchant = gptStoreName;
-      log(`[Store Extraction] ✅ GPT zweryfikował i poprawił nazwę sklepu: "${merchant}"`);
-    } else if (extractedMerchant && extractedMerchant.length >= 2) {
-      merchant = normalizeStoreName(extractedMerchant);
-      log(`[Store Extraction] GPT nie znalazło, używam znormalizowanej nazwy z Azure: "${merchant}"`);
-    } else {
-      merchant = 'Unknown Store';
-      log(`[Store Extraction] ❌ Nie znaleziono nazwy sklepu`);
-    }
-  } else if (extractedMerchant && extractedMerchant.length >= 2) {
+  // Provide a preliminary merchant name (no GPT yet)
+  if (extractedMerchant && extractedMerchant.length >= 2) {
     merchant = normalizeStoreName(extractedMerchant);
-    log(`[Store Extraction] Brak rawText, używam znormalizowanej nazwy: "${merchant}"`);
   } else {
     merchant = 'Unknown Store';
-    log(`[Store Extraction] ❌ Brak danych do ekstrakcji nazwy sklepu`);
   }
 
-  if (merchant && merchant !== 'Unknown Store') {
-    const finalNormalized = normalizeStoreName(merchant);
-    if (finalNormalized !== merchant && finalNormalized !== 'Unknown Store') {
-      merchant = finalNormalized;
-      log(`[Store Normalization] ✅ Finalna normalizacja: "${merchant}"`);
-    }
-  }
-
-  log(`[Store Extraction] ✅ Finalna nazwa sklepu: "${merchant}"`);
+  log(`[Store Extraction] Preliminary merchant (pre-GPT): "${merchant}"`);
 
   const items: Array<{
     name: string;
@@ -419,7 +376,12 @@ async function extractReceiptData(azureResult: any) {
         name = 'Nieznany produkt';
       }
 
+      // Clean OCR noise from item name
       name = name
+        .replace(/[#|@*_{}[\]~`^\\]/g, '')  // Remove OCR garbage characters
+        .replace(/\d+[.,]\d{2}\s*(zł|PLN|EUR|€|\$|£|USD|GBP|CHF|CZK|SEK|NOK|DKK|HUF|RON)\b/gi, '')  // Remove price+currency from name
+        .replace(/\b(zł|PLN|EUR|€|\$|£)\b/gi, '')  // Remove standalone currency symbols
+        .replace(/\(\s*\)/g, '')  // Remove empty parens
         .replace(/\s+/g, ' ')
         .trim();
 
@@ -447,15 +409,21 @@ async function extractReceiptData(azureResult: any) {
       }
 
       if (price === null) {
+        let unitPrice: number | null = null;
         if (itemObj.Price?.valueNumber !== undefined && itemObj.Price?.valueNumber !== null) {
-          price = itemObj.Price.valueNumber;
+          unitPrice = itemObj.Price.valueNumber;
         } else if (itemObj.Price?.valueString && typeof itemObj.Price.valueString === 'string') {
           try {
             const priceStr = itemObj.Price.valueString.replace(/[^\d.,-]/g, '').replace(',', '.');
-            price = parseFloat(priceStr) || null;
+            unitPrice = parseFloat(priceStr) || null;
           } catch {
-            price = null;
+            unitPrice = null;
           }
+        }
+        if (unitPrice !== null && quantity !== null && quantity > 1) {
+          price = Math.round(unitPrice * quantity * 100) / 100;
+        } else {
+          price = unitPrice;
         }
       }
 
@@ -463,190 +431,201 @@ async function extractReceiptData(azureResult: any) {
     }
   }
 
-  if (items.length === 0 && azureResult.analyzeResult?.content) {
+  // Filter out non-item lines (subtotals, tax, payment info)
+  const NON_ITEM_PATTERNS = [
+    /^(sub)?total$/i, /^suma$/i, /^razem$/i, /^łącznie$/i,
+    /^vat\b/i, /^tax\b/i, /^podatek/i, /^iva\b/i,
+    /^discount/i, /^rabat/i, /^zniżka/i, /^upust/i,
+    /^change\b/i, /^reszta$/i, /^wydano$/i,
+    /^cash\b/i, /^card\b/i, /^karta\b/i, /^gotówka$/i,
+    /^payment/i, /^płatność/i, /^zapłacono/i,
+    /^(visa|mastercard|maestro|blik)\b/i,
+    /^paragon\b/i, /^receipt\b/i, /^faktura\b/i,
+    /^nr\s*(paragonu|kasy|trans)/i,
+    /^nip\b/i, /^regon\b/i,
+    /^(podsuma|subtotal|zwrot|return|refund)/i,
+  ];
+
+  const filteredItems = items.filter(item => {
+    const name = item.name.trim();
+    if (!name || name.length < 2) return false;  // Remove empty/tiny items
+    if (NON_ITEM_PATTERNS.some(p => p.test(name))) return false;
+    return true;
+  });
+
+  // Extract quantity from name if not detected by Azure
+  for (const item of filteredItems) {
+    if (item.quantity === null || item.quantity === undefined || item.quantity === 1) {
+      // Match patterns: "2x ", "2 x ", "x2 ", "2szt", "2 szt"
+      const qtyMatch = item.name.match(/^(\d+)\s*[xX×]\s+(.+)/) ||
+                       item.name.match(/^(\d+)\s*szt\.?\s+(.+)/i);
+      if (qtyMatch) {
+        item.quantity = parseInt(qtyMatch[1], 10);
+        item.name = qtyMatch[2].trim();
+      }
+    }
+  }
+
+  // Extract trailing price from name if price is null
+  for (const item of filteredItems) {
+    if (item.price === null || item.price === 0) {
+      // Match trailing price: "Milk 3.99" or "Bread 2,50"
+      const priceMatch = item.name.match(/\s(\d+[.,]\d{2})\s*$/);
+      if (priceMatch) {
+        item.price = parseFloat(priceMatch[1].replace(',', '.'));
+        item.name = item.name.slice(0, -priceMatch[0].length).trim();
+      }
+    }
+  }
+
+  // Final cleanup: remove items with no useful data
+  const cleanItems = filteredItems.filter(item => item.name.length > 0 && (item.price === null || item.price >= 0));
+
+  if (cleanItems.length === 0 && azureResult.analyzeResult?.content) {
     log('[Azure] No items found in structured data, trying to extract from raw text...');
   }
 
-  log(`[Azure] Extracted data: Merchant="${merchant}", Total=${total} ${currency}, Date=${date}, Items=${items.length}`);
+  log(`[Azure] Extracted data: Merchant="${merchant}", Total=${total} ${currency}, Date=${date}, Items=${cleanItems.length}`);
 
-  return { total, merchant, date, time, currency, items };
+  return { total, merchant, date, time, currency, items: cleanItems };
 }
 
-// --- KATEGORYZACJA WSZYSTKICH ITEMS JEDNYM WYWOŁANIEM ---
-async function categorizeAllItems(
+// --- LANGUAGE DETECTION + CATEGORIZATION + TRANSLATION ---
+function detectLanguage(rawText: string): string {
+  const text = rawText.toUpperCase();
+  // Spanish keywords
+  const spanishScore = [/\bIVA\b/, /\bEUROS\b/, /\bPRECIO\b/, /\bIMPORTE\b/, /\bMERCADO\b/, /\bDESCRIPCION\b/, /\bFECHA\b/].filter(p => p.test(text)).length;
+  // German keywords
+  const germanScore = [/\bMWST\b/, /\bDATUM\b/, /\bARTIKEL\b/, /\bBETRAG\b/].filter(p => p.test(text)).length;
+  // Polish keywords
+  const polishScore = [/\bPARAGON\b/, /\bCENA\b/, /\bILOŚĆ\b/, /\bZŁ\b/, /\bSUMA\b/, /\bKASA\b/, /\bFISKALNY\b/, /\bRABAT\b/, /\bSZT\b/, /\bSPRZEDAŻ\b/].filter(p => p.test(text)).length;
+  // English keywords
+  const englishScore = [/\bTAX\b/, /\bRECEIPT\b/, /\bAMOUNT\b/, /\bSUBTOTAL\b/, /\bCHANGE\b/].filter(p => p.test(text)).length;
+
+  if (spanishScore >= 2) return 'es';
+  if (germanScore >= 2) return 'de';
+  if (polishScore >= 2) return 'pl';
+  if (englishScore >= 2) return 'en';
+  // Default: check for Polish characters
+  if (/[ąćęłńóśźż]/i.test(rawText)) return 'pl';
+  return 'en';
+}
+
+async function categorizeAndTranslateItems(
   items: Array<{ name: string; quantity: number | null; price: number | null }>,
-  cats: Array<{ id: string; name: string }>
-): Promise<Array<{ name: string; quantity: number | null; price: number | null; category_id: string | null }>> {
-  if (!openai) {
-    console.warn('[GPT] OpenAI client not available - OPENAI_API_KEY missing?');
-    return items.map(item => ({ ...item, category_id: null }));
+  cats: Array<{ id: string; name: string }>,
+  rawText: string
+): Promise<{
+  items: Array<{ name: string; nameTranslated: string | null; quantity: number | null; price: number | null; category_id: string | null }>;
+  detectedLanguage: string;
+}> {
+  const detectedLanguage = detectLanguage(rawText);
+  const needsTranslation = detectedLanguage !== 'pl' && detectedLanguage !== 'en';
+
+  const ai = getAIClient();
+  if (!ai) {
+    console.warn('[GPT] AI client not available - no AZURE_OPENAI_* or OPENAI_API_KEY configured?');
+    return {
+      items: items.map(item => ({ ...item, nameTranslated: null, category_id: null })),
+      detectedLanguage,
+    };
   }
 
-  if (!cats.length) {
-    console.warn('[GPT] ⚠️ No categories available - cannot categorize items');
-    return items.map(item => ({ ...item, category_id: null }));
-  }
-
-  if (items.length === 0) {
-    log('[GPT] No items to categorize');
-    return items.map(item => ({ ...item, category_id: null }));
+  if (!cats.length || items.length === 0) {
+    return {
+      items: items.map(item => ({ ...item, nameTranslated: null, category_id: null })),
+      detectedLanguage,
+    };
   }
 
   try {
-    log(`[GPT] 🎯 Kategoryzacja ${items.length} produktów (batch)...`);
-
     const validCategories = cats.filter(c => c.id && c.name);
-    if (validCategories.length === 0) {
-      console.error('[GPT] ❌ No valid categories available!');
-      return items.map(item => ({ ...item, category_id: null }));
-    }
-
-    const categoriesToUse = validCategories;
-
-    const categoryMap = categoriesToUse.map(c => `${c.name}: ${c.id}`).join('\n');
+    const categoryMap = validCategories.map(c => `${c.name}: ${c.id}`).join('\n');
     const itemsList = items.map((item, idx) => `${idx + 1}. ${item.name}`).join('\n');
 
-    log(`[GPT] Sending request to OpenAI (model: gpt-4o, items: ${items.length}, categories: ${categoriesToUse.length})...`);
+    const langNote = needsTranslation
+      ? `The receipt is in ${detectedLanguage}. For each item, provide the English translation in "en" and the category UUID in "catId".`
+      : `Items are in PL/EN — set "en" to null (no translation needed). Provide the category UUID in "catId".`;
 
-    const startTime = Date.now();
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4o',
+    log(`[GPT] Language: ${detectedLanguage}, needsTranslation: ${needsTranslation}`);
+
+    const completion = await ai.client.chat.completions.create({
+      model: ai.model,
       temperature: 0,
-      max_tokens: 1000,
+      max_tokens: 800,
+      response_format: { type: 'json_object' },
       messages: [
         {
           role: 'system',
-          content: `Jesteś ekspertem w kategoryzacji produktów z paragonów polskich sklepów. Twoim zadaniem jest przypisanie każdego produktu do NAJLEPIEJ PASUJĄCEJ kategorii.
+          content: `You categorize receipt items. Product names may be truncated or abbreviated — infer intent.
 
-DOSTĘPNE KATEGORIE (każda ma UUID):
+CATEGORIES (name: UUID):
 ${categoryMap}
 
-INSTRUKCJE KATEGORYZACJI - PRZYPISZ DO NAJLEPIEJ PASUJĄCEJ:
+RULES:
+- Return {"items":[{"en":"translation or null","catId":"uuid"}]} with one entry per product, in order.
+- Use the UUID, not the category name.
+- null catId if no category fits.
+- Supermarket groceries (milk, bread, meat, vegetables) → category containing "groceries"/"spożywcze"/"zakupy"
+- Restaurants, fast food → "food"/"jedzenie"
+- Pharmacy, medicine → "health"/"zdrowie"
+- Clothing, shoes → "shopping"/"zakupy"
+- Fuel, transport, tickets → "transport"
 
-🍔 FOOD - TYLKO jedzenie z restauracji/kawiarni/fast foodów:
-   - Restauracje, fast food, jedzenie na wynos, food delivery
-   - Pizza, sushi, kebab, burgery, frytki, hot dogi, zapiekanki
-   - Obiady, śniadania, kolacje w restauracjach
-   - Kawa, herbata, napoje w kawiarniach/restauracjach (NIE woda z supermarketu!)
-   - NIE: produkty spożywcze z supermarketu (to GROCERIES!)
-
-🛒 GROCERIES - Wszystkie produkty spożywcze i artykuły z supermarketu/sklepu:
-   - Mięso, wędliny, ryby, owoce morza
-   - Nabiał: mleko, ser, jogurt, masło, śmietana, jajka
-   - Warzywa, owoce, pieczywo
-   - Produkty sypkie: mąka, cukier, sól, ryż, makaron, kasza
-   - Napoje: woda, soki, napoje gazowane
-   - Artykuły gospodarstwa domowego, środki czystości
-
-💊 HEALTH - Apteka, leki, kosmetyki pielęgnacyjne
-🚗 TRANSPORT - Paliwo, transport, samochód
-🛍️ SHOPPING - Ubrania, moda, kosmetyki dekoracyjne
-📱 ELECTRONICS - Elektronika i akcesoria
-🏠 HOME & GARDEN - Dom, ogród, wyposażenie
-🎬 ENTERTAINMENT - Rozrywka, hobby, sport
-💡 BILLS & UTILITIES - Rachunki, abonamenty
-📦 OTHER - Wszystko inne
-
-KRYTYCZNE ZASADY:
-1. Produkty spożywcze z supermarketu → GROCERIES (NIE Food!)
-2. Restauracje, fast food → FOOD
-3. Kosmetyki pielęgnacyjne → HEALTH
-4. Kosmetyki dekoracyjne → SHOPPING
-
-ZWRÓĆ TYLKO tablicę JSON z UUID kategorii: ["uuid1", "uuid2", null, "uuid3", ...]`
+${langNote}`,
         },
         {
           role: 'user',
-          content: `Przypisz kategorię do każdego produktu z paragonu. Zwróć tablicę JSON z UUID kategorii w tej samej kolejności co produkty.
-
-Produkty do kategoryzacji:
-${itemsList}
-
-Zwróć TYLKO tablicę JSON: ["uuid1", "uuid2", null, "uuid3", ...]`
+          content: `Products:\n${itemsList}`,
         },
       ],
     });
 
-    const duration = Date.now() - startTime;
-    log(`[GPT] ✅ OpenAI response received in ${duration}ms`);
-
     const result = completion.choices[0]?.message?.content?.trim() ?? null;
     if (!result) {
-      console.error('[GPT] ❌ No response from OpenAI');
-      return items.map(item => ({ ...item, category_id: null }));
+      return {
+        items: items.map(item => ({ ...item, nameTranslated: null, category_id: null })),
+        detectedLanguage,
+      };
     }
 
-    let jsonStr = result;
+    const jsonStr = result;
 
-    if (jsonStr.includes('```')) {
-      const match = jsonStr.match(/```(?:json)?\s*(\[[\s\S]*?\])\s*```/);
-      if (match) {
-        jsonStr = match[1];
-      } else {
-        const arrayMatch = jsonStr.match(/\[[\s\S]*?\]/);
-        if (arrayMatch) {
-          jsonStr = arrayMatch[0];
-        }
-      }
-    }
-
-    let categoryIds: (string | null)[] = [];
+    let parsed: Array<{ en: string | null; catId: string | null }> = [];
     try {
-      categoryIds = JSON.parse(jsonStr) as (string | null)[];
-      log(`[GPT] ✅ Parsed ${categoryIds.length} category IDs`);
-
-      const validCategoryIds = categoryIds.filter(id =>
-        id === null || (typeof id === 'string' && categoriesToUse.some(c => c.id === id))
-      );
-
-      if (validCategoryIds.length !== categoryIds.length) {
-        console.warn(`[GPT] ⚠️ Some category IDs are invalid. Valid: ${validCategoryIds.length}/${categoryIds.length}`);
-        categoryIds = categoryIds.map(id =>
-          (id === null || (typeof id === 'string' && categoriesToUse.some(c => c.id === id))) ? id : null
-        );
-      }
-    } catch (parseError) {
-      console.error('[GPT] ❌ JSON parse error:', parseError);
-
-      try {
-        const arrayMatch = result.match(/\[[\s\S]*?\]/);
-        if (arrayMatch) {
-          categoryIds = JSON.parse(arrayMatch[0]) as (string | null)[];
-          log('[GPT] ✅ Recovered JSON using fallback extraction');
-        } else {
-          throw new Error('No JSON array found in response');
-        }
-      } catch (fallbackError) {
-        console.error('[GPT] ❌ Fallback extraction also failed:', fallbackError);
-        return items.map(item => ({ ...item, category_id: null }));
+      const raw = JSON.parse(jsonStr);
+      parsed = Array.isArray(raw) ? raw : (Array.isArray(raw?.items) ? raw.items : []);
+    } catch {
+      const arrayMatch = result.match(/\[[\s\S]*?\]/);
+      if (arrayMatch) {
+        try { parsed = JSON.parse(arrayMatch[0]); } catch { /* fallback */ }
       }
     }
 
-    if (categoryIds.length !== items.length) {
-      console.warn(`[GPT] ⚠️ Category count mismatch: expected ${items.length}, got ${categoryIds.length}`);
-      while (categoryIds.length < items.length) {
-        categoryIds.push(null);
-      }
-      categoryIds = categoryIds.slice(0, items.length);
-    }
+    // Pad/trim to match items length
+    while (parsed.length < items.length) parsed.push({ en: null, catId: null });
+    parsed = parsed.slice(0, items.length);
 
-    const categorized = items.map((item, idx) => {
-      const catId = categoryIds[idx] || null;
-      const validCatId = catId && categoriesToUse.some(c => c.id === catId) ? catId : null;
+    const resultItems = items.map((item, idx) => {
+      const p = parsed[idx] || { en: null, catId: null };
+      const validCatId = p.catId && validCategories.some(c => c.id === p.catId) ? p.catId : null;
       return {
         ...item,
+        nameTranslated: p.en || null,
         category_id: validCatId,
       };
     });
 
-    const assignedCount = categorized.filter(c => c.category_id !== null).length;
-    log(`[GPT] ✅ Assigned categories to ${assignedCount}/${items.length} items`);
+    const assignedCount = resultItems.filter(r => r.category_id !== null).length;
+    log(`[GPT] ✅ categorizeAndTranslate: ${assignedCount}/${items.length} categorized, lang=${detectedLanguage}`);
 
-    return categorized;
-
+    return { items: resultItems, detectedLanguage };
   } catch (error) {
-    console.error('[GPT] ❌ Batch categorization error:', error);
-    return items.map(item => ({ ...item, category_id: null }));
+    console.error('[GPT] ❌ categorizeAndTranslateItems error:', error);
+    return {
+      items: items.map(item => ({ ...item, nameTranslated: null, category_id: null })),
+      detectedLanguage,
+    };
   }
 }
 
@@ -660,19 +639,26 @@ export async function POST(req: NextRequest) {
     return json({ error: 'Unauthorized' }, 401);
   }
 
+  // RATE LIMIT: 30 requests per hour per userId
+  const rlOcr = rateLimit(`ocr:receipt:${authUserId}`, { maxRequests: 30, windowMs: 60 * 60 * 1000 })
+  if (!rlOcr.allowed) {
+    return json({ error: 'OCR rate limit exceeded. Try again later.' }, 429)
+  }
+
   // WERYFIKACJA ZMIENNYCH ŚRODOWISKOWYCH
   const missingEnvVars: string[] = [];
   if (!process.env.AZURE_OCR_ENDPOINT) missingEnvVars.push('AZURE_OCR_ENDPOINT');
   if (!process.env.AZURE_OCR_KEY) missingEnvVars.push('AZURE_OCR_KEY');
-  if (!process.env.OPENAI_API_KEY) missingEnvVars.push('OPENAI_API_KEY');
+  // AI client: either Azure OpenAI or OpenAI direct — checked inside categorizeAndTranslateItems via getAIClient()
+  if (!process.env.OPENAI_API_KEY && !(process.env.AZURE_OPENAI_ENDPOINT && process.env.AZURE_OPENAI_API_KEY && process.env.AZURE_OPENAI_DEPLOYMENT)) missingEnvVars.push('OPENAI_API_KEY or AZURE_OPENAI_*');
   if (!process.env.DATABASE_URL) missingEnvVars.push('DATABASE_URL');
 
   if (missingEnvVars.length > 0) {
+    // SECURITY FIX: Don't expose env var names in errors — log server-side only
     console.error('[OCR] ❌ Missing environment variables:', missingEnvVars);
     return json({
-      error: 'Server configuration error',
-      message: `Missing environment variables: ${missingEnvVars.join(', ')}. Please configure them in Vercel dashboard.`,
-      missing: missingEnvVars
+      error: 'Service configuration error',
+      success: false,
     }, 500);
   }
 
@@ -709,10 +695,14 @@ export async function POST(req: NextRequest) {
 
     log(`[OCR] Processing ${files.length} file(s) for receipt ${receiptId}`);
 
-    // 2. Pobierz kategorie
-    const cats = await db.select().from(categories).where(eq(categories.userId, userId));
+    // 2. Pobierz kategorie i ustawienia użytkownika
+    const [cats, [userSettingsRow]] = await Promise.all([
+      db.select().from(categories).where(eq(categories.userId, userId)),
+      db.select({ currency: userSettings.currency }).from(userSettings).where(eq(userSettings.userId, userId)).limit(1),
+    ]);
+    const accountCurrency = userSettingsRow?.currency?.toUpperCase() || 'PLN';
 
-    log(`[OCR] ✅ Loaded ${cats?.length || 0} categories`);
+    log(`[OCR] ✅ Loaded ${cats?.length || 0} categories, account currency: ${accountCurrency}`);
     if (!cats || cats.length === 0) {
       console.warn('[OCR] ⚠️ No categories found in database!');
     }
@@ -792,9 +782,17 @@ export async function POST(req: NextRequest) {
             mimeType = 'image/webp';
           } else if (fileName.match(/\.pdf$/)) {
             mimeType = 'application/pdf';
+          } else if (fileName.match(/\.hei[cf]$/)) {
+            results.push({ file: file.name, success: false, error: 'heic_needs_conversion', message: 'HEIC files must be converted first via /api/v1/convert-heic' });
+            continue;
           } else {
             mimeType = 'image/jpeg';
           }
+        }
+
+        if (mimeType === 'image/heic' || mimeType === 'image/heif') {
+          results.push({ file: file.name, success: false, error: 'heic_needs_conversion', message: 'HEIC files must be converted first via /api/v1/convert-heic' });
+          continue;
         }
 
         const supportedTypes = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
@@ -811,58 +809,87 @@ export async function POST(req: NextRequest) {
 
         log(`[File ${i + 1}] File type: ${mimeType}, size: ${(buffer.length / 1024).toFixed(1)}KB`);
 
-        // Basic image header validation
+        // Magic-byte validation
+        const header = buffer.slice(0, 12);
         if (mimeType.startsWith('image/')) {
-          const header = buffer.slice(0, 4);
           const isValidImage =
             (header[0] === 0xFF && header[1] === 0xD8) || // JPEG
             (header[0] === 0x89 && header[1] === 0x50 && header[2] === 0x4E && header[3] === 0x47) || // PNG
-            (header[0] === 0x52 && header[1] === 0x49 && header[2] === 0x46 && header[3] === 0x46); // WebP (RIFF)
-
+            (header[0] === 0x52 && header[1] === 0x49 && header[2] === 0x46 && header[3] === 0x46
+              && header[8] === 0x57 && header[9] === 0x45 && header[10] === 0x42 && header[11] === 0x50); // WebP (RIFF + WEBP)
           if (!isValidImage) {
-            console.warn(`[File ${i + 1}] Warning: File header doesn't match declared type ${mimeType}, but continuing...`);
+            console.warn(`[File ${i + 1}] Rejected: File header doesn't match declared type ${mimeType}`);
+            results.push({
+              file: file.name,
+              success: false,
+              error: 'invalid_format',
+              message: 'Invalid file format',
+            });
+            continue;
+          }
+        } else if (mimeType === 'application/pdf') {
+          if (!(header[0] === 0x25 && header[1] === 0x50 && header[2] === 0x44 && header[3] === 0x46)) {
+            console.warn(`[File ${i + 1}] Rejected: Not a valid PDF`);
+            results.push({ file: file.name, success: false, error: 'invalid_format', message: 'Invalid PDF file' });
+            continue;
           }
         }
 
-        // 4. Upload to Vercel Blob for storage
-        let imageUrl: string | null = null;
-        try {
-          const blobResult = await put(`receipts/${userId}/${currentReceiptId}/${file.name}`, buffer, {
-            access: 'public',
-            contentType: mimeType,
-          });
-          imageUrl = blobResult.url;
+        // 4+5. Parallel: Upload to Vercel Blob + Azure OCR
+        const [imageUrl, azureResult] = await Promise.all([
+          put(`receipts/${userId}/${currentReceiptId}/${file.name}`, buffer, { access: 'public', contentType: mimeType }).then(r => r.url).catch((blobErr) => {
+            console.warn(`[File ${i + 1}] ⚠️ Blob upload failed (non-fatal):`, blobErr);
+            return null;
+          }),
+          processAzureOCR(buffer, mimeType),
+        ]);
+        if (imageUrl) {
           log(`[File ${i + 1}] ✅ Uploaded to Blob: ${imageUrl}`);
-        } catch (blobErr) {
-          console.warn(`[File ${i + 1}] ⚠️ Blob upload failed (non-fatal):`, blobErr);
         }
 
-        // 5. Azure OCR
-        const azureResult = await processAzureOCR(buffer, mimeType);
-        const { total, merchant, date, time, currency, items } = await extractReceiptData(azureResult);
+        const { total, merchant: preliminaryMerchant, date, time, currency, items } = await extractReceiptData(azureResult);
 
-        // 6. Przygotuj dane do zapisu
+        // 6-8. PARALLEL: exchange rate + duplicate check + categorization
         const finalTotal = total ?? 0;
         const finalDate = date || new Date().toISOString().split('T')[0];
-        const finalMerchant = merchant || 'Unknown Store';
+        const finalMerchant = normalizeStoreName(preliminaryMerchant || 'Unknown Store');
 
-        // 7. WYKRYWANIE DUPLIKATÓW
-        log(`[File ${i + 1}] [Duplicate Check] Checking for duplicates...`);
+        const catsForCategorization = (cats || []).map(c => ({ id: c.id, name: c.name }));
+        const rawTextForLang = azureResult?.analyzeResult?.content ?? '';
 
-        const existingReceipts = await db.select().from(receipts)
-          .where(and(
-            eq(receipts.userId, userId),
-            eq(receipts.vendor, finalMerchant),
-            eq(receipts.status, 'processed')
-          ))
-          .limit(10);
+        log(`[File ${i + 1}] Running exchange rate + duplicate check + categorization in parallel...`);
 
-        const matchingReceipt = existingReceipts.find(r =>
-          r.total === String(finalTotal) && r.date === finalDate
-        );
+        const categorizationTimeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), 8000));
+
+        const [rates, existingReceipts, categorizationResult] = await Promise.all([
+          currency !== accountCurrency ? getExchangeRates() : Promise.resolve({}),
+          db.select({
+            id: receipts.id,
+            date: receipts.date,
+            total: receipts.total,
+            createdAt: receipts.createdAt,
+          }).from(receipts)
+            .where(and(
+              eq(receipts.userId, userId),
+              eq(receipts.vendor, finalMerchant),
+              eq(receipts.status, 'processed')
+            ))
+            .limit(10),
+          Promise.race([
+            categorizeAndTranslateItems(items, catsForCategorization, rawTextForLang),
+            categorizationTimeout,
+          ]),
+        ]);
+
+        const exchangeRate = getExchangeRate(currency, accountCurrency, rates);
+
+        // Duplicate check
+        const matchingReceipt = existingReceipts.find(r => {
+          const rTotal = parseFloat(r.total || '0');
+          return r.date === finalDate && Math.abs(rTotal - finalTotal) < 0.01;
+        });
 
         if (matchingReceipt) {
-          // Sprawdź czy istnieje aktywny expense dla tego receipt
           const existingExpenses = await db.select().from(expenses)
             .where(and(
               eq(expenses.receiptId, matchingReceipt.id),
@@ -871,11 +898,8 @@ export async function POST(req: NextRequest) {
             .limit(1);
 
           if (existingExpenses.length > 0) {
-            log(`[File ${i + 1}] [Duplicate Check] ❌ DUPLICATE FOUND!`);
-
-            // Delete current receipt (duplicate)
+            log(`[File ${i + 1}] [Duplicate Check] DUPLICATE FOUND!`);
             await db.delete(receipts).where(eq(receipts.id, currentReceiptId));
-
             results.push({
               file: file.name,
               success: false,
@@ -884,91 +908,116 @@ export async function POST(req: NextRequest) {
             });
             continue;
           } else {
-            log(`[File ${i + 1}] [Duplicate Check] ⚠️ Receipt exists but was deleted - allowing re-upload`);
+            log(`[File ${i + 1}] [Duplicate Check] Receipt exists but was deleted - allowing re-upload`);
           }
         }
 
-        log(`[File ${i + 1}] [Duplicate Check] ✅ No active duplicates found`);
+        log(`[File ${i + 1}] [Duplicate Check] No active duplicates found`);
 
-        log(`[File ${i + 1}] 💾 Saving to database...`);
+        const categorizedItems = categorizationResult?.items ?? items.map(item => ({ ...item, nameTranslated: null, category_id: null }));
+        const detectedLang = categorizationResult?.detectedLanguage ?? 'en';
 
-        // 8. Update receipt record
-        await db.update(receipts)
-          .set({
-            status: 'processed',
-            vendor: finalMerchant,
-            date: finalDate,
-            total: String(finalTotal),
-            currency: currency,
-            imageUrl: imageUrl,
-            items: items.map(item => ({ ...item, category_id: null })) as any,
-          })
-          .where(and(eq(receipts.id, currentReceiptId), eq(receipts.userId, userId)));
+        log(`[File ${i + 1}] Parallel GPT done (merchant="${finalMerchant}", lang=${detectedLang})`);
 
-        log(`[File ${i + 1}] ✅ Receipt updated`);
+        // --- Keyword-based fallback for items without category ---
+        const keywordMap: Record<string, string[]> = {
+          'food': ['pizza', 'burger', 'sandwich', 'restaurant', 'bar', 'cafe', 'coffee', 'lunch', 'dinner', 'meal', 'sushi', 'kebab', 'wrap', 'salad'],
+          'jedzenie': ['pizza', 'burger', 'sandwich', 'restauracja', 'bar', 'kawiarnia', 'kawa', 'obiad', 'kolacja', 'śniadanie', 'kebab', 'zupa'],
+          'groceries': ['milk', 'bread', 'cheese', 'meat', 'fruit', 'vegetable', 'eggs', 'butter', 'sugar', 'flour', 'rice', 'pasta', 'chicken', 'water', 'juice', 'yogurt', 'banana', 'apple', 'potato', 'onion', 'tomato', 'cream', 'oil', 'cereal', 'fish', 'salmon', 'pork', 'beef', 'ham', 'sausage'],
+          'spożywcze': ['mleko', 'chleb', 'ser', 'mięso', 'owoce', 'warzywa', 'jajka', 'masło', 'cukier', 'mąka', 'ryż', 'makaron', 'kurczak', 'woda', 'sok', 'jogurt', 'banan', 'jabłk', 'ziemniak', 'cebul', 'pomidor', 'śmietan', 'olej', 'szynk', 'kiełbas', 'bułk', 'rogal', 'czekolad', 'piwo', 'wino', 'wódk', 'alkohol', 'napój', 'chipsy', 'herbat', 'lizak', 'ciastk'],
+          'health': ['pharmacy', 'medicine', 'vitamin', 'pill', 'bandage', 'aspirin', 'ibuprofen', 'paracetamol', 'shampoo', 'toothpaste'],
+          'zdrowie': ['apteka', 'lek', 'witamin', 'tabletk', 'bandaż', 'aspiryn', 'paracetamol', 'szampon', 'pasta', 'krem', 'maść'],
+          'transport': ['fuel', 'petrol', 'diesel', 'paliwo', 'benzyn', 'nafta', 'parking', 'taxi', 'uber', 'bolt', 'bilet', 'ticket', 'train', 'bus', 'lpg', 'autogaz'],
+          'shopping': ['clothes', 'shoes', 'shirt', 'pants', 'dress', 'jacket', 'hat', 'sweater', 'socks'],
+          'zakupy': ['ubrania', 'buty', 'koszul', 'spodnie', 'sukienk', 'kurtk', 'skarpet', 'sweter', 'czapk'],
+          'electronics': ['phone', 'laptop', 'computer', 'cable', 'charger', 'battery', 'headphones', 'adapter', 'usb', 'hdmi'],
+          'elektronika': ['telefon', 'laptop', 'komputer', 'kabel', 'ładowark', 'bateri', 'słuchawk', 'adapter'],
+          'home & garden': ['detergent', 'soap', 'tissue', 'towel', 'cleaning', 'sponge', 'trash bag', 'bleach'],
+          'dom': ['detergent', 'mydło', 'chusteczk', 'ręcznik', 'czyszcz', 'gąbk', 'worek', 'proszek', 'płyn', 'worki'],
+          'entertainment': ['cinema', 'movie', 'game', 'concert', 'book', 'magazine', 'spotify', 'netflix'],
+          'rozrywka': ['kino', 'film', 'gra', 'koncert', 'książk', 'czasopismo'],
+          'bills & utilities': ['electricity', 'internet', 'phone bill', 'rent', 'subscription'],
+          'rachunki': ['prąd', 'internet', 'czynsz', 'abonament'],
+        };
 
-        // 9. Delete old expenses for this receipt
-        await db.delete(expenses).where(
-          and(
-            eq(expenses.receiptId, currentReceiptId),
-            eq(expenses.userId, userId)
-          )
-        );
+        // Fuzzy match: category name "Zakupy spożywcze" matches keyword group "zakupy spożywcze",
+        // "Spożywcze", "groceries", etc. via substring containment both ways.
+        const catList = (cats || []).map(c => ({ id: c.id, lower: c.name.toLowerCase() }));
+        function findCatId(groupKey: string): string | null {
+          const gk = groupKey.toLowerCase();
+          for (const c of catList) {
+            if (c.lower === gk || c.lower.includes(gk) || gk.includes(c.lower)) return c.id;
+          }
+          return null;
+        }
 
-        // 10. Insert new expense
+        function fallbackCategorize(itemName: string): string | null {
+          const tokens = itemName.toLowerCase().replace(/[^a-ząćęłńóśźż\s]/g, '').split(/\s+/);
+          for (const [groupKey, keywords] of Object.entries(keywordMap)) {
+            const catId = findCatId(groupKey);
+            if (!catId) continue;
+            for (const kw of keywords) {
+              if (tokens.some(t => t.includes(kw) || kw.includes(t))) return catId;
+            }
+          }
+          return findCatId('groceries') || findCatId('spożywcze') || findCatId('zakupy') || null;
+        }
+
+        // Apply fallback to uncategorized items
+        const finalItems = categorizedItems.map(item => {
+          if (!item.category_id) {
+            return { ...item, category_id: fallbackCategorize(item.name) };
+          }
+          return item;
+        });
+
+        const fallbackCount = finalItems.filter((fi, idx) => fi.category_id && !categorizedItems[idx].category_id).length;
+        if (fallbackCount > 0) {
+          log(`[File ${i + 1}] 🔄 Keyword fallback assigned categories to ${fallbackCount}/${finalItems.length} items`);
+        }
+
+        // Wyznacz najlepszą kategorię dla expense (kategoria najdroższego itemu)
+        const withCat = finalItems.filter(it => it.category_id);
+        const bestCategoryId: string | null = withCat.length > 0
+          ? ([...withCat].sort((a, b) => (b.price ?? 0) - (a.price ?? 0))[0].category_id ?? null)
+          : null;
+
+        // 9-11. PARALLEL: Update receipt + delete old expenses, then insert new expense
+        await Promise.all([
+          db.update(receipts)
+            .set({
+              status: 'processed',
+              vendor: finalMerchant,
+              date: finalDate,
+              total: String(finalTotal),
+              currency: currency,
+              imageUrl: imageUrl,
+              exchangeRate: exchangeRate ? String(exchangeRate) : null,
+              detectedLanguage: detectedLang,
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              items: finalItems as any,
+            })
+            .where(and(eq(receipts.id, currentReceiptId), eq(receipts.userId, userId))),
+          db.delete(expenses).where(
+            and(
+              eq(expenses.receiptId, currentReceiptId),
+              eq(expenses.userId, userId)
+            )
+          ),
+        ]);
+
         await db.insert(expenses).values({
           userId,
           receiptId: currentReceiptId,
-          title: `${finalMerchant} - Zakupy`,
+          title: `${finalMerchant}`,
           amount: String(finalTotal),
+          currency: currency,
           date: finalDate,
           vendor: finalMerchant,
-          categoryId: null,
+          categoryId: bestCategoryId,
         });
 
-        log(`[File ${i + 1}] ✅ Expense created`);
-
-        // 11. KATEGORIE W TLE (nie czekamy!)
-        const categoriesForCategorization = cats || [];
-        log(`[File ${i + 1}] [Background] Starting categorization for ${items.length} items...`);
-
-        categorizeAllItems(items, categoriesForCategorization.map(c => ({ id: c.id, name: c.name })))
-          .then(async (categorizedItems) => {
-            log(`[File ${i + 1}] [Background] ✅ Kategorie gotowe - aktualizacja...`);
-
-            await db.update(receipts)
-              .set({ items: categorizedItems as any })
-              .where(eq(receipts.id, currentReceiptId));
-
-            log(`[File ${i + 1}] [Background] ✅ Kategorie zapisane!`);
-          })
-          .catch((err) => {
-            console.error(`[File ${i + 1}] [Background] ❌ Category error:`, err);
-          });
-
-        // AI enrichment — categorize items and suggest metadata (non-blocking)
-        let aiEnrichment = null;
-        try {
-          if (openai && items.length > 0) {
-            const itemsList = items.map((item: any, i: number) =>
-              `${i + 1}. ${item.name} - ${item.price ?? 0} ${currency}`
-            ).join('\n');
-
-            const aiRes = await openai.chat.completions.create({
-              model: 'gpt-4o-mini',
-              messages: [{
-                role: 'user',
-                content: `Analyze this receipt from "${finalMerchant}". Categorize each item and suggest metadata.\n\nItems:\n${itemsList}\n\nReturn JSON: {"items": [{"index": 1, "suggestedCategory": "Food/Groceries/Health/Transport/Shopping/Electronics/Home/Entertainment/Bills/Other", "confidence": 0.0}], "vendor": "normalized store name", "receiptType": "grocery/pharmacy/restaurant/clothing/electronics/other", "tags": ["tag1","tag2"]}`,
-              }],
-              response_format: { type: 'json_object' },
-              max_tokens: 600,
-              temperature: 0.2,
-            });
-            aiEnrichment = JSON.parse(aiRes.choices[0]?.message?.content || '{}');
-          }
-        } catch {
-          /* non-critical */
-        }
+        log(`[File ${i + 1}] ✅ Receipt updated + expense created (categoryId=${bestCategoryId})`);
 
         results.push({
           file: file.name,
@@ -980,9 +1029,10 @@ export async function POST(req: NextRequest) {
             currency,
             date: finalDate,
             time,
-            items_count: items.length,
-            items: items,
-            aiEnrichment,
+            exchangeRate,
+            detectedLanguage: detectedLang,
+            items: finalItems,
+            items_count: finalItems.length,
           },
         });
 
@@ -1022,6 +1072,7 @@ export async function POST(req: NextRequest) {
     const successCount = results.filter(r => r.success).length;
 
     const allFailed = successCount === 0 && results.length > 0;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const criticalError = allFailed && results.some((r: any) =>
       r.error === 'empty_file' ||
       r.error === 'file_too_large' ||
@@ -1054,9 +1105,11 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // SECURITY FIX: Don't expose env var names in errors — generic message for clients
+    console.error('[OCR] Unhandled error:', error);
     return json(
       {
-        error: error instanceof Error ? error.message : 'Unknown error',
+        error: 'OCR processing failed. Please try again.',
         success: false
       },
       500

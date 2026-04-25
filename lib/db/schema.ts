@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, decimal, date, timestamp, boolean, jsonb, varchar, unique, integer } from 'drizzle-orm/pg-core'
+import { pgTable, uuid, text, decimal, date, timestamp, boolean, jsonb, varchar, unique, index, integer, uniqueIndex } from 'drizzle-orm/pg-core'
 
 export const userSettings = pgTable('user_settings', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -21,7 +21,9 @@ export const categories = pgTable('categories', {
   color: varchar('color', { length: 7 }),
   isDefault: boolean('is_default').default(false).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-})
+}, (t) => [
+  index('idx_categories_user_id').on(t.userId),
+])
 
 export const receipts = pgTable('receipts', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -37,8 +39,16 @@ export const receipts = pgTable('receipts', {
   hash: text('hash'),
   groupId: text('group_id'),
   paidByMemberId: text('paid_by_member_id'),
+  exchangeRate: decimal('exchange_rate', { precision: 10, scale: 6 }),
+  detectedLanguage: text('detected_language'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-})
+}, (t) => [
+  index('idx_receipts_user_id').on(t.userId),
+  index('idx_receipts_group_id').on(t.groupId),
+  index('idx_receipts_user_status').on(t.userId, t.status),
+  index('idx_receipts_user_vendor').on(t.userId, t.vendor),
+  index('idx_receipts_user_date').on(t.userId, t.date),
+])
 
 export const receiptItems = pgTable('receipt_items', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -50,7 +60,10 @@ export const receiptItems = pgTable('receipt_items', {
   totalPrice: decimal('total_price', { precision: 12, scale: 2 }),
   categoryId: uuid('category_id'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-})
+}, (t) => [
+  index('idx_receipt_items_receipt_id').on(t.receiptId),
+  index('idx_receipt_items_user_id').on(t.userId),
+])
 
 export const expenses = pgTable('expenses', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -76,7 +89,13 @@ export const expenses = pgTable('expenses', {
   bankTransactionId: uuid('bank_transaction_id'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-})
+}, (t) => [
+  index('idx_expenses_user_date').on(t.userId, t.date),
+  index('idx_expenses_user_id').on(t.userId),
+  index('idx_expenses_category_id').on(t.categoryId),
+  index('idx_expenses_receipt_id').on(t.receiptId),
+  index('idx_expenses_vendor').on(t.userId, t.vendor),
+])
 
 export const categoryBudgets = pgTable('category_budgets', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -86,7 +105,10 @@ export const categoryBudgets = pgTable('category_budgets', {
   period: varchar('period', { length: 10 }).default('monthly').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-}, (t) => [unique().on(t.userId, t.categoryId, t.period)])
+}, (t) => [
+  unique().on(t.userId, t.categoryId, t.period),
+  index('idx_category_budgets_user_id').on(t.userId),
+])
 
 export const reports = pgTable('reports', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -98,7 +120,9 @@ export const reports = pgTable('reports', {
   fileUrl: text('file_url'),
   metadata: jsonb('metadata'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-})
+}, (t) => [
+  index('idx_reports_user_id').on(t.userId),
+])
 
 export const audits = pgTable('audits', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -110,7 +134,9 @@ export const audits = pgTable('audits', {
   bestStore: varchar('best_store', { length: 255 }),
   data: jsonb('data'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-})
+}, (t) => [
+  index('idx_audits_user_id').on(t.userId),
+])
 
 // ── Groups ────────────────────────────────────────────────────────────────────
 export const groups = pgTable('groups', {
@@ -124,7 +150,9 @@ export const groups = pgTable('groups', {
   startDate: date('start_date'),
   endDate: date('end_date'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
-})
+}, (t) => [
+  index('idx_groups_created_by').on(t.createdBy),
+])
 
 // ── Group Members ──────────────────────────────────────────────────────────────
 export const groupMembers = pgTable('group_members', {
@@ -135,7 +163,10 @@ export const groupMembers = pgTable('group_members', {
   email: text('email'),
   color: text('color').default('#6366f1'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
-})
+}, (t) => [
+  index('idx_group_members_group_id').on(t.groupId),
+  index('idx_group_members_user_id').on(t.userId),
+])
 
 // ── Expense Splits ─────────────────────────────────────────────────────────────
 export const expenseSplits = pgTable('expense_splits', {
@@ -154,7 +185,9 @@ export const expenseSplits = pgTable('expense_splits', {
     settledAt?: string
   }>>(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
-})
+}, (t) => [
+  index('idx_expense_splits_group_id').on(t.groupId),
+])
 
 // ── Receipt Item Assignments (group splitting per item) ───────────────────
 export const receiptItemAssignments = pgTable('receipt_item_assignments', {
@@ -164,7 +197,10 @@ export const receiptItemAssignments = pgTable('receipt_item_assignments', {
   memberId: text('member_id').notNull(),
   share: decimal('share', { precision: 5, scale: 4 }).default('1').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-})
+}, (t) => [
+  index('idx_receipt_item_assignments_item_id').on(t.receiptItemId),
+  index('idx_receipt_item_assignments_group_id').on(t.groupId),
+])
 
 // ── Payment Requests ───────────────────────────────────────────────────────────
 export const paymentRequests = pgTable('payment_requests', {
@@ -189,7 +225,10 @@ export const paymentRequests = pgTable('payment_requests', {
   settledAt: timestamp('settled_at'),
   settledBy: text('settled_by'), // 'creditor' | 'debtor'
   createdAt: timestamp('created_at').defaultNow().notNull(),
-})
+}, (t) => [
+  index('idx_payment_requests_split_id').on(t.splitId),
+  index('idx_payment_requests_group_id').on(t.groupId),
+])
 
 // ── Price Comparisons ──────────────────────────────────────────────────────────
 export const priceComparisons = pgTable('price_comparisons', {
@@ -220,7 +259,27 @@ export const priceComparisons = pgTable('price_comparisons', {
   }>>(),
   aiSummary: text('ai_summary'),
   checkedAt: timestamp('checked_at').defaultNow().notNull(),
-})
+}, (t) => [
+  index('idx_price_comparisons_user_id').on(t.userId),
+  index('idx_price_comparisons_user_checked').on(t.userId, t.checkedAt),
+])
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Merchant Auto-Categorization Rules
+// ══════════════════════════════════════════════════════════════════════════════
+
+export const merchantRules = pgTable('merchant_rules', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  userId: text('user_id').notNull(),
+  vendor: text('vendor').notNull(),
+  categoryId: uuid('category_id').notNull(),
+  count: integer('count').default(1),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => [
+  uniqueIndex('merchant_rules_user_vendor_idx').on(table.userId, table.vendor),
+  index('merchant_rules_user_idx').on(table.userId),
+])
 
 // ══════════════════════════════════════════════════════════════════════════════
 // PKO PSD2 Bank Integration
@@ -229,17 +288,21 @@ export const priceComparisons = pgTable('price_comparisons', {
 export const bankConnections = pgTable('bank_connections', {
   id: uuid('id').primaryKey().defaultRandom(),
   userId: text('user_id').notNull(),
-  provider: varchar('provider', { length: 20 }).default('pko').notNull(),
-  accessToken: text('access_token'),
-  refreshToken: text('refresh_token'),
-  consentId: text('consent_id'),
+  provider: varchar('provider', { length: 50 }).default('pko').notNull(), // institution name (e.g., 'PKO Bank Polski')
+  institutionId: text('institution_id'), // Nordigen institution ID (e.g., 'PKO_BPKOPLPW')
+  requisitionId: text('requisition_id'), // Nordigen requisition ID
+  accessToken: text('access_token'), // legacy PKO field, unused with Nordigen
+  refreshToken: text('refresh_token'), // legacy PKO field, unused with Nordigen
+  consentId: text('consent_id'), // Nordigen agreement ID
   consentExpiresAt: timestamp('consent_expires_at', { withTimezone: true }),
   accountIds: jsonb('account_ids').$type<string[]>(),
   status: varchar('status', { length: 20 }).default('pending').notNull(), // 'pending' | 'active' | 'expired' | 'revoked'
   lastSyncAt: timestamp('last_sync_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-})
+}, (t) => [
+  index('idx_bank_connections_user_id').on(t.userId),
+])
 
 export const bankAccounts = pgTable('bank_accounts', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -253,7 +316,10 @@ export const bankAccounts = pgTable('bank_accounts', {
   balanceUpdatedAt: timestamp('balance_updated_at', { withTimezone: true }),
   isActive: boolean('is_active').default(true).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-})
+}, (t) => [
+  index('idx_bank_accounts_user_id').on(t.userId),
+  index('idx_bank_accounts_connection_id').on(t.connectionId),
+])
 
 export const bankTransactions = pgTable('bank_transactions', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -275,7 +341,12 @@ export const bankTransactions = pgTable('bank_transactions', {
   isMatched: boolean('is_matched').default(false).notNull(),
   metadata: jsonb('metadata'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-})
+}, (t) => [
+  index('idx_bank_transactions_user_id').on(t.userId),
+  index('idx_bank_transactions_date').on(t.date),
+  index('idx_bank_transactions_account_id').on(t.accountId),
+  index('idx_bank_transactions_user_date').on(t.userId, t.date),
+])
 
 // ══════════════════════════════════════════════════════════════════════════════
 // Savings Goals & Budget Planning
@@ -297,7 +368,9 @@ export const savingsGoals = pgTable('savings_goals', {
   completedAt: timestamp('completed_at', { withTimezone: true }),
   aiTips: jsonb('ai_tips').$type<string[]>(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-})
+}, (t) => [
+  index('idx_savings_goals_user_id').on(t.userId),
+])
 
 export const savingsDeposits = pgTable('savings_deposits', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -306,7 +379,9 @@ export const savingsDeposits = pgTable('savings_deposits', {
   amount: decimal('amount', { precision: 14, scale: 2 }).notNull(),
   note: text('note'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-})
+}, (t) => [
+  index('idx_savings_deposits_user_id').on(t.userId),
+])
 
 export const monthlyBudgets = pgTable('monthly_budgets', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -317,7 +392,10 @@ export const monthlyBudgets = pgTable('monthly_budgets', {
   savingsTarget: decimal('savings_target', { precision: 14, scale: 2 }),
   aiSummary: text('ai_summary'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-})
+}, (t) => [
+  index('idx_monthly_budgets_user_id').on(t.userId),
+  index('idx_monthly_budgets_user_month').on(t.userId, t.month),
+])
 
 export const financialChallenges = pgTable('financial_challenges', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -333,7 +411,9 @@ export const financialChallenges = pgTable('financial_challenges', {
   isCompleted: boolean('is_completed').default(false),
   currentProgress: decimal('current_progress', { precision: 12, scale: 2 }).default('0'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-})
+}, (t) => [
+  index('idx_financial_challenges_user_id').on(t.userId),
+])
 
 // ══════════════════════════════════════════════════════════════════════════════
 // Personal Features
@@ -357,7 +437,9 @@ export const weeklySummaries = pgTable('weekly_summaries', {
   }>>(),
   aiSummary: text('ai_summary'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-})
+}, (t) => [
+  index('idx_weekly_summaries_user_id').on(t.userId),
+])
 
 export const loyaltyCards = pgTable('loyalty_cards', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -368,23 +450,9 @@ export const loyaltyCards = pgTable('loyalty_cards', {
   isActive: boolean('is_active').default(true).notNull(),
   lastUsed: timestamp('last_used', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-})
-
-export const storePromotions = pgTable('store_promotions', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  store: varchar('store', { length: 50 }).notNull(),
-  productName: text('product_name').notNull(),
-  regularPrice: decimal('regular_price', { precision: 10, scale: 2 }),
-  promoPrice: decimal('promo_price', { precision: 10, scale: 2 }).notNull(),
-  discount: varchar('discount', { length: 20 }),
-  currency: varchar('currency', { length: 3 }).default('PLN'),
-  validFrom: date('valid_from'),
-  validUntil: date('valid_until'),
-  category: varchar('category', { length: 100 }),
-  imageUrl: text('image_url'),
-  source: text('source'),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-})
+}, (t) => [
+  index('idx_loyalty_cards_user_id').on(t.userId),
+])
 
 // ══════════════════════════════════════════════════════════════════════════════
 // Business Features
@@ -402,7 +470,9 @@ export const companies = pgTable('companies', {
   country: varchar('country', { length: 2 }).default('PL'),
   vatPayer: boolean('vat_payer').default(true).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-})
+}, (t) => [
+  index('idx_companies_owner_id').on(t.ownerId),
+])
 
 export const companyMembers = pgTable('company_members', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -415,7 +485,10 @@ export const companyMembers = pgTable('company_members', {
   spendingLimit: decimal('spending_limit', { precision: 12, scale: 2 }),
   isActive: boolean('is_active').default(true).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-})
+}, (t) => [
+  index('idx_company_members_user_id').on(t.userId),
+  index('idx_company_members_company_id').on(t.companyId),
+])
 
 export const departments = pgTable('departments', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -425,7 +498,9 @@ export const departments = pgTable('departments', {
   budgetPeriod: varchar('budget_period', { length: 10 }).default('monthly'),
   color: varchar('color', { length: 7 }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-})
+}, (t) => [
+  index('idx_departments_company_id').on(t.companyId),
+])
 
 export const invoices = pgTable('invoices', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -467,7 +542,10 @@ export const invoices = pgTable('invoices', {
   departmentId: uuid('department_id'),
   notes: text('notes'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-})
+}, (t) => [
+  index('idx_invoices_user_id').on(t.userId),
+  index('idx_invoices_user_issue_date').on(t.userId, t.issueDate),
+])
 
 export const expenseApprovals = pgTable('expense_approvals', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -479,7 +557,9 @@ export const expenseApprovals = pgTable('expense_approvals', {
   notes: text('notes'),
   submittedAt: timestamp('submitted_at', { withTimezone: true }).defaultNow().notNull(),
   reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
-})
+}, (t) => [
+  index('idx_expense_approvals_company_id').on(t.companyId),
+])
 
 export const vatEntries = pgTable('vat_entries', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -497,4 +577,7 @@ export const vatEntries = pgTable('vat_entries', {
   documentDate: date('document_date'),
   deductible: boolean('deductible').default(true),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-})
+}, (t) => [
+  index('idx_vat_entries_user_id').on(t.userId),
+  index('idx_vat_entries_company_id').on(t.companyId),
+])

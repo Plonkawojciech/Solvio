@@ -103,6 +103,7 @@ function GroupCardSkeleton() {
 const cardVariants = {
   hidden: { opacity: 0, y: 20 },
   visible: { opacity: 1, y: 0, transition: { duration: 0.35 } },
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 } as any
 
 const MODE_BADGE_STYLES: Record<string, string> = {
@@ -200,6 +201,7 @@ export default function GroupsPage() {
           </p>
           <button
             onClick={() => setTipDismissed(true)}
+            aria-label={t('groups.dismissBanner')}
             className="p-1 rounded-md hover:bg-violet-200 dark:hover:bg-violet-800/40 text-violet-500 transition-colors shrink-0"
           >
             <X className="h-4 w-4" />
@@ -235,34 +237,31 @@ export default function GroupsPage() {
           initial={{ opacity: 0, scale: 0.97 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.4 }}
-          className="flex flex-col items-center justify-center py-24 gap-5 text-center"
+          className="flex flex-col items-center justify-center py-20 sm:py-28 gap-5 text-center"
         >
-          <div className="relative">
-            <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-primary/10">
-              <Users className="h-10 w-10 text-primary" />
-            </div>
-            {/* Decorative rings */}
-            <div className="absolute -inset-4 rounded-full border-2 border-primary/10 animate-pulse" />
-            <div className="absolute -inset-8 rounded-full border border-primary/5" />
+          <div className="font-mono text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+            {'// '}{t('groups.emptyTitle')}
           </div>
-          <div className="space-y-1.5">
-            <h2 className="text-xl font-semibold">{t('groups.emptyTitle')}</h2>
-            <p className="text-muted-foreground max-w-sm text-sm leading-relaxed">
+          <div className="flex h-16 w-16 items-center justify-center rounded-md border-2 border-foreground bg-card text-foreground shadow-[3px_3px_0_hsl(var(--foreground))]">
+            <Users className="h-7 w-7" aria-hidden="true" />
+          </div>
+          <div className="space-y-2 max-w-sm">
+            <h2 className="text-xl font-extrabold tracking-tight">{t('groups.emptyTitle')}</h2>
+            <p className="text-muted-foreground text-sm leading-snug">
               {t('groups.emptyDesc')}
             </p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 flex-wrap justify-center pt-1">
             <Button
               variant="outline"
               onClick={() => setQuickSplitOpen(true)}
-              size="lg"
               className="gap-2"
             >
-              <Zap className="h-4 w-4" />
+              <Zap className="h-4 w-4" aria-hidden="true" />
               {t('groups.quickSplit')}
             </Button>
-            <Button onClick={() => setSheetOpen(true)} size="lg">
-              <Plus className="h-4 w-4 mr-2" />
+            <Button onClick={() => setSheetOpen(true)}>
+              <Plus className="h-4 w-4" aria-hidden="true" />
               {t('groups.emptyAction')}
             </Button>
           </div>

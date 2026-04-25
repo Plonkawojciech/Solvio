@@ -11,9 +11,14 @@ struct ReceiptDetailView: View {
     @EnvironmentObject private var router: AppRouter
     @EnvironmentObject private var toast: ToastCenter
     @EnvironmentObject private var locale: AppLocale
+    @EnvironmentObject private var store: AppDataStore
     @StateObject private var vm = ReceiptDetailViewModel()
     @State private var confirmingDelete = false
     @State private var showShareSheet = false
+
+    private func categoryName(for id: String) -> String? {
+        store.categories.first(where: { $0.id == id })?.name
+    }
 
     private var publicUrl: String {
         AppConfig.apiBaseURL
@@ -27,7 +32,7 @@ struct ReceiptDetailView: View {
             VStack(alignment: .leading, spacing: Theme.Spacing.md) {
                 if vm.isLoading && vm.receipt == nil {
                     NBLoadingCard()
-                } else if let message = vm.errorMessage {
+                } else if let message = vm.errorMessage, vm.receipt == nil {
                     NBErrorCard(message: message) { Task { await vm.load(id: receiptId) } }
                 } else if let r = vm.receipt {
                     hero(r)
@@ -62,7 +67,7 @@ struct ReceiptDetailView: View {
         .refreshable { await vm.load(id: receiptId) }
         .confirmationDialog(locale.t("receiptDetail.deleteTitle"), isPresented: $confirmingDelete, titleVisibility: .visible) {
             Button(locale.t("common.delete"), role: .destructive) {
-                Task { await vm.delete(locale: locale, toast: toast) { router.popToRoot() } }
+                Task { await vm.delete(store: store, locale: locale, toast: toast) { router.popToRoot() } }
             }
             Button(locale.t("common.cancel"), role: .cancel) {}
         } message: {
@@ -269,7 +274,7 @@ struct ReceiptDetailView: View {
                 if let unit = item.unitPrice {
                     NBTag(text: Fmt.amount(unit, currency: currency))
                 }
-                if let categoryId = item.categoryId, let name = vm.categoryName(for: categoryId) {
+                if let categoryId = item.categoryId, let name = categoryName(for: categoryId) {
                     NBTag(text: name)
                 } else if let categoryId = item.categoryId {
                     NBTag(text: String(categoryId.prefix(6)))
@@ -340,11 +345,15 @@ struct ShareSheet: UIViewControllerRepresentable {
 }
 
 // MARK: - ViewModel
+//
+// We keep a tiny VM here because the detail endpoint is the only place
+// that returns the full `items` array (the list endpoint omits it for
+// payload reasons). Categories now come from `AppDataStore` instead of
+// a duplicate `/api/data/settings` round-trip.
 
 @MainActor
 final class ReceiptDetailViewModel: ObservableObject {
     @Published var receipt: Receipt?
-    @Published var categories: [Category] = []
     @Published var isLoading = false
     @Published var errorMessage: String?
 
@@ -363,20 +372,18 @@ final class ReceiptDetailViewModel: ObservableObject {
                 errorMessage = error.localizedDescription
             }
         }
-        // Category lookup — best-effort, failure shouldn't block the detail view.
-        if let bundle = try? await SettingsRepo.fetch() {
-            categories = bundle.categories
-        }
     }
 
-    func categoryName(for id: String) -> String? {
-        categories.first(where: { $0.id == id })?.name
-    }
-
-    func delete(locale: AppLocale, toast: ToastCenter, onDone: @escaping () -> Void) async {
+    func delete(
+        store: AppDataStore,
+        locale: AppLocale,
+        toast: ToastCenter,
+        onDone: @escaping () -> Void
+    ) async {
         guard let r = receipt else { return }
         do {
             try await ReceiptsRepo.delete(id: r.id)
+            store.didMutateReceipts()
             toast.success(locale.t("receiptDetail.deletedToast"))
             onDone()
         } catch {

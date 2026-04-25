@@ -67,7 +67,7 @@ export function ChallengeCard({ challenge, index, onCheckIn, onDelete, currency 
                 <h3 className="font-bold text-sm leading-tight line-clamp-2">{challenge.name}</h3>
                 <div className="flex items-center gap-1.5 mt-1">
                   <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${typeColors[challenge.type] || typeColors.custom}`}>
-                    {t(`challenges.type.${challenge.type}` as any)}
+                    {t(`challenges.type.${challenge.type}` as Parameters<typeof t>[0])}
                   </Badge>
                   {challenge.targetCategory && (
                     <span className="text-[10px] text-muted-foreground">{challenge.targetCategory}</span>
@@ -77,7 +77,8 @@ export function ChallengeCard({ challenge, index, onCheckIn, onDelete, currency 
             </div>
             <button
               onClick={() => onDelete(challenge.id)}
-              className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
+              className="md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100 transition-opacity p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
+              aria-label={t('challenges.deleteChallenge')}
             >
               <Trash2 className="h-3.5 w-3.5" />
             </button>

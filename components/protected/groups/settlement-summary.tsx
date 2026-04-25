@@ -12,14 +12,11 @@ import {
   ArrowRight,
   Send,
   Share2,
-  Copy,
   TrendingUp,
   TrendingDown,
   Minus,
   Receipt,
   Users,
-  Loader2,
-  ExternalLink,
   Filter,
 } from 'lucide-react'
 import { PaymentRequestCard } from './payment-request-card'

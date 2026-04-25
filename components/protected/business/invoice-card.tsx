@@ -90,6 +90,7 @@ export function InvoiceCard({ invoice, currency, locale, onClick, index = 0 }: I
     <motion.div
       initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       transition={{ duration: 0.4, delay: index * 0.05, ease: [0.22, 1, 0.36, 1] as any }}
     >
       <Card

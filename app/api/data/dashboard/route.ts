@@ -80,12 +80,14 @@ export async function GET(request: Request) {
       prevTotal += amount
     }
 
+    // `prevExpenses` used to be a flat list; clients now read `prevTotal` +
+    // `prevByCategory` (server-side aggregated above), so we omit the array
+    // entirely. iOS treats it as optional and falls through gracefully.
     return NextResponse.json({
       categories: cats,
       settings: settings[0] || null,
       budgets,
       expenses: exps,
-      prevExpenses: [],
       prevTotal,
       prevByCategory,
       receiptsCount: recsCount[0]?.count ?? 0,
@@ -93,7 +95,10 @@ export async function GET(request: Request) {
       savingsTarget: monthBudget[0]?.savingsTarget ? parseFloat(monthBudget[0].savingsTarget) : null,
     }, {
       headers: {
-        'Cache-Control': 'no-store, no-cache, must-revalidate',
+        // Per-user, authenticated. We use a tiny shared-cache window so
+        // back-to-back navigations within the same Vercel region can hit
+        // the edge cache; iOS still controls invalidation via AppDataStore.
+        'Cache-Control': 'private, max-age=5, must-revalidate',
       },
     })
   } catch (err) {

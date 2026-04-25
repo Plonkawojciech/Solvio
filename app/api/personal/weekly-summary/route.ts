@@ -2,22 +2,49 @@ import { auth } from '@/lib/auth-compat'
 import { NextResponse } from 'next/server'
 import { db, expenses, weeklySummaries, categories } from '@/lib/db'
 import { eq, gte, lte, and, desc, sql } from 'drizzle-orm'
-import OpenAI from 'openai'
+import { getAIClient } from '@/lib/ai-client'
+import { rateLimit } from '@/lib/rate-limit'
+import { z } from 'zod'
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+const WeeklySummarySchema = z.object({
+  lang: z.enum(['pl', 'en']).optional().default('pl'),
+  currency: z.string().length(3).optional().default('PLN'),
+})
 
 export async function POST(request: Request) {
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  let body: any
+  const ai = getAIClient()
+  if (!ai) {
+    return NextResponse.json({ error: 'AI service not configured' }, { status: 503 })
+  }
+
+  // SECURITY FIX: Rate limiting for OpenAI-powered endpoint
+  const rl = rateLimit(`ai:weekly-summary:${userId}`, { maxRequests: 10, windowMs: 60 * 60 * 1000 })
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { error: 'Rate limit exceeded. Try again later.' },
+      { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } },
+    )
+  }
+
+  let rawBody: unknown
   try {
-    body = await request.json()
+    rawBody = await request.json()
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
 
-  const { lang = 'pl', currency = 'PLN' } = body
+  const parsed = WeeklySummarySchema.safeParse(rawBody)
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: 'Invalid request body', details: parsed.error.flatten() },
+      { status: 400 },
+    )
+  }
+
+  const { lang, currency } = parsed.data
   const isPolish = lang === 'pl'
 
   try {
@@ -147,8 +174,8 @@ Return JSON:
   ]
 }`
 
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
+    const completion = await ai.client.chat.completions.create({
+      model: ai.model,
       messages: [
         { role: 'system', content: 'You are a helpful financial assistant that returns only valid JSON.' },
         { role: 'user', content: prompt },
@@ -159,6 +186,7 @@ Return JSON:
     })
 
     const content = completion.choices[0]?.message?.content || '{}'
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let aiResult: any
     try {
       aiResult = JSON.parse(content)

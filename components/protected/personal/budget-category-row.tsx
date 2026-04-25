@@ -1,5 +1,6 @@
 'use client'
 
+import { AlertTriangle } from 'lucide-react'
 import { Progress } from '@/components/ui/progress'
 import { useTranslation } from '@/lib/i18n'
 
@@ -12,7 +13,7 @@ interface BudgetCategoryRowProps {
   color?: string
 }
 
-export function BudgetCategoryRow({ name, icon, budgeted, spent, currency, color }: BudgetCategoryRowProps) {
+export function BudgetCategoryRow({ name, icon, budgeted, spent, currency }: BudgetCategoryRowProps) {
   const { t } = useTranslation()
   const remaining = budgeted - spent
   const percentage = budgeted > 0 ? Math.min((spent / budgeted) * 100, 100) : 0
@@ -56,7 +57,8 @@ export function BudgetCategoryRow({ name, icon, budgeted, spent, currency, color
         />
       </div>
       {isOverspent && (
-        <p className="text-[11px] text-red-500 font-medium">
+        <p className="text-[11px] text-red-600 dark:text-red-400 font-medium flex items-center gap-1" role="status">
+          <AlertTriangle className="h-3 w-3 shrink-0" aria-hidden="true" />
           {t('budget.overspent')}: {(spent - budgeted).toFixed(2)} {currency}
         </p>
       )}

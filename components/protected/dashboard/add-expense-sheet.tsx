@@ -2,16 +2,16 @@
 
 import * as React from 'react'
 import { z } from 'zod'
-import { useForm } from 'react-hook-form'
+import { useForm, UseFormReturn } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import {
   UploadCloud,
   X,
   Loader2,
-  AlertCircle,
   Calendar as CalendarIcon,
   FileText,
   RefreshCcw,
+  Tag,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { format } from 'date-fns'
@@ -42,6 +42,7 @@ import {
   PopoverContent,
 } from '@/components/ui/popover'
 import { Calendar } from '@/components/ui/calendar'
+import { Alert } from '@/components/ui/alert'
 
 // ── File row with image thumbnail ─────────────────────────────────────────────
 
@@ -54,6 +55,7 @@ function FileRow({
   onRemove: () => void
   disabled?: boolean
 }) {
+  const { t } = useTranslation()
   const [previewSrc, setPreviewSrc] = React.useState<string | null>(null)
   const isImage =
     file.type.startsWith('image/') ||
@@ -68,32 +70,33 @@ function FileRow({
   }, [file, isImage, isHeic])
 
   return (
-    <div className="flex items-center gap-3 rounded-md border bg-muted/40 px-3 py-2">
+    <div className="flex items-center gap-3 rounded-md border-2 border-foreground bg-card px-3 py-2 shadow-[2px_2px_0_hsl(var(--foreground))]">
       {previewSrc ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
           src={previewSrc}
           alt={file.name}
-          className="h-10 w-10 rounded border object-cover shrink-0"
+          className="h-10 w-10 rounded-md border-2 border-foreground object-cover shrink-0"
         />
       ) : (
-        <div className="h-10 w-10 rounded border bg-muted flex items-center justify-center shrink-0">
-          <FileText className="h-4 w-4 text-muted-foreground" />
+        <div className="h-10 w-10 rounded-md border-2 border-foreground bg-secondary flex items-center justify-center shrink-0">
+          <FileText className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
         </div>
       )}
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium truncate">{file.name}</p>
+        <p className="text-sm font-semibold truncate">{file.name}</p>
         <p className="text-xs text-muted-foreground">{(file.size / 1024).toFixed(0)} KB</p>
       </div>
       <Button
         type="button"
         variant="ghost"
-        size="icon"
-        className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
+        size="icon-sm"
+        className="shrink-0 text-muted-foreground hover:bg-destructive hover:text-destructive-foreground"
         onClick={onRemove}
         disabled={disabled}
+        aria-label={`${t('addExpense.removeFile')}: ${file.name}`}
       >
-        <X className="h-4 w-4" />
+        <X className="h-4 w-4" aria-hidden="true" />
       </Button>
     </div>
   )
@@ -105,8 +108,8 @@ const expenseFormSchema = z.object({
   amount: z
     .string()
     .min(1, { message: 'Amount is required.' })
-    .regex(/^\d+(\.\d{1,2})?$/, {
-      message: 'Enter a valid amount, e.g., 12.50.',
+    .regex(/^\d+([.,]\d{1,2})?$/, {
+      message: 'Enter a valid amount, e.g., 12.50 or 12,50.',
     }),
   description: z.string().min(1, { message: 'Description is required.' }),
   date: z.date({ message: 'Date is required.' }),
@@ -117,18 +120,107 @@ const expenseFormSchema = z.object({
 
 type ExpenseFormValues = z.infer<typeof expenseFormSchema>
 
+// ── Date picker sub-component — hooks must live at component level ────────────
+
+type ExpenseFormValuesForDate = z.infer<typeof expenseFormSchema>
+
+function DatePickerField({
+  form,
+  t,
+}: {
+  form: UseFormReturn<ExpenseFormValuesForDate>
+  t: (key: string) => string
+}) {
+  const [open, setOpen] = React.useState(false)
+  const triggerRef = React.useRef<HTMLButtonElement>(null)
+  const [triggerWidth, setTriggerWidth] = React.useState<number>(0)
+
+  React.useEffect(() => {
+    const measure = () => {
+      if (triggerRef.current) setTriggerWidth(triggerRef.current.offsetWidth)
+    }
+    measure()
+    const ro = new ResizeObserver(measure)
+    if (triggerRef.current) ro.observe(triggerRef.current)
+    window.addEventListener('resize', measure)
+    return () => {
+      ro.disconnect()
+      window.removeEventListener('resize', measure)
+    }
+  }, [])
+
+  return (
+    <FormField
+      control={form.control}
+      name="date"
+      render={({ field }) => (
+        <FormItem>
+          <FormLabel suppressHydrationWarning>{t('addExpense.date')}</FormLabel>
+          <Popover open={open} onOpenChange={setOpen}>
+            <PopoverTrigger asChild>
+              <Button
+                ref={triggerRef}
+                variant="outline"
+                className={cn(
+                  "justify-start text-left font-normal w-full",
+                  !field.value && "text-muted-foreground"
+                )}
+              >
+                <CalendarIcon className="mr-2 h-4 w-4" />
+                {field.value ? format(field.value, "LLL dd, yyyy") : t('addExpense.pickDate')}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent
+              align="start"
+              sideOffset={4}
+              className="p-0"
+              style={{ width: triggerWidth }}
+            >
+              <div className="w-full">
+                <Calendar
+                  mode="single"
+                  selected={field.value}
+                  onSelect={(d) => d && field.onChange(d)}
+                  className="w-full"
+                />
+              </div>
+            </PopoverContent>
+          </Popover>
+          <FormMessage />
+        </FormItem>
+      )}
+    />
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface ExpenseForSuggestion {
+  vendor: string | null
+  title: string
+  categoryId: string | null
+}
+
+interface MerchantRule {
+  vendor: string
+  categoryId: string
+  count: number
+}
+
 interface AddExpenseSheetProps {
   isOpen: boolean
   onClose: () => void
   onAction?: () => void
+  allExpenses?: ExpenseForSuggestion[]
 }
 
 export function AddExpenseSheet({
   isOpen,
   onClose,
   onAction,
+  allExpenses = [],
 }: AddExpenseSheetProps) {
-  const { t } = useTranslation()
+  const { t, lang } = useTranslation()
   const [categories, setCategories] = React.useState<
     { id: string; name: string; icon?: string }[]
   >([])
@@ -137,6 +229,74 @@ export function AddExpenseSheet({
   const [isUploading, setIsUploading] = React.useState(false)
   const [isSubmitting, setIsSubmitting] = React.useState(false)
   const [formError, setFormError] = React.useState<string | null>(null)
+
+  // ── Tags state ───────────────────────────────────────────────────────────
+  const [tags, setTags] = React.useState<string[]>([])
+  const [tagInput, setTagInput] = React.useState('')
+  const MAX_TAGS = 5
+
+  // ── Merchant rules (auto-categorization) ─────────────────────────────────
+  const [merchantRules, setMerchantRules] = React.useState<MerchantRule[]>([])
+  const [categoryAppliedByRule, setCategoryAppliedByRule] = React.useState<string | null>(null)
+
+  // ── Category auto-suggest ────────────────────────────────────────────────
+  const [debouncedVendor, setDebouncedVendor] = React.useState('')
+  const [debouncedDesc, setDebouncedDesc] = React.useState('')
+  const suggestDebounceRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Debounce vendor + description inputs
+  const handleVendorChange = React.useCallback((val: string) => {
+    if (suggestDebounceRef.current) clearTimeout(suggestDebounceRef.current)
+    suggestDebounceRef.current = setTimeout(() => setDebouncedVendor(val), 400)
+  }, [])
+
+  const handleDescChange = React.useCallback((val: string) => {
+    if (suggestDebounceRef.current) clearTimeout(suggestDebounceRef.current)
+    suggestDebounceRef.current = setTimeout(() => setDebouncedDesc(val), 400)
+  }, [])
+
+  // Compute suggestion: find most-frequent categoryId for matching vendor/title
+  const suggestedCategoryId = React.useMemo(() => {
+    if (!allExpenses.length) return null
+    const query = (debouncedVendor || debouncedDesc).trim().toLowerCase()
+    if (query.length < 2) return null
+
+    const matches = allExpenses.filter(e => {
+      const v = (e.vendor || '').toLowerCase()
+      const titleStr = (e.title || '').toLowerCase()
+      return (v && v.startsWith(query)) || (titleStr && titleStr.startsWith(query))
+    }).filter(e => e.categoryId)
+
+    if (matches.length < 2) return null
+
+    // Count occurrences per categoryId
+    const freq: Record<string, number> = {}
+    for (const e of matches) {
+      const cid = e.categoryId!
+      freq[cid] = (freq[cid] || 0) + 1
+    }
+    const best = Object.entries(freq).sort((a, b) => b[1] - a[1])[0]
+    if (!best || best[1] < 2) return null
+    return best[0]
+  }, [allExpenses, debouncedVendor, debouncedDesc])
+
+  const suggestedCategory = React.useMemo(() => {
+    if (!suggestedCategoryId) return null
+    return categories.find(c => c.id === suggestedCategoryId) || null
+  }, [suggestedCategoryId, categories])
+
+  // Merchant rule match: exact vendor match in rules
+  const matchedRule = React.useMemo(() => {
+    if (!debouncedVendor || merchantRules.length === 0) return null
+    const query = debouncedVendor.trim().toLowerCase()
+    if (query.length < 2) return null
+    return merchantRules.find(r => r.vendor === query || r.vendor.startsWith(query) || query.startsWith(r.vendor)) || null
+  }, [debouncedVendor, merchantRules])
+
+  const matchedRuleCategory = React.useMemo(() => {
+    if (!matchedRule) return null
+    return categories.find(c => c.id === matchedRule.categoryId) || null
+  }, [matchedRule, categories])
 
   const form = useForm<ExpenseFormValues>({
     resolver: zodResolver(expenseFormSchema),
@@ -150,21 +310,61 @@ export function AddExpenseSheet({
     },
   })
 
+  // Auto-apply rule when vendor typed and no category manually selected yet
   React.useEffect(() => {
-    const fetchSettings = async () => {
+    const currentCategory = form.getValues('category')
+    if (matchedRule && matchedRuleCategory && !currentCategory) {
+      form.setValue('category', matchedRule.categoryId, { shouldValidate: true })
+      setCategoryAppliedByRule(matchedRuleCategory.name)
+    } else if (!matchedRule && categoryAppliedByRule) {
+      // Vendor changed, no longer matches — clear the rule-applied state
+      setCategoryAppliedByRule(null)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [matchedRule, matchedRuleCategory])
+
+  // Duplicate detection: same vendor + similar amount within last 7 days
+  const [formAmount, setFormAmount] = React.useState('')
+  const possibleDuplicate = React.useMemo(() => {
+    if (!allExpenses.length || !debouncedVendor || !formAmount) return null
+    const amt = parseFloat(formAmount.replace(',', '.'))
+    if (isNaN(amt) || amt <= 0) return null
+    const sevenDaysAgo = new Date()
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
+    const sevenDaysAgoStr = sevenDaysAgo.toISOString().slice(0, 10)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (allExpenses as any[]).find(e => {
+      const vendorMatch = e.vendor && debouncedVendor &&
+        e.vendor.toLowerCase().trim() === debouncedVendor.toLowerCase().trim()
+      const amtMatch = Math.abs(parseFloat(e.amount || '0') - amt) < 0.01
+      const recentEnough = e.date && e.date >= sevenDaysAgoStr
+      return vendorMatch && amtMatch && recentEnough
+    }) || null
+  }, [allExpenses, debouncedVendor, formAmount])
+
+  React.useEffect(() => {
+    const fetchAll = async () => {
       try {
-        const res = await fetch('/api/data/settings')
-        if (!res.ok) return
-        const data = await res.json()
-        if (data.categories) {
-          setCategories(
-            [...data.categories].sort((a: any, b: any) =>
-              (a.name || '').localeCompare(b.name || '')
+        const [settingsRes, rulesRes] = await Promise.all([
+          fetch('/api/data/settings'),
+          fetch('/api/personal/merchant-rules'),
+        ])
+        if (settingsRes.ok) {
+          const data = await settingsRes.json()
+          if (data.categories) {
+            setCategories(
+              [...data.categories].sort((a: { name?: string }, b: { name?: string }) =>
+                (a.name || '').localeCompare(b.name || '')
+              )
             )
-          )
+          }
+          if (data.settings?.currency) {
+            setCurrency(data.settings.currency.toUpperCase())
+          }
         }
-        if (data.settings?.currency) {
-          setCurrency(data.settings.currency.toUpperCase())
+        if (rulesRes.ok) {
+          const rulesData = await rulesRes.json()
+          if (rulesData.rules) setMerchantRules(rulesData.rules)
         }
       } catch (err) {
         if (process.env.NODE_ENV === 'development') {
@@ -173,7 +373,8 @@ export function AddExpenseSheet({
         setFormError(t('addExpense.failedLoadCategories'))
       }
     }
-    fetchSettings()
+    fetchAll()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -182,7 +383,7 @@ export function AddExpenseSheet({
       const newFiles = Array.from(e.target.files).filter(file => {
         if (file.size > maxFileSize) {
           toast.error(t('addExpense.fileTooLarge'), {
-            description: `${file.name} exceeds the 10MB limit.`
+            description: t('addExpense.fileTooLargeDesc').replace('{name}', file.name)
           })
           return false
         }
@@ -199,7 +400,7 @@ export function AddExpenseSheet({
     setIsSubmitting(true)
     setFormError(null)
 
-    const amount = Number(data.amount)
+    const amount = Number(data.amount.replace(',', '.'))
     const dateISO = format(data.date, 'yyyy-MM-dd')
 
     try {
@@ -218,7 +419,9 @@ export function AddExpenseSheet({
             categoryId: data.category,
             vendor: data.vendor || null,
             notes: data.notes || null,
+            currency,
             source: 'manual',
+            tags: tags.length > 0 ? tags : null,
           }),
         })
         if (!expRes.ok) {
@@ -238,7 +441,9 @@ export function AddExpenseSheet({
             categoryId: data.category,
             vendor: data.vendor || null,
             notes: data.notes || null,
+            currency,
             source: 'manual',
+            tags: tags.length > 0 ? tags : null,
           }),
         })
         if (!expRes.ok) {
@@ -252,6 +457,9 @@ export function AddExpenseSheet({
       })
       form.reset()
       setFiles([])
+      setTags([])
+      setTagInput('')
+      setCategoryAppliedByRule(null)
       onAction?.()
       onClose()
     } catch (error: unknown) {
@@ -267,10 +475,36 @@ export function AddExpenseSheet({
     }
   }
 
+  // ── Tag helpers ──────────────────────────────────────────────────────────
+  const addTag = (tag: string) => {
+    const clean = tag.trim().toLowerCase()
+    if (!clean || tags.includes(clean) || tags.length >= MAX_TAGS) return
+    setTags(prev => [...prev, clean])
+    setTagInput('')
+  }
+
+  const removeTag = (tag: string) => {
+    setTags(prev => prev.filter(t => t !== tag))
+  }
+
+  const handleTagKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' || e.key === ',') {
+      e.preventDefault()
+      addTag(tagInput)
+    } else if (e.key === 'Backspace' && !tagInput && tags.length > 0) {
+      setTags(prev => prev.slice(0, -1))
+    }
+  }
+
   const handleClose = () => {
     form.reset()
     setFiles([])
     setFormError(null)
+    setDebouncedVendor('')
+    setDebouncedDesc('')
+    setTags([])
+    setTagInput('')
+    setCategoryAppliedByRule(null)
     onClose()
   }
 
@@ -304,6 +538,10 @@ export function AddExpenseSheet({
                       <Input
                         {...field}
                         placeholder={t('addExpense.descriptionPlaceholder')}
+                        onChange={(e) => {
+                          field.onChange(e)
+                          handleDescChange(e.target.value)
+                        }}
                       />
                     </FormControl>
                     <FormMessage />
@@ -322,75 +560,20 @@ export function AddExpenseSheet({
                       <FormControl>
                         <Input
                           {...field}
+                          type="text"
                           inputMode="decimal"
-                          placeholder="e.g., 25.90"
+                          autoComplete="off"
+                          placeholder={t('addExpense.amountPlaceholder')}
+                          aria-label={`${t('addExpense.amount')} (${currency})`}
+                          aria-required="true"
+                          onChange={e => { field.onChange(e); setFormAmount(e.target.value) }}
                         />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
-                <FormField
-                  control={form.control}
-                  name="date"
-                  render={({ field }) => {
-                    const [open, setOpen] = React.useState(false)
-                    const triggerRef = React.useRef<HTMLButtonElement>(null)
-                    const [triggerWidth, setTriggerWidth] = React.useState<number>(0)
-
-                    React.useEffect(() => {
-                      const measure = () => {
-                        if (triggerRef.current) setTriggerWidth(triggerRef.current.offsetWidth)
-                      }
-                      measure()
-                      const ro = new ResizeObserver(measure)
-                      if (triggerRef.current) ro.observe(triggerRef.current)
-                      window.addEventListener('resize', measure)
-                      return () => {
-                        ro.disconnect()
-                        window.removeEventListener('resize', measure)
-                      }
-                    }, [])
-
-                    return (
-                      <FormItem>
-                        <FormLabel suppressHydrationWarning>{t('addExpense.date')}</FormLabel>
-                        <Popover open={open} onOpenChange={setOpen}>
-                          <PopoverTrigger asChild>
-                            <Button
-                              ref={triggerRef}
-                              variant="outline"
-                              className={cn(
-                                "justify-start text-left font-normal w-full",
-                                !field.value && "text-muted-foreground"
-                              )}
-                            >
-                              <CalendarIcon className="mr-2 h-4 w-4" />
-                              {field.value ? format(field.value, "LLL dd, yyyy") : t('addExpense.pickDate')}
-                            </Button>
-                          </PopoverTrigger>
-
-                          <PopoverContent
-                            align="start"
-                            sideOffset={4}
-                            className="p-0"
-                            style={{ width: triggerWidth }}
-                          >
-                            <div className="w-full">
-                              <Calendar
-                                mode="single"
-                                selected={field.value}
-                                onSelect={(d) => d && field.onChange(d)}
-                                className="w-full"
-                              />
-                            </div>
-                          </PopoverContent>
-                        </Popover>
-                        <FormMessage />
-                      </FormItem>
-                    )
-                  }}
-                />
+                <DatePickerField form={form} t={t} />
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -403,7 +586,12 @@ export function AddExpenseSheet({
                       <FormControl>
                         <select
                           {...field}
-                          className="w-full rounded-md border border-input bg-background p-2 text-sm"
+                          aria-required="true"
+                          onChange={(e) => {
+                            field.onChange(e)
+                            if (categoryAppliedByRule) setCategoryAppliedByRule(null)
+                          }}
+                          className="flex h-11 w-full items-center rounded-md border-2 border-foreground bg-background px-3 text-base md:text-sm font-medium shadow-[2px_2px_0_hsl(var(--foreground))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                         >
                           <option value="">{t('addExpense.selectCategory')}</option>
                           {categories.map((cat) => (
@@ -425,13 +613,78 @@ export function AddExpenseSheet({
                     <FormItem>
                       <FormLabel suppressHydrationWarning>{t('addExpense.vendor')}</FormLabel>
                       <FormControl>
-                        <Input {...field} placeholder={t('addExpense.optional')} />
+                        <Input
+                          {...field}
+                          placeholder={t('addExpense.optional')}
+                          onChange={(e) => {
+                            field.onChange(e)
+                            handleVendorChange(e.target.value)
+                          }}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
               </div>
+
+              {/* Duplicate expense warning */}
+              {possibleDuplicate && (
+                <Alert variant="warning">
+                  <span suppressHydrationWarning>
+                    {t('addExpense.possibleDuplicate') || (lang === 'pl'
+                      ? `Możliwy duplikat: podobny wydatek z ${possibleDuplicate.date} już istnieje`
+                      : `Possible duplicate: similar expense from ${possibleDuplicate.date} already exists`
+                    )}
+                  </span>
+                </Alert>
+              )}
+
+              {/* Merchant rule auto-applied indicator */}
+              {categoryAppliedByRule && (
+                <Alert variant="success" hideIcon>
+                  <div className="flex items-center gap-2">
+                    <Tag className="h-4 w-4 shrink-0" aria-hidden="true" />
+                    <span className="flex-1" suppressHydrationWarning>
+                      {t('addExpense.autoAppliedCategory')}: <strong>{categoryAppliedByRule}</strong>
+                      {' '}
+                      <span className="text-xs opacity-70">
+                        ({t('addExpense.autoAppliedHint')})
+                      </span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        form.setValue('category', '', { shouldValidate: false })
+                        setCategoryAppliedByRule(null)
+                      }}
+                      className="shrink-0 rounded-md p-1 hover:bg-foreground/10 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/50"
+                      aria-label={t('addExpense.clearAutoCategory') || 'Clear auto-applied category'}
+                    >
+                      <X className="h-4 w-4" aria-hidden="true" />
+                    </button>
+                  </div>
+                </Alert>
+              )}
+
+              {/* Category auto-suggest chip (history-based, only when no rule applied) */}
+              {suggestedCategory && !form.getValues('category') && !categoryAppliedByRule && (
+                <Alert variant="info" hideIcon>
+                  <div className="flex items-center gap-2">
+                    <Tag className="h-4 w-4 shrink-0" aria-hidden="true" />
+                    <span className="flex-1" suppressHydrationWarning>
+                      {t('addExpense.suggestedCategory')}:
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => form.setValue('category', suggestedCategory.id, { shouldValidate: true })}
+                      className="font-extrabold underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/50 rounded-md px-1"
+                    >
+                      {suggestedCategory.icon ? `${suggestedCategory.icon} ${suggestedCategory.name}` : suggestedCategory.name}
+                    </button>
+                  </div>
+                </Alert>
+              )}
 
               <FormField
                 control={form.control}
@@ -447,19 +700,79 @@ export function AddExpenseSheet({
                 )}
               />
 
+              {/* Tags input */}
+              <div className="space-y-2">
+                <FormLabel suppressHydrationWarning>{t('expenses.tags')}</FormLabel>
+                {/* Suggested tags */}
+                <div className="flex flex-wrap gap-1.5">
+                  {(['praca', 'dom', 'jedzenie', 'transport', 'wyjście', 'subskrypcja'] as const).map((suggestion) => (
+                    <button
+                      key={suggestion}
+                      type="button"
+                      onClick={() => addTag(suggestion)}
+                      disabled={tags.includes(suggestion) || tags.length >= MAX_TAGS}
+                      className="text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground hover:bg-primary/10 hover:text-primary transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      {suggestion}
+                    </button>
+                  ))}
+                </div>
+                {/* Tag input row */}
+                <div className="flex gap-2">
+                  <Input
+                    value={tagInput}
+                    onChange={(e) => setTagInput(e.target.value)}
+                    onKeyDown={handleTagKeyDown}
+                    placeholder={t('expenses.addTag')}
+                    disabled={tags.length >= MAX_TAGS}
+                    className="h-8 text-sm flex-1"
+                    maxLength={50}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => addTag(tagInput)}
+                    disabled={!tagInput.trim() || tags.length >= MAX_TAGS}
+                    className="text-xs px-3 py-1 rounded-md border border-input bg-background hover:bg-muted transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    +
+                  </button>
+                </div>
+                {/* Applied tags */}
+                {tags.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {tags.map((tag) => (
+                      <span
+                        key={tag}
+                        className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary"
+                      >
+                        {tag}
+                        <button
+                          type="button"
+                          onClick={() => removeTag(tag)}
+                          className="hover:text-primary/60 transition-colors leading-none"
+                          aria-label={`Remove tag ${tag}`}
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               {/* File upload */}
               <div className="space-y-2">
                 <FormLabel suppressHydrationWarning>{t('addExpense.attachReceipt')}</FormLabel>
                 <label
                   htmlFor="file-upload"
                   className={cn(
-                    'relative flex w-full cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-muted-foreground/20 bg-muted/30 p-8 transition-colors hover:bg-muted/50',
+                    'relative flex w-full cursor-pointer flex-col items-center justify-center gap-2 rounded-md border-2 border-dashed border-foreground/40 bg-secondary/30 p-8 transition-colors hover:bg-secondary/60 focus-within:outline-none focus-within:ring-2 focus-within:ring-foreground/50 focus-within:ring-offset-2',
                     isLoading && 'cursor-not-allowed opacity-50'
                   )}
                 >
-                  <UploadCloud className="h-8 w-8 text-muted-foreground" />
-                  <p className="mt-1 text-sm text-muted-foreground" suppressHydrationWarning>
-                    <span className="font-semibold text-primary">{t('addExpense.upload')}</span>{' '}
+                  <UploadCloud className="h-8 w-8 text-muted-foreground" aria-hidden="true" />
+                  <p className="text-sm text-muted-foreground text-center" suppressHydrationWarning>
+                    <span className="font-extrabold text-foreground">{t('addExpense.upload')}</span>{' '}
                     {t('addExpense.uploadOrDrag')}
                   </p>
                   <Input
@@ -488,22 +801,21 @@ export function AddExpenseSheet({
               </div>
 
               {formError && (
-                <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-4 space-y-3">
-                  <div className="flex items-start gap-2 text-sm text-destructive">
-                    <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
-                    <span className="leading-relaxed">{formError}</span>
+                <Alert variant="destructive">
+                  <div className="space-y-3">
+                    <p className="leading-relaxed">{formError}</p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="w-full gap-2"
+                      onClick={() => setFormError(null)}
+                    >
+                      <RefreshCcw className="h-3.5 w-3.5" aria-hidden="true" />
+                      {t('expenses.retry')}
+                    </Button>
                   </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="w-full gap-2 border-destructive/40 text-destructive hover:bg-destructive/10"
-                    onClick={() => setFormError(null)}
-                  >
-                    <RefreshCcw className="h-3.5 w-3.5" />
-                    {t('expenses.retry')}
-                  </Button>
-                </div>
+                </Alert>
               )}
             </form>
           </Form>

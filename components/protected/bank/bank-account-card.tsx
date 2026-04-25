@@ -103,7 +103,7 @@ export function BankAccountCard({
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
                   <h3 className="font-semibold text-sm truncate" suppressHydrationWarning>
-                    {account.provider === 'pko' ? 'PKO BP' : account.provider.toUpperCase()}
+                    {account.provider}
                   </h3>
                   <div className="flex items-center gap-1.5">
                     <span className={`h-2 w-2 rounded-full ring-2 ${syncDotColors[syncStatus]} ${syncDotRingColors[syncStatus]}`} />
@@ -121,6 +121,7 @@ export function BankAccountCard({
               className="h-8 w-8 shrink-0"
               onClick={() => onSync(account.id)}
               disabled={syncing}
+              aria-label={t('bank.syncAccount')}
             >
               {syncing ? (
                 <Loader2 className="h-4 w-4 animate-spin" />

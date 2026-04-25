@@ -2,9 +2,9 @@ import { auth } from '@/lib/auth-compat'
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { companies, companyMembers, departments, expenses, userSettings } from '@/lib/db/schema'
-import { eq, and, desc, sql } from 'drizzle-orm'
+import { eq, and, desc, sql, inArray } from 'drizzle-orm'
 
-export async function GET(req: NextRequest) {
+export async function GET() {
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
@@ -51,32 +51,36 @@ export async function GET(req: NextRequest) {
       .from(departments)
       .where(eq(departments.companyId, companyId))
 
-    // Calculate spending per member (current month)
+    // Calculate spending per member (current month) — single GROUP BY query
     const now = new Date()
     const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
     const monthEnd = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-31`
 
-    const membersWithSpending = await Promise.all(
-      members.map(async (member) => {
-        const spendingResult = await db.select({
+    const memberUserIds = members.map(m => m.userId).filter(Boolean)
+    const spendingByUser = memberUserIds.length > 0
+      ? await db.select({
+          userId: expenses.userId,
           total: sql<string>`COALESCE(SUM(${expenses.amount}::numeric), 0)::text`,
         })
           .from(expenses)
           .where(and(
-            eq(expenses.userId, member.userId),
+            inArray(expenses.userId, memberUserIds),
             sql`${expenses.date} >= ${monthStart}`,
             sql`${expenses.date} <= ${monthEnd}`,
           ))
+          .groupBy(expenses.userId)
+      : []
 
-        const dept = depts.find(d => d.id === member.departmentId)
+    const spendingMap = new Map(spendingByUser.map(s => [s.userId, s.total]))
 
-        return {
-          ...member,
-          spendingUsed: spendingResult[0]?.total || '0',
-          departmentName: dept?.name || null,
-        }
-      })
-    )
+    const membersWithSpending = members.map((member) => {
+      const dept = depts.find(d => d.id === member.departmentId)
+      return {
+        ...member,
+        spendingUsed: spendingMap.get(member.userId) || '0',
+        departmentName: dept?.name || null,
+      }
+    })
 
     return NextResponse.json({
       company: companyResult[0] || null,

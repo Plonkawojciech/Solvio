@@ -92,7 +92,7 @@ export function LoyaltyCardComponent({
   onToggle: (id: string, active: boolean) => void
   onDelete: (id: string) => void
 }) {
-  const { t, lang } = useTranslation()
+  const { t } = useTranslation()
   const brand = STORE_BRANDS[card.store] || {
     gradient: 'from-gray-600 to-gray-800',
     text: card.store,
@@ -154,9 +154,10 @@ export function LoyaltyCardComponent({
             )}
 
             <Button
+              aria-label={t('loyalty.deleteCard')}
               variant="ghost"
               size="icon"
-              className="h-7 w-7 text-muted-foreground hover:text-destructive"
+              className="h-9 w-9 min-h-[44px] min-w-[44px] text-muted-foreground hover:text-destructive"
               onClick={() => onDelete(card.id)}
             >
               <Trash2 className="h-3.5 w-3.5" />

@@ -101,13 +101,14 @@ export function BankTransactionRow({
 
       {/* Actions */}
       {!transaction.isMatched ? (
-        <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+        <div className="flex items-center gap-1 shrink-0 md:opacity-0 md:group-hover:opacity-100 md:focus-within:opacity-100 transition-opacity">
           <Button
             variant="ghost"
             size="icon"
-            className="h-7 w-7 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-500/10"
+            className="h-9 w-9 min-h-[44px] min-w-[44px] text-emerald-600 hover:text-emerald-700 hover:bg-emerald-500/10"
             onClick={() => onMatch(transaction.id)}
             disabled={matching}
+            aria-label={t('bank.matchTransaction')}
             title={t('bank.matchTransaction')}
           >
             <Check className="h-3.5 w-3.5" />
@@ -115,9 +116,10 @@ export function BankTransactionRow({
           <Button
             variant="ghost"
             size="icon"
-            className="h-7 w-7 text-muted-foreground hover:text-foreground"
+            className="h-9 w-9 min-h-[44px] min-w-[44px] text-muted-foreground hover:text-foreground"
             onClick={() => onIgnore(transaction.id)}
             disabled={matching}
+            aria-label={t('bank.ignoreTransaction')}
             title={t('bank.ignoreTransaction')}
           >
             <X className="h-3.5 w-3.5" />

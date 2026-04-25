@@ -5,8 +5,6 @@ import {
   groups,
   groupMembers,
   receipts,
-  receiptItems,
-  receiptItemAssignments,
   expenseSplits,
 } from '@/lib/db/schema'
 import { eq, and } from 'drizzle-orm'
@@ -18,18 +16,36 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
   try {
     const { id } = await params
 
-    // Verify group access
+    // Verify group access: creator OR member
     const [group] = await db
       .select()
       .from(groups)
-      .where(and(eq(groups.id, id), eq(groups.createdBy, userId)))
+      .where(eq(groups.id, id))
     if (!group) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
+    if (group.createdBy !== userId) {
+      const [membership] = await db
+        .select({ id: groupMembers.id })
+        .from(groupMembers)
+        .where(and(eq(groupMembers.groupId, id), eq(groupMembers.userId, userId)))
+        .limit(1)
+      if (!membership) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    }
 
     const members = await db.select().from(groupMembers).where(eq(groupMembers.groupId, id))
 
-    // Get all receipts for this group
+    // Get all receipts for this group (exclude rawOcr — not needed for dashboard)
     const groupReceipts = await db
-      .select()
+      .select({
+        id: receipts.id,
+        vendor: receipts.vendor,
+        date: receipts.date,
+        total: receipts.total,
+        imageUrl: receipts.imageUrl,
+        items: receipts.items,
+        paidByMemberId: receipts.paidByMemberId,
+        createdAt: receipts.createdAt,
+      })
       .from(receipts)
       .where(and(eq(receipts.groupId, id), eq(receipts.status, 'processed')))
 

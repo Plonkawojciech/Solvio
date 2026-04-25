@@ -10,7 +10,7 @@ import {
   receiptItems,
   receiptItemAssignments,
 } from '@/lib/db/schema'
-import { eq, and } from 'drizzle-orm'
+import { eq, and, inArray } from 'drizzle-orm'
 import crypto from 'crypto'
 
 // ── GET: calculate full settlement for group ────────────────────────────────
@@ -24,12 +24,21 @@ export async function GET(
   try {
     const { id: groupId } = await params
 
-    // Verify group access
+    // Verify group access: creator OR member
     const [group] = await db
       .select()
       .from(groups)
-      .where(and(eq(groups.id, groupId), eq(groups.createdBy, userId)))
+      .where(eq(groups.id, groupId))
     if (!group) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
+    if (group.createdBy !== userId) {
+      const [membership] = await db
+        .select({ id: groupMembers.id })
+        .from(groupMembers)
+        .where(and(eq(groupMembers.groupId, groupId), eq(groupMembers.userId, userId)))
+        .limit(1)
+      if (!membership) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    }
 
     // Fetch members and splits
     const members = await db.select().from(groupMembers).where(eq(groupMembers.groupId, groupId))
@@ -70,6 +79,25 @@ export async function GET(
 
     // Also calculate from receipt item assignments if no splits cover them
     // This is for receipts that have item-level assignments but not expense splits
+
+    // PERF FIX: replaced N+1 with single inArray query
+    // Pre-fetch all receipt items and assignments in one query each before the loop
+    const allReceiptIds = groupReceipts.map((r) => r.id)
+    const emptyItems: { id: string; receiptId: string; userId: string; name: string; quantity: string | null; unitPrice: string | null; totalPrice: string | null; categoryId: string | null; createdAt: Date }[] = []
+    const [allReceiptItems, allGroupAssignments] = await Promise.all([
+      allReceiptIds.length > 0
+        ? db.select().from(receiptItems).where(inArray(receiptItems.receiptId, allReceiptIds))
+        : Promise.resolve(emptyItems),
+      db.select().from(receiptItemAssignments).where(eq(receiptItemAssignments.groupId, groupId)),
+    ])
+    // Build in-memory map: receiptId → items[]
+    const receiptItemsMap = new Map<string, typeof allReceiptItems>()
+    for (const item of allReceiptItems) {
+      const key = item.receiptId as string
+      if (!receiptItemsMap.has(key)) receiptItemsMap.set(key, [])
+      receiptItemsMap.get(key)!.push(item)
+    }
+
     for (const receipt of groupReceipts) {
       if (receipt.paidByMemberId) {
         const receiptTotal = parseFloat(String(receipt.total || '0'))
@@ -81,15 +109,9 @@ export async function GET(
             (totalPaidMap.get(receipt.paidByMemberId) ?? 0) + receiptTotal
           )
 
-          // Fetch receipt item assignments
-          const items = await db
-            .select()
-            .from(receiptItems)
-            .where(eq(receiptItems.receiptId, receipt.id))
-          const assignments = await db
-            .select()
-            .from(receiptItemAssignments)
-            .where(eq(receiptItemAssignments.groupId, groupId))
+          // Use pre-fetched data instead of per-receipt queries
+          const items = receiptItemsMap.get(receipt.id) ?? []
+          const assignments = allGroupAssignments
 
           const receiptItemIds = new Set(items.map((i) => i.id))
           const relevantAssignments = assignments.filter((a) => receiptItemIds.has(a.receiptItemId))
@@ -272,18 +294,26 @@ export async function POST(
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
-    // Verify group access
+    // Verify group access: creator OR member
     const [group] = await db
       .select()
       .from(groups)
-      .where(and(eq(groups.id, groupId), eq(groups.createdBy, userId)))
+      .where(eq(groups.id, groupId))
     if (!group) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
+    if (group.createdBy !== userId) {
+      const [membership] = await db
+        .select({ id: groupMembers.id })
+        .from(groupMembers)
+        .where(and(eq(groupMembers.groupId, groupId), eq(groupMembers.userId, userId)))
+        .limit(1)
+      if (!membership) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    }
 
     // Generate share token
     const shareToken = crypto.randomBytes(32).toString('hex')
 
     // Build item breakdown from receipt assignments
-    const members = await db.select().from(groupMembers).where(eq(groupMembers.groupId, groupId))
     const groupReceipts = await db.select().from(receipts).where(eq(receipts.groupId, groupId))
     const allAssignments = await db
       .select()
@@ -298,11 +328,22 @@ export async function POST(
       share: number
     }> = []
 
+    // PERF FIX: replaced N+1 with single inArray query
+    // Fetch all receipt items for all group receipts in one query
+    const postReceiptIds = groupReceipts.map((r) => r.id)
+    const allPostReceiptItems = postReceiptIds.length > 0
+      ? await db.select().from(receiptItems).where(inArray(receiptItems.receiptId, postReceiptIds))
+      : []
+    // Build in-memory map: receiptId → items[]
+    const postReceiptItemsMap = new Map<string, typeof allPostReceiptItems>()
+    for (const item of allPostReceiptItems) {
+      const key = item.receiptId as string
+      if (!postReceiptItemsMap.has(key)) postReceiptItemsMap.set(key, [])
+      postReceiptItemsMap.get(key)!.push(item)
+    }
+
     for (const receipt of groupReceipts) {
-      const items = await db
-        .select()
-        .from(receiptItems)
-        .where(eq(receiptItems.receiptId, receipt.id))
+      const items = postReceiptItemsMap.get(receipt.id) ?? []
 
       for (const item of items) {
         const itemAssignments = allAssignments.filter(

@@ -20,6 +20,7 @@ type Expense = {
   vendor?: string | null
   amount: number
   date: string
+  currency?: string
 }
 
 const CATEGORY_ICONS: Record<string, string> = {
@@ -68,10 +69,10 @@ export function RecentExpensesTable({
   const { t, lang } = useTranslation()
   const locale = lang === 'pl' ? 'pl-PL' : 'en-US'
 
-  function formatAmount(amount: number) {
+  function formatAmount(amount: number, cur?: string) {
     return new Intl.NumberFormat(locale, {
       style: 'currency',
-      currency,
+      currency: cur || currency,
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     }).format(amount)
@@ -153,7 +154,7 @@ export function RecentExpensesTable({
               </TableCell>
               <TableCell className="text-right">
                 <span className="font-semibold tabular-nums text-sm">
-                  {formatAmount(expense.amount)}
+                  {formatAmount(expense.amount, expense.currency)}
                 </span>
               </TableCell>
             </motion.tr>

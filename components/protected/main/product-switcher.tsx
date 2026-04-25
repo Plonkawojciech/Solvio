@@ -1,7 +1,6 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useProductType } from '@/hooks/use-product-type'
 import { useTranslation } from '@/lib/i18n'
@@ -9,9 +8,8 @@ import { Wallet, Building2, ArrowLeftRight, Loader2, Check } from 'lucide-react'
 import { toast } from 'sonner'
 
 export function ProductSwitcher() {
-  const { productType, isPersonal } = useProductType()
+  const { isPersonal } = useProductType()
   const { t } = useTranslation()
-  const router = useRouter()
   const [switching, setSwitching] = useState(false)
   const [expanded, setExpanded] = useState(false)
 

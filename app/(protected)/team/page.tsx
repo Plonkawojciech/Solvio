@@ -1,12 +1,12 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion } from 'framer-motion'
 import { useTranslation } from '@/lib/i18n'
 import { useProductType } from '@/hooks/use-product-type'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
@@ -21,11 +21,10 @@ import {
 } from '@/components/ui/dialog'
 import {
   Users, UserPlus, AlertCircle, RefreshCw, Building2, Mail,
-  Loader2, Shield, Crown, UserCog, User as UserIcon, Clock,
+  Loader2, Shield, UserCog, User as UserIcon, Clock,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { TeamMemberCard, type TeamMember } from '@/components/protected/business/team-member-card'
-import { cn } from '@/lib/utils'
 
 // i18n keys:
 // 'team.title' / 'team.description'
@@ -124,16 +123,19 @@ function TeamEmpty({ onInvite }: { onInvite: () => void }) {
       transition={{ duration: 0.5 }}
       className="flex items-center justify-center min-h-[400px]"
     >
-      <div className="flex flex-col items-center gap-4 text-center max-w-sm">
-        <div className="h-20 w-20 rounded-2xl bg-primary/10 flex items-center justify-center">
-          <Users className="h-10 w-10 text-primary" />
+      <div className="flex flex-col items-center gap-5 text-center max-w-sm">
+        <div className="font-mono text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+          {'// '}{t('team.empty.title')}
         </div>
-        <div className="space-y-1">
-          <h3 className="text-lg font-semibold" suppressHydrationWarning>{t('team.empty.title')}</h3>
-          <p className="text-sm text-muted-foreground" suppressHydrationWarning>{t('team.empty.desc')}</p>
+        <div className="flex h-16 w-16 items-center justify-center rounded-md border-2 border-foreground bg-card text-foreground shadow-[3px_3px_0_hsl(var(--foreground))]">
+          <Users className="h-7 w-7" aria-hidden="true" />
+        </div>
+        <div className="space-y-2">
+          <h3 className="text-xl font-extrabold tracking-tight" suppressHydrationWarning>{t('team.empty.title')}</h3>
+          <p className="text-sm text-muted-foreground leading-snug" suppressHydrationWarning>{t('team.empty.desc')}</p>
         </div>
         <Button onClick={onInvite} className="gap-2" suppressHydrationWarning>
-          <UserPlus className="h-4 w-4" />
+          <UserPlus className="h-4 w-4" aria-hidden="true" />
           {t('team.invite')}
         </Button>
       </div>
@@ -199,6 +201,7 @@ export default function TeamPage() {
       setMembers(data.members || [])
       setDepartmentsList(data.departments || [])
       setCurrentUserRole(data.currentUserRole || 'employee')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
       if (err.name === 'AbortError') return
       setError(err instanceof Error ? err.message : 'Unknown error')
@@ -241,6 +244,7 @@ export default function TeamPage() {
       setInviteDepartment('')
       setInviteLimit('')
       fetchData()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
       toast.error(err.message || t('team.invite.error'))
     } finally {
@@ -262,14 +266,14 @@ export default function TeamPage() {
         }),
       })
 
-      if (!res.ok) throw new Error('Update failed')
+      if (!res.ok) throw new Error()
 
       toast.success(t('team.editSuccess'))
       setEditOpen(false)
       setEditMember(null)
       fetchData()
-    } catch (err: any) {
-      toast.error(err.message)
+    } catch {
+      toast.error(t('errors.saveFailed'))
     } finally {
       setEditing(false)
     }
@@ -283,14 +287,14 @@ export default function TeamPage() {
         method: 'DELETE',
       })
 
-      if (!res.ok) throw new Error('Remove failed')
+      if (!res.ok) throw new Error()
 
       toast.success(t('team.removeSuccess'))
       setRemoveDialogOpen(false)
       setRemoveMember(null)
       fetchData()
-    } catch (err: any) {
-      toast.error(err.message)
+    } catch {
+      toast.error(t('errors.deleteFailed'))
     } finally {
       setRemoving(false)
     }

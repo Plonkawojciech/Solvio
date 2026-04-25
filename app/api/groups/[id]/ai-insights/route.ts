@@ -3,20 +3,37 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { groups, groupMembers, expenseSplits, receipts } from '@/lib/db/schema'
 import { eq, and } from 'drizzle-orm'
-import OpenAI from 'openai'
+import { getAIClient } from '@/lib/ai-client'
+import { rateLimit } from '@/lib/rate-limit'
 
 export async function GET(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+  // SECURITY FIX: Rate limit AI endpoint to prevent cost abuse
+  const rl = rateLimit(`ai:${userId}`, { maxRequests: 10, windowMs: 3600000 })
+  if (!rl.allowed) return NextResponse.json({ error: 'Too many requests' }, { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } })
+
+  const ai = getAIClient()
+  if (!ai) {
+    return NextResponse.json({ error: 'AI service not configured' }, { status: 503 })
+  }
 
   try {
     const { id } = await params
 
-    // Verify group ownership
-    const [group] = await db.select().from(groups).where(and(eq(groups.id, id), eq(groups.createdBy, userId)))
+    // Verify group access: creator OR member
+    const [group] = await db.select().from(groups).where(eq(groups.id, id))
     if (!group) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
+    if (group.createdBy !== userId) {
+      const [membership] = await db
+        .select({ id: groupMembers.id })
+        .from(groupMembers)
+        .where(and(eq(groupMembers.groupId, id), eq(groupMembers.userId, userId)))
+        .limit(1)
+      if (!membership) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    }
 
     // Fetch group data
     const [members, splits, groupReceipts] = await Promise.all([
@@ -49,10 +66,8 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
 
     // Receipt vendor analysis
     const vendors: Record<string, number> = {}
-    let totalReceiptAmount = 0
     for (const r of groupReceipts) {
       const amt = parseFloat(String(r.total)) || 0
-      totalReceiptAmount += amt
       if (r.vendor) {
         vendors[r.vendor] = (vendors[r.vendor] || 0) + amt
       }
@@ -111,8 +126,8 @@ Provide 3-5 insights. Focus on:
 - Practical money-saving tips (specific to Polish stores if vendor names suggest it)
 - Daily/weekly spending averages if applicable`
 
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
+    const completion = await ai.client.chat.completions.create({
+      model: ai.model,
       messages: [{ role: 'user', content: prompt }],
       temperature: 0.4,
       max_tokens: 800,

@@ -1,7 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { auth } from '@/lib/auth-compat'
 import { db } from '@/lib/db'
 import { paymentRequests, groupMembers, groups } from '@/lib/db/schema'
-import { eq } from 'drizzle-orm'
+import { eq, and } from 'drizzle-orm'
+import crypto from 'crypto'
+
+// SECURITY FIX: Timing-safe token comparison to prevent timing attacks on share tokens
+function timingSafeTokenCompare(a: string | null | undefined, b: string | null | undefined): boolean {
+  if (!a || !b) return false
+  const bufA = Buffer.from(a)
+  const bufB = Buffer.from(b)
+  if (bufA.length !== bufB.length) return false
+  return crypto.timingSafeEqual(bufA, bufB)
+}
 
 const MEMBER_COLORS = [
   '#6366f1', '#ec4899', '#f59e0b', '#10b981',
@@ -23,9 +34,30 @@ export async function GET(
       .where(eq(paymentRequests.id, id))
     if (!request) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-    // For public access, we need the share token
-    if (request.shareToken && token !== request.shareToken) {
-      return NextResponse.json({ error: 'Invalid token' }, { status: 403 })
+    // SECURITY FIX: Require shareToken for public access, or auth+membership when no shareToken
+    if (request.shareToken) {
+      // SECURITY FIX: Use timing-safe comparison to prevent timing attacks on share token
+      if (!timingSafeTokenCompare(token, request.shareToken)) {
+        return NextResponse.json({ error: 'Invalid token' }, { status: 403 })
+      }
+    } else {
+      // No shareToken: require authenticated session + group membership
+      const { userId } = await auth()
+      if (!userId) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      }
+      if (request.groupId) {
+        const memberCheck = await db
+          .select()
+          .from(groupMembers)
+          .where(eq(groupMembers.groupId, request.groupId))
+        const isMember = memberCheck.some((m) => m.userId === userId)
+        if (!isMember) {
+          return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+        }
+      } else {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      }
     }
 
     // Fetch group and member info
@@ -76,7 +108,9 @@ export async function GET(
   }
 }
 
-// ── PUT: public endpoint for marking as paid ────────────────────────────────
+// ── PUT: settle a payment request ────────────────────────────────────────────
+// SECURITY FIX: Require either a valid shareToken OR authenticated group membership.
+// Without this check, any request could settle any payment request that has no shareToken.
 export async function PUT(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -92,12 +126,37 @@ export async function PUT(
       .where(eq(paymentRequests.id, id))
     if (!request) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-    // Validate token
-    if (request.shareToken && token !== request.shareToken) {
-      return NextResponse.json({ error: 'Invalid token' }, { status: 403 })
+    // SECURITY FIX: No auth check — require shareToken OR authenticated group membership
+    if (request.shareToken) {
+      // SECURITY FIX: Use timing-safe comparison to prevent timing attacks on share token
+      if (!timingSafeTokenCompare(token, request.shareToken)) {
+        return NextResponse.json({ error: 'Invalid token' }, { status: 403 })
+      }
+    } else {
+      // No shareToken: require authenticated session + group membership
+      const { userId } = await auth()
+      if (!userId) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      }
+      if (request.groupId) {
+        const members = await db
+          .select()
+          .from(groupMembers)
+          .where(eq(groupMembers.groupId, request.groupId))
+        const isMember = members.some((m) => m.userId === userId)
+        if (!isMember) {
+          return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+        }
+      } else {
+        // No group and no shareToken — deny all unauthenticated access
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      }
     }
 
     if (action === 'settle') {
+      if (request.status === 'settled') {
+        return NextResponse.json({ ok: true, alreadySettled: true })
+      }
       await db
         .update(paymentRequests)
         .set({
@@ -105,7 +164,7 @@ export async function PUT(
           settledAt: new Date(),
           settledBy: 'debtor',
         })
-        .where(eq(paymentRequests.id, id))
+        .where(and(eq(paymentRequests.id, id), eq(paymentRequests.status, 'pending')))
     }
 
     return NextResponse.json({ ok: true })

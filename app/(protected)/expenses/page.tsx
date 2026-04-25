@@ -1,8 +1,10 @@
 'use client'
 
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
+import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useTranslation } from '@/lib/i18n'
+import { formatAmount } from '@/lib/format'
 import { useProductType } from '@/hooks/use-product-type'
 import { Button } from '@/components/ui/button'
 import {
@@ -19,9 +21,10 @@ import {
   ReceiptText, AlertCircle, RefreshCw, Search, FilterX,
   ChevronUp, ChevronDown, ChevronsUpDown, Download,
   ChevronLeft, ChevronRight, Share2, QrCode, Copy, CheckCheck,
-  DollarSign, ClipboardCheck,
+  DollarSign, ClipboardCheck, ArrowDownUp,
 } from 'lucide-react'
 import dynamic from 'next/dynamic'
+import Image from 'next/image'
 
 const LazyApprovalsPage = dynamic(() => import('../approvals/page'), { ssr: false })
 import { AddExpenseTrigger } from '@/components/protected/dashboard/add-expense-trigger'
@@ -30,6 +33,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
+import { toast } from 'sonner'
 
 interface Expense {
   id: string
@@ -40,6 +44,8 @@ interface Expense {
   notes: string | null
   categoryId: string | null
   receiptId: string | null
+  tags: string[] | null
+  currency?: string
 }
 
 interface ReceiptItem {
@@ -84,21 +90,6 @@ function MobileCardSkeleton() {
   )
 }
 
-// ─── Amount formatter ──────────────────────────────────────────────────────────
-function formatAmount(amount: number | string, currency: string): string {
-  const num = typeof amount === 'string' ? parseFloat(amount) : amount
-  if (isNaN(num)) return `0.00 ${currency}`
-  try {
-    return new Intl.NumberFormat(undefined, {
-      style: 'currency',
-      currency,
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(num)
-  } catch {
-    return `${num.toFixed(2)} ${currency}`
-  }
-}
 
 // ─── Sort icon helper ─────────────────────────────────────────────────────────
 function SortIcon({ field, sortField, sortDir }: { field: SortField; sortField: SortField; sortDir: SortDir }) {
@@ -110,7 +101,8 @@ function SortIcon({ field, sortField, sortDir }: { field: SortField; sortField: 
 
 // ─── Main component ────────────────────────────────────────────────────────────
 export default function ExpensesPage() {
-  const { t, lang, mounted } = useTranslation()
+  const { t } = useTranslation()
+  const router = useRouter()
   const { isBusiness } = useProductType()
   const [activeExpenseTab, setActiveExpenseTab] = useState<'expenses' | 'approvals'>('expenses')
 
@@ -176,13 +168,23 @@ export default function ExpensesPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [filterCategoryId, setFilterCategoryId] = useState<string>('all')
+  const [filterTag, setFilterTag] = useState<string>('all')
   const [dateFrom, setDateFrom] = useState<string>('')
   const [dateTo, setDateTo] = useState<string>('')
+  const [amountFrom, setAmountFrom] = useState<string>('')
+  const [amountTo, setAmountTo] = useState<string>('')
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Sort preset (overrides column sort when set)
+  type SortPreset = 'newest' | 'oldest' | 'highest' | 'lowest'
+  const [sortPreset, setSortPreset] = useState<SortPreset>('newest')
 
   // Sort
   const [sortField, setSortField] = useState<SortField>('date')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
+
+  // Bulk delete inline confirmation
+  const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false)
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1)
@@ -201,8 +203,11 @@ export default function ExpensesPage() {
     setSearchQuery('')
     setDebouncedSearch('')
     setFilterCategoryId('all')
+    setFilterTag('all')
     setDateFrom('')
     setDateTo('')
+    setAmountFrom('')
+    setAmountTo('')
     setCurrentPage(1)
     if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current)
   }
@@ -210,8 +215,13 @@ export default function ExpensesPage() {
   const hasActiveFilters =
     debouncedSearch.trim() !== '' ||
     filterCategoryId !== 'all' ||
+    filterTag !== 'all' ||
     dateFrom !== '' ||
-    dateTo !== ''
+    dateTo !== '' ||
+    amountFrom !== '' ||
+    amountTo !== ''
+
+  const hasAmountRange = amountFrom !== '' || amountTo !== ''
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -245,6 +255,17 @@ export default function ExpensesPage() {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [])
 
+  // ─── All unique tags from expense data ───────────────────────────────────
+  const allTags = useMemo(() => {
+    const tagSet = new Set<string>()
+    expenses.forEach(e => {
+      if (e.tags && e.tags.length > 0) {
+        e.tags.forEach(tag => tagSet.add(tag))
+      }
+    })
+    return Array.from(tagSet).sort()
+  }, [expenses])
+
   // ─── Derived filtered + sorted + paginated list ───────────────────────────
   const filteredExpenses = useMemo(() => {
     return expenses.filter((e) => {
@@ -254,15 +275,25 @@ export default function ExpensesPage() {
         (e.vendor ?? '').toLowerCase().includes(debouncedSearch.toLowerCase())
       const matchesCategory =
         filterCategoryId === 'all' || e.categoryId === filterCategoryId
+      const matchesTag =
+        filterTag === 'all' || (e.tags && e.tags.includes(filterTag))
       const expDate = e.date ? e.date.slice(0, 10) : ''
       const matchesFrom = dateFrom === '' || expDate >= dateFrom
       const matchesTo = dateTo === '' || expDate <= dateTo
-      return matchesSearch && matchesCategory && matchesFrom && matchesTo
+      const expAmount = parseFloat(String(e.amount))
+      const matchesAmountFrom = amountFrom === '' || expAmount >= parseFloat(amountFrom)
+      const matchesAmountTo = amountTo === '' || expAmount <= parseFloat(amountTo)
+      return matchesSearch && matchesCategory && matchesTag && matchesFrom && matchesTo && matchesAmountFrom && matchesAmountTo
     })
-  }, [expenses, debouncedSearch, filterCategoryId, dateFrom, dateTo])
+  }, [expenses, debouncedSearch, filterCategoryId, filterTag, dateFrom, dateTo, amountFrom, amountTo])
 
   const sortedExpenses = useMemo(() => {
     return [...filteredExpenses].sort((a, b) => {
+      // Sort preset takes precedence over column sort
+      if (sortPreset === 'newest') return b.date.localeCompare(a.date)
+      if (sortPreset === 'oldest') return a.date.localeCompare(b.date)
+      if (sortPreset === 'highest') return parseFloat(String(b.amount)) - parseFloat(String(a.amount))
+      if (sortPreset === 'lowest') return parseFloat(String(a.amount)) - parseFloat(String(b.amount))
       let cmp = 0
       if (sortField === 'title') {
         cmp = a.title.localeCompare(b.title)
@@ -275,7 +306,7 @@ export default function ExpensesPage() {
       }
       return sortDir === 'asc' ? cmp : -cmp
     })
-  }, [filteredExpenses, sortField, sortDir])
+  }, [filteredExpenses, sortField, sortDir, sortPreset])
 
   const totalPages = Math.max(1, Math.ceil(sortedExpenses.length / PAGE_SIZE))
   const safePage = Math.min(currentPage, totalPages)
@@ -312,7 +343,7 @@ export default function ExpensesPage() {
     setError(null)
     try {
       const res = await fetch('/api/data/expenses', { signal })
-      if (!res.ok) { setError('Failed to fetch expenses'); setLoading(false); return }
+      if (!res.ok) { setError(t('errors.fetchExpenses')); setLoading(false); return }
       const data = await res.json()
       const exps: Expense[] = data.expenses || []
       setExpenses(exps)
@@ -328,11 +359,13 @@ export default function ExpensesPage() {
 
       setLoading(false)
       return exps
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
       if (err.name === 'AbortError') return
-      setError('Failed to fetch expenses')
+      setError(t('errors.fetchExpenses'))
       setLoading(false)
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
@@ -372,17 +405,26 @@ export default function ExpensesPage() {
   // ─── Delete single ───────────────────────────────────────────────────────────
   const deleteExpense = async (id: string) => {
     setIsDeleting(true)
-    await fetch('/api/data/expenses', {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ids: [id] }),
-    })
-    setIsDeleteDialogOpen(false)
-    setSelectedExpense(null)
-    setReceiptItems([])
-    await fetchExpenses()
-    window.dispatchEvent(new CustomEvent('expensesUpdated'))
-    setIsDeleting(false)
+    try {
+      const res = await fetch('/api/data/expenses', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: [id] }),
+      })
+      if (!res.ok) throw new Error('Delete failed')
+      setIsDeleteDialogOpen(false)
+      setSelectedExpense(null)
+      setReceiptItems([])
+      await fetchExpenses()
+      window.dispatchEvent(new CustomEvent('expensesUpdated'))
+      router.refresh()
+      toast.success(t('expenses.deleted') || 'Expense deleted')
+    } catch {
+      toast.error(t('errors.saveFailed') || 'Failed to delete')
+      setIsDeleteDialogOpen(false)
+    } finally {
+      setIsDeleting(false)
+    }
   }
 
   // ─── Bulk delete ─────────────────────────────────────────────────────────────
@@ -398,8 +440,10 @@ export default function ExpensesPage() {
     setSelectedExpense(null)
     setReceiptItems([])
     setIsBulkDeleteDialogOpen(false)
+    setShowBulkDeleteConfirm(false)
     await fetchExpenses()
     window.dispatchEvent(new CustomEvent('expensesUpdated'))
+    router.refresh()
     setIsBulkDeleting(false)
   }
 
@@ -478,14 +522,21 @@ export default function ExpensesPage() {
   const saveExpense = async (id: string) => {
     if (!validateExpense()) return
     setIsSavingExpense(true)
-    await fetch('/api/data/expenses', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id, title: editExpenseTitle.trim(), amount: parseFloat(editExpenseAmount) }),
-    })
-    setEditingExpenseId(null)
-    await fetchExpenses()
-    setIsSavingExpense(false)
+    try {
+      const res = await fetch('/api/data/expenses', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, title: editExpenseTitle.trim(), amount: parseFloat(editExpenseAmount) }),
+      })
+      if (!res.ok) throw new Error('Save failed')
+      setEditingExpenseId(null)
+      await fetchExpenses()
+      toast.success(t('expenses.saved') || 'Expense saved')
+    } catch {
+      toast.error(t('errors.saveFailed') || 'Failed to save')
+    } finally {
+      setIsSavingExpense(false)
+    }
   }
 
   const handleExpenseKeyDown = (e: React.KeyboardEvent, id: string) => {
@@ -552,13 +603,22 @@ export default function ExpensesPage() {
 
   const saveReceiptItems = async (items: ReceiptItem[]) => {
     if (!selectedExpense?.receiptId) return
-    await fetch('/api/data/receipts', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: selectedExpense.receiptId, items }),
-    })
-    setReceiptItems(items)
-    window.dispatchEvent(new CustomEvent('expensesUpdated'))
+    try {
+      const res = await fetch('/api/data/receipts', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: selectedExpense.receiptId, items }),
+      })
+      if (res.ok) {
+        setReceiptItems(items)
+        toast.success(t('expenses.saved'))
+        window.dispatchEvent(new CustomEvent('expensesUpdated'))
+      } else {
+        toast.error(t('errors.saveFailed'))
+      }
+    } catch {
+      toast.error(t('errors.saveFailed'))
+    }
   }
 
   // ─── Expense click / receipt items ──────────────────────────────────────────
@@ -691,17 +751,48 @@ export default function ExpensesPage() {
                   animate={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0, scale: 0.9 }}
                   transition={{ duration: 0.15 }}
+                  className="flex items-center gap-1"
                 >
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    onClick={() => setIsBulkDeleteDialogOpen(true)}
-                    className="text-xs sm:text-sm"
-                  >
-                    <Trash2 className="mr-1 sm:mr-2 h-3 w-3 sm:h-4 sm:w-4" />
-                    <span className="hidden sm:inline" suppressHydrationWarning>{t('expenses.delete')} </span>
-                    {selectedExpenseIds.size}
-                  </Button>
+                  {showBulkDeleteConfirm ? (
+                    <>
+                      <span className="text-xs text-muted-foreground whitespace-nowrap" suppressHydrationWarning>
+                        {t('expenses.bulkDeleteConfirmPrompt')}
+                      </span>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={bulkDeleteExpenses}
+                        disabled={isBulkDeleting}
+                        className="text-xs sm:text-sm"
+                      >
+                        {isBulkDeleting
+                          ? <Loader2 className="h-3 w-3 animate-spin" />
+                          : <><Trash2 className="mr-1 h-3 w-3" />{t('expenses.bulkDeleteConfirmYes')} {selectedExpenseIds.size}</>
+                        }
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setShowBulkDeleteConfirm(false)}
+                        disabled={isBulkDeleting}
+                        className="text-xs sm:text-sm"
+                        suppressHydrationWarning
+                      >
+                        {t('common.cancel')}
+                      </Button>
+                    </>
+                  ) : (
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => setShowBulkDeleteConfirm(true)}
+                      className="text-xs sm:text-sm"
+                    >
+                      <Trash2 className="mr-1 sm:mr-2 h-3 w-3 sm:h-4 sm:w-4" />
+                      <span className="hidden sm:inline" suppressHydrationWarning>{t('expenses.delete')} </span>
+                      {selectedExpenseIds.size}
+                    </Button>
+                  )}
                 </motion.div>
               )}
             </AnimatePresence>
@@ -722,6 +813,7 @@ export default function ExpensesPage() {
             <AddExpenseTrigger
               open={isAddExpenseOpen}
               onOpenChange={setIsAddExpenseOpen}
+              allExpenses={expenses}
               onAction={async () => {
                 await fetchExpenses()
                 window.dispatchEvent(new CustomEvent('expensesUpdated'))
@@ -731,10 +823,11 @@ export default function ExpensesPage() {
         </div>
 
         {/* ── Expenses Table Section ── */}
-        <section className="rounded-xl border p-4 sm:p-6 overflow-hidden flex-1">
+        <section className="rounded-xl border p-2 sm:p-4 md:p-6 overflow-hidden flex-1">
           {loading ? (
             /* ── Loading skeleton ── */
-            <>
+            <div role="status" aria-busy="true" aria-live="polite">
+              <span className="sr-only" suppressHydrationWarning>{t('common.loading')}</span>
               {/* Search bar skeleton */}
               <div className="flex flex-col sm:flex-row gap-2 mb-4">
                 <Skeleton className="h-9 w-full sm:w-64 rounded-md" />
@@ -764,15 +857,19 @@ export default function ExpensesPage() {
                   </TableBody>
                 </Table>
               </div>
-            </>
+            </div>
           ) : error ? (
             /* ── Error state ── */
             <motion.div
               initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
               className="flex flex-col items-center justify-center py-32 gap-4"
+              role="alert"
             >
-              <div className="flex items-center justify-center w-16 h-16 rounded-full bg-destructive/10">
+              <p className="font-mono text-[10px] font-bold uppercase tracking-widest text-destructive">
+                {'// ERROR'}
+              </p>
+              <div className="flex items-center justify-center w-16 h-16 border-2 border-destructive bg-destructive/10 shadow-[3px_3px_0_hsl(var(--destructive))] rounded-md">
                 <AlertCircle className="h-8 w-8 text-destructive" />
               </div>
               <p className="text-center text-destructive text-lg font-medium">{error}</p>
@@ -792,20 +889,23 @@ export default function ExpensesPage() {
               initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.3 }}
-              className="flex flex-col items-center justify-center py-32 gap-5 text-center"
+              className="flex flex-col items-center justify-center py-20 sm:py-28 gap-5 text-center"
             >
-              <div className="flex items-center justify-center w-20 h-20 rounded-full bg-muted">
-                <ReceiptText className="h-10 w-10 text-muted-foreground" />
+              <div className="font-mono text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                {'// '}{t('expenses.noExpensesTitle')}
               </div>
-              <div className="space-y-1">
-                <h2 className="text-xl font-semibold" suppressHydrationWarning>
+              <div className="flex items-center justify-center w-16 h-16 rounded-md border-2 border-foreground bg-card text-foreground shadow-[3px_3px_0_hsl(var(--foreground))]">
+                <ReceiptText className="h-7 w-7" aria-hidden="true" />
+              </div>
+              <div className="space-y-2 max-w-sm">
+                <h2 className="text-xl font-extrabold tracking-tight" suppressHydrationWarning>
                   {t('expenses.noExpensesTitle')}
                 </h2>
-                <p className="text-muted-foreground text-sm max-w-xs" suppressHydrationWarning>
+                <p className="text-muted-foreground text-sm leading-snug" suppressHydrationWarning>
                   {t('expenses.noExpensesDesc')}
                 </p>
               </div>
-              <div className="flex items-center gap-2 flex-wrap justify-center">
+              <div className="flex items-center gap-2 flex-wrap justify-center pt-1">
                 <ScanReceiptButton onAction={handleAfterScan} />
                 <AddExpenseTrigger
                   open={isAddExpenseOpen}
@@ -829,12 +929,15 @@ export default function ExpensesPage() {
                 <div className="flex flex-col sm:flex-row gap-2">
                   {/* Search */}
                   <div className="relative flex-1 max-w-sm">
-                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" aria-hidden="true" />
                     <Input
+                      type="search"
                       value={searchQuery}
                       onChange={(e) => handleSearchChange(e.target.value)}
                       placeholder={t('expenses.searchPlaceholder')}
                       className="pl-8 h-9 text-sm"
+                      aria-label={t('expenses.searchPlaceholder')}
+                      autoComplete="off"
                     />
                     <AnimatePresence>
                       {searchQuery && (
@@ -843,8 +946,9 @@ export default function ExpensesPage() {
                           animate={{ opacity: 1, scale: 1 }}
                           exit={{ opacity: 0, scale: 0.8 }}
                           onClick={() => handleSearchChange('')}
-                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-                          aria-label="Clear search"
+                          className="absolute right-2 top-1/2 -translate-y-1/2 h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/50 focus-visible:ring-offset-1"
+                          aria-label={t('expenses.clearFilters')}
+                          type="button"
                         >
                           <X className="h-3.5 w-3.5" />
                         </motion.button>
@@ -891,13 +995,14 @@ export default function ExpensesPage() {
                   </AnimatePresence>
                 </div>
 
-                {/* Date range row */}
-                <div className="flex flex-col sm:flex-row gap-2">
+                {/* Date range + Amount range row — hidden on mobile to reduce clutter */}
+                <div className="hidden md:flex flex-col sm:flex-row gap-2 flex-wrap">
                   <div className="flex items-center gap-2 flex-1 max-w-xs">
-                    <label className="text-xs text-muted-foreground whitespace-nowrap" suppressHydrationWarning>
+                    <label htmlFor="date-from" className="text-xs text-muted-foreground whitespace-nowrap" suppressHydrationWarning>
                       {t('expenses.dateFrom')}
                     </label>
                     <Input
+                      id="date-from"
                       type="date"
                       value={dateFrom}
                       onChange={(e) => { setDateFrom(e.target.value); setCurrentPage(1) }}
@@ -906,10 +1011,11 @@ export default function ExpensesPage() {
                     />
                   </div>
                   <div className="flex items-center gap-2 flex-1 max-w-xs">
-                    <label className="text-xs text-muted-foreground whitespace-nowrap" suppressHydrationWarning>
+                    <label htmlFor="date-to" className="text-xs text-muted-foreground whitespace-nowrap" suppressHydrationWarning>
                       {t('expenses.dateTo')}
                     </label>
                     <Input
+                      id="date-to"
                       type="date"
                       value={dateTo}
                       onChange={(e) => { setDateTo(e.target.value); setCurrentPage(1) }}
@@ -917,17 +1023,118 @@ export default function ExpensesPage() {
                       min={dateFrom || undefined}
                     />
                   </div>
+                  {/* Amount range */}
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="number"
+                      inputMode="decimal"
+                      min="0"
+                      step="0.01"
+                      value={amountFrom}
+                      onChange={(e) => { setAmountFrom(e.target.value); setCurrentPage(1) }}
+                      placeholder={t('expenses.amountFrom')}
+                      className="h-9 text-sm w-28"
+                      aria-label={t('expenses.amountFrom')}
+                    />
+                    <span className="text-xs text-muted-foreground" aria-hidden="true">–</span>
+                    <Input
+                      type="number"
+                      inputMode="decimal"
+                      min="0"
+                      step="0.01"
+                      value={amountTo}
+                      onChange={(e) => { setAmountTo(e.target.value); setCurrentPage(1) }}
+                      placeholder={t('expenses.amountTo')}
+                      className="h-9 text-sm w-28"
+                      aria-label={t('expenses.amountTo')}
+                    />
+                    <AnimatePresence>
+                      {hasAmountRange && (
+                        <motion.button
+                          initial={{ opacity: 0, scale: 0.8 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          exit={{ opacity: 0, scale: 0.8 }}
+                          onClick={() => { setAmountFrom(''); setAmountTo(''); setCurrentPage(1) }}
+                          className="flex items-center gap-1 text-xs px-2 py-1 border-2 border-foreground bg-secondary shadow-[2px_2px_0_hsl(var(--foreground))] rounded-md hover:translate-x-[1px] hover:translate-y-[1px] hover:shadow-none active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all whitespace-nowrap font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/50 focus-visible:ring-offset-1"
+                          aria-label={t('expenses.clearRange')}
+                          type="button"
+                          suppressHydrationWarning
+                        >
+                          {t('expenses.amountRangeActive')}{' '}
+                          {amountFrom || '0'}–{amountTo || '∞'}
+                          <X className="h-3 w-3 ml-0.5" />
+                        </motion.button>
+                      )}
+                    </AnimatePresence>
+                  </div>
                 </div>
+
+                {/* Sort preset row */}
+                <div className="flex items-center gap-2">
+                  <ArrowDownUp className="h-3.5 w-3.5 text-muted-foreground" />
+                  <span className="text-xs text-muted-foreground whitespace-nowrap" suppressHydrationWarning>
+                    {t('expenses.sortBy')}:
+                  </span>
+                  {(['newest', 'oldest', 'highest', 'lowest'] as const).map((preset) => (
+                    <button
+                      key={preset}
+                      onClick={() => { setSortPreset(preset); setCurrentPage(1) }}
+                      className={`text-xs px-2.5 py-1 rounded-full transition-colors ${
+                        sortPreset === preset
+                          ? 'bg-primary text-primary-foreground'
+                          : 'bg-muted text-muted-foreground hover:bg-primary/10 hover:text-primary'
+                      }`}
+                      suppressHydrationWarning
+                    >
+                      {t(`expenses.sort${preset.charAt(0).toUpperCase() + preset.slice(1)}` as Parameters<typeof t>[0])}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Tag filter chip-row — hidden on mobile */}
+                {allTags.length > 0 && (
+                  <div className="hidden md:flex flex-wrap items-center gap-1.5">
+                    <span className="text-xs text-muted-foreground whitespace-nowrap" suppressHydrationWarning>
+                      {t('expenses.filterByTag')}:
+                    </span>
+                    <button
+                      onClick={() => { setFilterTag('all'); setCurrentPage(1) }}
+                      className={`text-xs px-2 py-0.5 rounded-full transition-colors ${
+                        filterTag === 'all'
+                          ? 'bg-primary text-primary-foreground'
+                          : 'bg-muted text-muted-foreground hover:bg-primary/10 hover:text-primary'
+                      }`}
+                      suppressHydrationWarning
+                    >
+                      {t('expenses.allTags')}
+                    </button>
+                    {allTags.map(tag => (
+                      <button
+                        key={tag}
+                        onClick={() => { setFilterTag(tag === filterTag ? 'all' : tag); setCurrentPage(1) }}
+                        className={`text-xs px-2 py-0.5 rounded-full transition-colors ${
+                          filterTag === tag
+                            ? 'bg-primary text-primary-foreground'
+                            : 'bg-primary/10 text-primary hover:bg-primary/20'
+                        }`}
+                      >
+                        {tag}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* No results after filtering */}
               {filteredExpenses.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-20 gap-3 text-center">
-                  <Search className="h-10 w-10 text-muted-foreground/50" />
-                  <p className="text-muted-foreground text-sm" suppressHydrationWarning>
+                <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
+                  <div className="flex h-14 w-14 items-center justify-center rounded-md border-2 border-foreground bg-card text-foreground shadow-[3px_3px_0_hsl(var(--foreground))]">
+                    <Search className="h-6 w-6" aria-hidden="true" />
+                  </div>
+                  <p className="text-muted-foreground text-sm font-medium" suppressHydrationWarning>
                     {t('expenses.noExpenses')}
                   </p>
-                  <Button variant="ghost" size="sm" onClick={clearFilters} suppressHydrationWarning>
+                  <Button variant="outline" size="sm" onClick={clearFilters} suppressHydrationWarning>
                     {t('expenses.clearFilters')}
                   </Button>
                 </div>
@@ -1000,51 +1207,42 @@ export default function ExpensesPage() {
                                       <p className="text-destructive text-xs">{editExpenseAmountError}</p>
                                     )}
                                   </div>
-                                ) : formatAmount(expense.amount, currency)}
+                                ) : formatAmount(expense.amount, expense.currency || currency)}
                               </span>
                             </div>
                             <div className="text-xs text-muted-foreground mt-1">
                               {new Date(expense.date).toLocaleDateString()}
                             </div>
                           </div>
-                          <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
                             {editingExpenseId === expense.id ? (
                               <>
-                                <Button variant="ghost" size="icon" onClick={() => saveExpense(expense.id)} disabled={isSavingExpense} className="h-7 w-7">
-                                  {isSavingExpense ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3 text-green-600" />}
+                                <Button aria-label={t('expenses.saveEdit')} variant="ghost" size="icon" onClick={() => saveExpense(expense.id)} disabled={isSavingExpense} className="h-9 w-9 min-h-[44px] min-w-[44px]">
+                                  {isSavingExpense ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4 text-green-600" />}
                                 </Button>
-                                <Button variant="ghost" size="icon" onClick={cancelEditingExpense} className="h-7 w-7">
-                                  <X className="h-3 w-3" />
+                                <Button aria-label={t('expenses.cancelEdit')} variant="ghost" size="icon" onClick={cancelEditingExpense} className="h-9 w-9 min-h-[44px] min-w-[44px]">
+                                  <X className="h-4 w-4" />
                                 </Button>
                               </>
                             ) : (
                               <>
-                                {expense.receiptId && (
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    onClick={(e) => { e.stopPropagation(); handleViewReceiptImage(expense.receiptId!) }}
-                                    className="h-7 w-7"
-                                    title={t('expenses.viewReceipt')}
-                                  >
-                                    <ImageIcon className="h-3 w-3 text-blue-500" />
-                                  </Button>
-                                )}
                                 <Button
+                                  aria-label={t('expenses.editExpense')}
                                   variant="ghost"
                                   size="icon"
                                   onClick={(e) => { e.stopPropagation(); startEditingExpense(expense) }}
-                                  className="h-7 w-7"
+                                  className="h-9 w-9 min-h-[44px] min-w-[44px]"
                                 >
-                                  <Edit2 className="h-3 w-3" />
+                                  <Edit2 className="h-3.5 w-3.5" />
                                 </Button>
                                 <Button
+                                  aria-label={t('expenses.deleteExpense')}
                                   variant="ghost"
                                   size="icon"
                                   onClick={() => { setSelectedExpense(expense); setIsDeleteDialogOpen(true) }}
-                                  className="h-7 w-7"
+                                  className="h-9 w-9 min-h-[44px] min-w-[44px]"
                                 >
-                                  <Trash2 className="h-3 w-3 text-red-500" />
+                                  <Trash2 className="h-3.5 w-3.5 text-red-500" />
                                 </Button>
                               </>
                             )}
@@ -1142,7 +1340,23 @@ export default function ExpensesPage() {
                                       <p className="text-destructive text-xs">{editExpenseTitleError}</p>
                                     )}
                                   </div>
-                                ) : expense.title}
+                                ) : (
+                                  <div className="space-y-1">
+                                    <span>{expense.title}</span>
+                                    {expense.tags && expense.tags.length > 0 && (
+                                      <div className="flex flex-wrap gap-1">
+                                        {expense.tags.map(tag => (
+                                          <span
+                                            key={tag}
+                                            className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary"
+                                          >
+                                            {tag}
+                                          </span>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
                               </TableCell>
 
                               <TableCell className="hidden sm:table-cell cursor-pointer" onClick={() => handleExpenseClick(expense)}>
@@ -1169,7 +1383,7 @@ export default function ExpensesPage() {
                                       <p className="text-destructive text-xs">{editExpenseAmountError}</p>
                                     )}
                                   </div>
-                                ) : formatAmount(expense.amount, currency)}
+                                ) : formatAmount(expense.amount, expense.currency || currency)}
                               </TableCell>
 
                               <TableCell className="hidden md:table-cell cursor-pointer" onClick={() => handleExpenseClick(expense)}>
@@ -1180,29 +1394,46 @@ export default function ExpensesPage() {
                               <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                                 {editingExpenseId === expense.id ? (
                                   <div className="flex justify-end gap-1">
-                                    <Button variant="ghost" size="icon" onClick={() => saveExpense(expense.id)} disabled={isSavingExpense}>
+                                    <Button aria-label={t('expenses.saveEdit')} variant="ghost" size="icon" onClick={() => saveExpense(expense.id)} disabled={isSavingExpense}>
                                       {isSavingExpense ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4 text-green-600" />}
                                     </Button>
-                                    <Button variant="ghost" size="icon" onClick={cancelEditingExpense}>
+                                    <Button aria-label={t('expenses.cancelEdit')} variant="ghost" size="icon" onClick={cancelEditingExpense}>
                                       <X className="h-4 w-4 text-red-500" />
                                     </Button>
                                   </div>
                                 ) : (
                                   <div className="flex justify-end gap-1">
                                     {expense.receiptId && (
-                                      <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        onClick={() => handleViewReceiptImage(expense.receiptId!)}
-                                        title={t('expenses.viewReceipt')}
-                                      >
-                                        <ImageIcon className="h-4 w-4 text-blue-500" />
-                                      </Button>
+                                      <>
+                                        <Button
+                                          aria-label={t('expenses.viewEReceipt')}
+                                          variant="ghost"
+                                          size="icon"
+                                          asChild
+                                        >
+                                          <a
+                                            href={`/receipt/${expense.receiptId}`}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                          >
+                                            <ReceiptText className="h-4 w-4 text-indigo-500" />
+                                          </a>
+                                        </Button>
+                                        <Button
+                                          aria-label={t('expenses.viewReceipt')}
+                                          variant="ghost"
+                                          size="icon"
+                                          onClick={() => handleViewReceiptImage(expense.receiptId!)}
+                                        >
+                                          <ImageIcon className="h-4 w-4 text-blue-500" />
+                                        </Button>
+                                      </>
                                     )}
-                                    <Button variant="ghost" size="icon" onClick={() => startEditingExpense(expense)}>
+                                    <Button aria-label={t('expenses.editExpense')} variant="ghost" size="icon" onClick={() => startEditingExpense(expense)}>
                                       <Edit2 className="h-4 w-4" />
                                     </Button>
                                     <Button
+                                      aria-label={t('expenses.deleteExpense')}
                                       variant="ghost"
                                       size="icon"
                                       onClick={() => { setSelectedExpense(expense); setIsDeleteDialogOpen(true) }}
@@ -1370,7 +1601,7 @@ export default function ExpensesPage() {
                                     <>
                                       <p className="font-medium text-sm">{item.name}</p>
                                       <p className="text-xs text-muted-foreground">
-                                        {formatAmount(item.price ?? 0, currency)} · {item.categoryId
+                                        {formatAmount(item.price ?? 0, selectedExpense?.currency || currency)} · {item.categoryId
                                           ? translateCategoryName(categories.get(item.categoryId) || 'Other')
                                           : t('expenses.noCategory')
                                         }
@@ -1381,15 +1612,15 @@ export default function ExpensesPage() {
                                 <div className="flex gap-1">
                                   {editingItemIndex === index ? (
                                     <>
-                                      <Button variant="ghost" size="icon" onClick={() => saveItem(index)} disabled={isSavingItem} className="h-7 w-7">
+                                      <Button variant="ghost" size="icon" onClick={() => saveItem(index)} disabled={isSavingItem} className="h-9 w-9 min-h-[44px] min-w-[44px]" aria-label={t('expenses.saveItem')}>
                                         {isSavingItem ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3 text-green-600" />}
                                       </Button>
-                                      <Button variant="ghost" size="icon" onClick={cancelEditingItem} className="h-7 w-7">
+                                      <Button variant="ghost" size="icon" onClick={cancelEditingItem} className="h-9 w-9 min-h-[44px] min-w-[44px]" aria-label={t('expenses.cancelEditItem')}>
                                         <X className="h-3 w-3" />
                                       </Button>
                                     </>
                                   ) : (
-                                    <Button variant="ghost" size="icon" onClick={() => startEditingItem(index, item)} className="h-7 w-7">
+                                    <Button variant="ghost" size="icon" onClick={() => startEditingItem(index, item)} className="h-9 w-9 min-h-[44px] min-w-[44px]" aria-label={t('expenses.editItem')}>
                                       <Edit2 className="h-3 w-3" />
                                     </Button>
                                   )}
@@ -1459,7 +1690,7 @@ export default function ExpensesPage() {
                                           <p className="text-destructive text-xs">{editItemPriceError}</p>
                                         )}
                                       </div>
-                                    ) : formatAmount(item.price ?? 0, currency)}
+                                    ) : formatAmount(item.price ?? 0, selectedExpense?.currency || currency)}
                                   </TableCell>
                                   <TableCell>
                                     {editingItemIndex === index ? (
@@ -1484,15 +1715,15 @@ export default function ExpensesPage() {
                                   <TableCell className="text-right">
                                     {editingItemIndex === index ? (
                                       <div className="flex justify-end gap-1">
-                                        <Button variant="ghost" size="icon" onClick={() => saveItem(index)} disabled={isSavingItem}>
+                                        <Button variant="ghost" size="icon" onClick={() => saveItem(index)} disabled={isSavingItem} aria-label={t('expenses.saveItem')}>
                                           {isSavingItem ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4 text-green-600" />}
                                         </Button>
-                                        <Button variant="ghost" size="icon" onClick={cancelEditingItem}>
+                                        <Button variant="ghost" size="icon" onClick={cancelEditingItem} aria-label={t('expenses.cancelEditItem')}>
                                           <X className="h-4 w-4 text-red-500" />
                                         </Button>
                                       </div>
                                     ) : (
-                                      <Button variant="ghost" size="icon" onClick={() => startEditingItem(index, item)}>
+                                      <Button variant="ghost" size="icon" onClick={() => startEditingItem(index, item)} aria-label={t('expenses.editItem')}>
                                         <Edit2 className="h-4 w-4" />
                                       </Button>
                                     )}
@@ -1602,10 +1833,13 @@ export default function ExpensesPage() {
             {loadingImage ? (
               <Loader2 className="animate-spin h-8 w-8 text-muted-foreground" />
             ) : receiptImageUrl ? (
-              <img
+              <Image
                 src={receiptImageUrl}
                 alt="Receipt"
                 className="max-w-full max-h-[70vh] object-contain rounded-lg"
+                width={800}
+                height={600}
+                style={{ width: 'auto', height: 'auto', maxHeight: '70vh' }}
               />
             ) : (
               <p className="text-muted-foreground" suppressHydrationWarning>

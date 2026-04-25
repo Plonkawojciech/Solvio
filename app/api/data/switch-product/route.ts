@@ -4,7 +4,7 @@ import { db } from '@/lib/db'
 import { userSettings, companies, companyMembers } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import { cookies } from 'next/headers'
-import { SESSION_COOKIE } from '@/lib/session'
+import { SESSION_COOKIE, buildSignedSession, getSession } from '@/lib/session'
 import { seedBusinessCategories } from '@/lib/db/seed-user'
 
 export async function POST(req: NextRequest) {
@@ -56,16 +56,21 @@ export async function POST(req: NextRequest) {
   const raw = cookieStore.get(SESSION_COOKIE)?.value
   if (raw) {
     try {
-      const decoded = JSON.parse(Buffer.from(raw, 'base64').toString('utf8'))
-      decoded.productType = productType
-      const updated = Buffer.from(JSON.stringify(decoded)).toString('base64')
-      cookieStore.set(SESSION_COOKIE, updated, {
-        httpOnly: false,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax',
-        maxAge: 60 * 60 * 24 * 30,
-        path: '/',
-      })
+      // SECURITY FIX: HMAC-signed session cookie — re-sign with updated productType
+      // Parse the current session via getSession() to preserve all fields safely,
+      // then rebuild and re-sign the cookie.
+      const session = await getSession()
+      if (session) {
+        // SECURITY FIX: httpOnly must be true
+        const updated = buildSignedSession({ email: session.email, productType })
+        cookieStore.set(SESSION_COOKIE, updated, {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: 'lax',
+          maxAge: 60 * 60 * 24 * 30,
+          path: '/',
+        })
+      }
     } catch { /* ignore */ }
   }
 

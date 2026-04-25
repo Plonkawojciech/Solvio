@@ -1,10 +1,14 @@
-import { auth } from '@/lib/auth-compat'
+import { auth, getHubAuth } from '@/lib/auth-compat'
 import { NextResponse } from 'next/server'
 import { db, expenses, savingsGoals, monthlyBudgets, categoryBudgets } from '@/lib/db'
-import { eq, and, gte, lte, sql, desc } from 'drizzle-orm'
+import { eq, and, gte, lte, sql } from 'drizzle-orm'
 
-export async function GET() {
-  const { userId } = await auth()
+export async function GET(request: Request) {
+  let userId = (await auth()).userId
+  if (!userId) {
+    const hubAuth = getHubAuth(request)
+    if (hubAuth) userId = hubAuth.userId
+  }
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   try {
@@ -15,44 +19,44 @@ export async function GET() {
     nextMonth.setMonth(nextMonth.getMonth() + 1)
     const monthEnd = nextMonth.toISOString().slice(0, 10)
 
-    // Get current month's spending
-    const [spentResult] = await db
-      .select({ total: sql<string>`COALESCE(SUM(CAST(amount AS DECIMAL)), 0)` })
-      .from(expenses)
-      .where(
-        and(
-          eq(expenses.userId, userId),
-          gte(expenses.date, monthStart),
-          lte(expenses.date, monthEnd)
-        )
-      )
+    // PERF FIX: parallel execution with Promise.all
+    // All 4 queries are independent — fetch concurrently
+    const [
+      [spentResult],
+      [budget],
+      goals,
+      catBudgets,
+    ] = await Promise.all([
+      db
+        .select({ total: sql<string>`COALESCE(SUM(CAST(amount AS DECIMAL)), 0)` })
+        .from(expenses)
+        .where(
+          and(
+            eq(expenses.userId, userId),
+            gte(expenses.date, monthStart),
+            lte(expenses.date, monthEnd)
+          )
+        ),
+      db
+        .select()
+        .from(monthlyBudgets)
+        .where(and(eq(monthlyBudgets.userId, userId), eq(monthlyBudgets.month, currentMonth))),
+      db
+        .select()
+        .from(savingsGoals)
+        .where(eq(savingsGoals.userId, userId)),
+      db
+        .select()
+        .from(categoryBudgets)
+        .where(eq(categoryBudgets.userId, userId)),
+    ])
 
     const totalSpent = parseFloat(spentResult?.total || '0')
-
-    // Get monthly budget
-    const [budget] = await db
-      .select()
-      .from(monthlyBudgets)
-      .where(and(eq(monthlyBudgets.userId, userId), eq(monthlyBudgets.month, currentMonth)))
-
     const income = budget ? parseFloat(budget.totalIncome || '0') : 0
     const savingsTarget = budget ? parseFloat(budget.savingsTarget || '0') : 0
-
-    // Get savings goals progress
-    const goals = await db
-      .select()
-      .from(savingsGoals)
-      .where(eq(savingsGoals.userId, userId))
-
     const activeGoals = goals.filter(g => !g.isCompleted)
     const completedGoals = goals.filter(g => g.isCompleted)
     const totalSaved = goals.reduce((sum, g) => sum + parseFloat(g.currentAmount || '0'), 0)
-
-    // Get category budgets to check overspending
-    const catBudgets = await db
-      .select()
-      .from(categoryBudgets)
-      .where(eq(categoryBudgets.userId, userId))
 
     // Calculate score (0-100)
     let score = 50 // Base score

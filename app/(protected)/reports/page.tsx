@@ -9,8 +9,9 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import {
   RefreshCcw, FileDown, FileText, File, Loader2, FileBarChart2,
-  AlertCircle, CalendarRange, CheckCircle2,
+  AlertCircle, CalendarRange, CheckCircle2, ArrowRight,
 } from "lucide-react"
+import Link from 'next/link'
 import { CustomReportForm } from "@/components/protected/reports/custom-report-form"
 import {
   Tooltip, TooltipProvider, TooltipTrigger, TooltipContent,
@@ -36,7 +37,9 @@ export default function ReportsPage() {
   const { t, lang } = useTranslation()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [settings, setSettings] = useState<any>(null)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [yearBlocks, setYearBlocks] = useState<any[]>([])
   const [expensesByPeriod, setExpensesByPeriod] = useState<Record<string, number>>({})
   const [regenerating, setRegenerating] = useState<string | null>(null)
@@ -84,6 +87,7 @@ export default function ReportsPage() {
         months: Array.from(yearToMonths.get(y)!).sort((a, b) => b - a),
       }))
       setYearBlocks(blocks)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
       if (err.name === 'AbortError') return
       setError('reports.somethingWrong')
@@ -211,22 +215,25 @@ export default function ReportsPage() {
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.4 }}
-              className="flex flex-col items-center justify-center py-16 gap-5 text-center rounded-xl border border-dashed bg-muted/10"
+              className="flex flex-col items-center justify-center py-16 gap-5 text-center rounded-md border-2 border-dashed border-foreground/40 bg-secondary/30"
             >
-              <div className="relative">
-                <div className="h-20 w-20 rounded-full bg-primary/10 flex items-center justify-center">
-                  <FileBarChart2 className="h-10 w-10 text-primary" />
-                </div>
-                <motion.div
-                  animate={{ rotate: 360 }}
-                  transition={{ duration: 12, repeat: Infinity, ease: 'linear' }}
-                  className="absolute inset-0 rounded-full border-2 border-dashed border-primary/25"
-                />
+              <div className="font-mono text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                {'// '}{t('reports.noExpensesTitle')}
               </div>
-              <div className="space-y-1 max-w-xs">
-                <h3 className="text-base font-semibold">{t('reports.noExpensesTitle')}</h3>
-                <p className="text-sm text-muted-foreground">{t('reports.noExpensesDesc')}</p>
+              <div className="flex h-16 w-16 items-center justify-center rounded-md border-2 border-foreground bg-card text-foreground shadow-[3px_3px_0_hsl(var(--foreground))]">
+                <FileBarChart2 className="h-7 w-7" aria-hidden="true" />
               </div>
+              <div className="space-y-2 max-w-xs">
+                <h3 className="text-xl font-extrabold tracking-tight">{t('reports.noExpensesTitle')}</h3>
+                <p className="text-sm text-muted-foreground leading-snug">{t('reports.noExpensesDesc')}</p>
+                <p className="text-xs text-muted-foreground/70">{t('reports.noExpensesAddFirst')}</p>
+              </div>
+              <Button asChild>
+                <Link href="/expenses">
+                  <ArrowRight className="h-4 w-4" aria-hidden="true" />
+                  {t('reports.goToExpenses')}
+                </Link>
+              </Button>
             </motion.div>
           ) : (
             /* ── Report cards ── */
@@ -235,10 +242,12 @@ export default function ReportsPage() {
                 <motion.div
                   initial={{ opacity: 0, y: -8 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="mb-4 flex items-center gap-3 rounded-lg border border-primary/20 bg-primary/5 px-4 py-3 text-sm"
+                  className="mb-4 flex items-center gap-3 rounded-md border-2 border-foreground bg-secondary px-4 py-3 text-sm shadow-[3px_3px_0_hsl(var(--foreground))]"
+                  role="status"
+                  aria-live="polite"
                 >
-                  <Loader2 className="h-4 w-4 animate-spin text-primary flex-shrink-0" />
-                  <span>{t('reports.generatingBanner')}</span>
+                  <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" aria-hidden="true" />
+                  <span className="font-semibold">{t('reports.generatingBanner')}</span>
                 </motion.div>
               )}
 
@@ -290,6 +299,7 @@ export default function ReportsPage() {
                                         size="icon"
                                         disabled={isGenerating}
                                         onClick={() => handleRegenerate({ type: 'yearly', year })}
+                                        aria-label={t('reports.regenerateReport')}
                                       >
                                         {isYearGenerating
                                           ? <Loader2 className="h-4 w-4 animate-spin" />
@@ -355,6 +365,7 @@ export default function ReportsPage() {
                                                 size="icon"
                                                 disabled={isGenerating}
                                                 onClick={() => handleRegenerate({ type: 'monthly', ym: key })}
+                                                aria-label={t('reports.regenerateReport')}
                                               >
                                                 {isMonthGenerating
                                                   ? <Loader2 className="h-4 w-4 animate-spin" />
@@ -441,7 +452,6 @@ function DownloadButtons({
     url,
     label,
     Icon,
-    colorClass,
   }: {
     url?: string
     label: string

@@ -1,15 +1,30 @@
 import { auth } from '@/lib/auth-compat'
 import { NextResponse } from 'next/server'
-import OpenAI from 'openai'
+import { getAIClient } from '@/lib/ai-client'
+import { rateLimit } from '@/lib/rate-limit'
+import { PRICE_COMPARE_STORES } from '@/lib/stores'
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
-
-const STORES = ['Biedronka', 'Lidl', 'Żabka', 'Kaufland', 'Aldi', 'Auchan', 'Carrefour', 'Rossmann']
+const STORES = PRICE_COMPARE_STORES
 
 export async function POST(request: Request) {
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+  // SECURITY FIX: Rate limiting for OpenAI-powered endpoint
+  const rl = rateLimit(`ai:promotions-scan:${userId}`, { maxRequests: 10, windowMs: 60 * 60 * 1000 })
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { error: 'Rate limit exceeded. Try again later.' },
+      { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } },
+    )
+  }
+
+  const ai = getAIClient()
+  if (!ai) {
+    return NextResponse.json({ error: 'AI service not configured' }, { status: 503 })
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let body: any
   try {
     body = await request.json()
@@ -82,26 +97,54 @@ Return in JSON format:
 
 Return 20-30 best promotions. Only real, current offers.`
 
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [
-        { role: 'system', content: 'You are a helpful assistant that returns only valid JSON with current Polish store promotions.' },
-        { role: 'user', content: prompt },
-      ],
-      temperature: 0.7,
-      max_tokens: 4000,
-      response_format: { type: 'json_object' },
-    })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let result: any = null
 
-    const content = completion.choices[0]?.message?.content || '{}'
-    let result: any
-    try {
-      result = JSON.parse(content)
-    } catch {
-      result = { promotions: [], scannedStores: 0, totalDeals: 0 }
+    // Web search only available with OpenAI direct (Azure doesn't support Responses API)
+    if (ai.backend === 'openai') {
+      try {
+        const webSearchCall = ai.client.responses.create({
+          model: ai.model,
+          tools: [{ type: 'web_search_preview' }],
+          input: prompt,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        } as any)
+        const webSearchTimeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), 10000))
+        const webResponse = await Promise.race([webSearchCall, webSearchTimeout])
+        if (webResponse) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const rawText = (webResponse as any).output_text || ''
+          const jsonMatch = rawText.match(/\{[\s\S]*\}/)
+          if (jsonMatch) result = JSON.parse(jsonMatch[0])
+        }
+      } catch {
+        // Web search failed or timed out, fall through to chat completions
+      }
+    }
+
+    // Fallback: chat completions estimates (fast, ~2s)
+    if (!result) {
+      const completion = await ai.client.chat.completions.create({
+        model: ai.model,
+        messages: [
+          { role: 'system', content: 'You are a helpful assistant that returns only valid JSON with current Polish store promotions.' },
+          { role: 'user', content: prompt },
+        ],
+        temperature: 0.3,
+        max_tokens: 4000,
+        response_format: { type: 'json_object' },
+      })
+
+      const content = completion.choices[0]?.message?.content || '{}'
+      try {
+        result = JSON.parse(content)
+      } catch {
+        result = { promotions: [], scannedStores: 0, totalDeals: 0 }
+      }
     }
 
     // Add IDs to promotions
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const promotions = (result.promotions || []).map((p: any, i: number) => ({
       ...p,
       id: `scan-${Date.now()}-${i}`,

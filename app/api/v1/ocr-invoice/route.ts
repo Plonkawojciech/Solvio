@@ -5,6 +5,7 @@ import { db } from '@/lib/db'
 import { invoices, companyMembers, vatEntries, userSettings } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import { put } from '@vercel/blob'
+import { rateLimit } from '@/lib/rate-limit'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -78,6 +79,7 @@ async function processAzureInvoiceOCR(buffer: Buffer, mimeType: string) {
   throw new Error('Azure OCR timeout')
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function extractInvoiceData(azureResult: any) {
   const document = azureResult.analyzeResult?.documents?.[0]
   if (!document) {
@@ -210,10 +212,13 @@ function extractInvoiceData(azureResult: any) {
 }
 
 export async function POST(req: NextRequest) {
-  console.log('[OCR-Invoice] Request received')
 
   const { userId } = await auth()
   if (!userId) return json({ error: 'Unauthorized' }, 401)
+
+  // SECURITY FIX: Rate limit OCR endpoint to prevent cost abuse (Azure Document Intelligence)
+  const rl = rateLimit(`ai:${userId}`, { maxRequests: 10, windowMs: 3600000 })
+  if (!rl.allowed) return json({ error: 'Too many requests', retryAfter: rl.retryAfter }, 429)
 
   // Verify business user
   const settings = await db.select().from(userSettings).where(eq(userSettings.userId, userId)).limit(1)
@@ -265,15 +270,15 @@ export async function POST(req: NextRequest) {
       console.warn('[OCR-Invoice] Blob upload failed (non-fatal):', blobErr)
     }
 
-    // Azure OCR
-    const azureResult = await processAzureInvoiceOCR(buffer, mimeType)
+    // Azure OCR and company member lookup are independent — run in parallel
+    const [azureResult, memberResult] = await Promise.all([
+      processAzureInvoiceOCR(buffer, mimeType),
+      db.select({ companyId: companyMembers.companyId })
+        .from(companyMembers)
+        .where(eq(companyMembers.userId, userId))
+        .limit(1),
+    ])
     const data = extractInvoiceData(azureResult)
-
-    // Get user's company
-    const memberResult = await db.select({ companyId: companyMembers.companyId })
-      .from(companyMembers)
-      .where(eq(companyMembers.userId, userId))
-      .limit(1)
 
     const companyId = memberResult[0]?.companyId || null
 
@@ -321,7 +326,6 @@ export async function POST(req: NextRequest) {
           documentDate: data.issueDate,
           deductible: true,
         })
-        console.log('[OCR-Invoice] VAT entry auto-created')
       } catch (vatErr) {
         console.warn('[OCR-Invoice] VAT entry creation failed (non-fatal):', vatErr)
       }
@@ -333,9 +337,10 @@ export async function POST(req: NextRequest) {
       extractedData: data,
     })
   } catch (err) {
+    // SECURITY FIX: Don't expose env var names in errors — generic message for clients
     console.error('[OCR-Invoice] Error:', err)
     return json({
-      error: err instanceof Error ? err.message : 'Unknown error',
+      error: 'Invoice processing failed. Please try again.',
       success: false,
     }, 500)
   }

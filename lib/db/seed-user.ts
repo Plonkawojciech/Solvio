@@ -1,7 +1,20 @@
 import { db, categories, userSettings } from './index'
 import { eq } from 'drizzle-orm'
 
-const DEFAULT_CATEGORIES = [
+const DEFAULT_CATEGORIES_PL = [
+  { name: 'Jedzenie', icon: '🍕' },
+  { name: 'Zakupy spożywcze', icon: '🛒' },
+  { name: 'Zdrowie', icon: '💊' },
+  { name: 'Transport', icon: '🚗' },
+  { name: 'Zakupy', icon: '🛍️' },
+  { name: 'Elektronika', icon: '💻' },
+  { name: 'Dom i ogród', icon: '🏠' },
+  { name: 'Rozrywka', icon: '🎬' },
+  { name: 'Rachunki i media', icon: '⚡' },
+  { name: 'Inne', icon: '📦' },
+]
+
+const DEFAULT_CATEGORIES_EN = [
   { name: 'Food', icon: '🍕' },
   { name: 'Groceries', icon: '🛒' },
   { name: 'Health', icon: '💊' },
@@ -14,7 +27,20 @@ const DEFAULT_CATEGORIES = [
   { name: 'Other', icon: '📦' },
 ]
 
-const BUSINESS_CATEGORIES = [
+const BUSINESS_CATEGORIES_PL = [
+  { name: 'Artykuły biurowe', icon: '🖊️' },
+  { name: 'Podróże służbowe', icon: '✈️' },
+  { name: 'Oprogramowanie', icon: '💻' },
+  { name: 'Spotkania z klientami', icon: '🍽️' },
+  { name: 'Usługi profesjonalne', icon: '📋' },
+  { name: 'Marketing i reklama', icon: '📢' },
+  { name: 'Ubezpieczenia', icon: '🛡️' },
+  { name: 'Podatki i opłaty', icon: '🏛️' },
+  { name: 'Sprzęt', icon: '🔧' },
+  { name: 'Koszty pracownicze', icon: '👥' },
+]
+
+const BUSINESS_CATEGORIES_EN = [
   { name: 'Office Supplies', icon: '🖊️' },
   { name: 'Business Travel', icon: '✈️' },
   { name: 'Software & SaaS', icon: '💻' },
@@ -27,7 +53,7 @@ const BUSINESS_CATEGORIES = [
   { name: 'Employee Costs', icon: '👥' },
 ]
 
-export async function ensureUserSeeded(userId: string) {
+export async function ensureUserSeeded(userId: string, lang: 'pl' | 'en' = 'pl') {
   // Check if user already has categories
   const existing = await db.select({ id: categories.id })
     .from(categories)
@@ -36,16 +62,20 @@ export async function ensureUserSeeded(userId: string) {
 
   if (existing.length > 0) return
 
+  const defaultCats = lang === 'en' ? DEFAULT_CATEGORIES_EN : DEFAULT_CATEGORIES_PL
+
   // Create settings + default categories in parallel
   await Promise.all([
-    db.insert(userSettings).values({ userId }).onConflictDoNothing(),
+    db.insert(userSettings).values({ userId, language: lang }).onConflictDoNothing(),
     db.insert(categories).values(
-      DEFAULT_CATEGORIES.map(c => ({ ...c, userId, isDefault: true }))
+      defaultCats.map(c => ({ ...c, userId, isDefault: true }))
     ),
   ])
 }
 
-export async function seedBusinessCategories(userId: string) {
+export async function seedBusinessCategories(userId: string, lang: 'pl' | 'en' = 'pl') {
+  const businessCats = lang === 'pl' ? BUSINESS_CATEGORIES_PL : BUSINESS_CATEGORIES_EN
+
   // Get existing category names to avoid duplicates
   const existingNames = new Set(
     (await db.select({ name: categories.name })
@@ -55,7 +85,7 @@ export async function seedBusinessCategories(userId: string) {
   )
 
   // Only insert categories that don't already exist
-  const newCategories = BUSINESS_CATEGORIES.filter(c => !existingNames.has(c.name))
+  const newCategories = businessCats.filter(c => !existingNames.has(c.name))
 
   if (newCategories.length === 0) return
 

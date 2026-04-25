@@ -10,8 +10,8 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
   Tag, Sparkles, AlertCircle, RefreshCw, Loader2,
-  Search, SlidersHorizontal, PiggyBank, ShoppingCart,
-  ArrowUpDown, Clock, Store, Receipt,
+  PiggyBank, ShoppingCart,
+  ArrowUpDown, Store, Info,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { PromotionCard, type PromotionData } from '@/components/protected/personal/promotion-card'
@@ -37,7 +37,7 @@ type SortType = 'savings_amount' | 'savings_percent' | 'expiry'
 const LOADING_PL = [
   'Szukam promocji w Biedronce...',
   'Sprawdzam gazetkę Lidla...',
-  'Przeglądamoferty Żabki...',
+  'Przeglądam oferty Żabki...',
   'Analizuję gazetkę Kauflanda...',
   'Sprawdzam Aldi...',
   'Szukam najlepszych ofert...',
@@ -133,29 +133,6 @@ function PromotionsSkeleton({ isPolish }: { isPolish: boolean }) {
   )
 }
 
-/* ─── Static Skeleton ─── */
-function StaticSkeleton() {
-  return (
-    <div className="flex flex-col gap-6 animate-pulse">
-      <div className="flex items-center justify-between">
-        <div className="space-y-2">
-          <div className="h-7 w-48 rounded bg-muted" />
-          <div className="h-4 w-72 rounded bg-muted" />
-        </div>
-        <div className="h-10 w-44 rounded-md bg-muted" />
-      </div>
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        {[0, 1, 2, 3].map(i => (
-          <div key={i} className="rounded-xl border bg-card p-4 space-y-2">
-            <div className="h-3 w-20 rounded bg-muted" />
-            <div className="h-7 w-16 rounded bg-muted" />
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-
 /* ─── Page ─── */
 export default function PromotionsPage() {
   const { t, lang, mounted } = useTranslation()
@@ -163,7 +140,6 @@ export default function PromotionsPage() {
   const router = useRouter()
   const isPolish = lang === 'pl'
 
-  const [loading, setLoading] = useState(false)
   const [scanning, setScanning] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [promotions, setPromotions] = useState<PromotionData[]>([])
@@ -188,7 +164,7 @@ export default function PromotionsPage() {
     fetch('/api/data/settings')
       .then(r => r.json())
       .then(d => { if (d?.settings?.currency) setCurrency(d.settings.currency.toUpperCase()) })
-      .catch(() => {})
+      .catch((err) => console.error('Failed to fetch settings:', err))
   }, [])
 
   const scanPromotions = useCallback(async () => {
@@ -209,13 +185,14 @@ export default function PromotionsPage() {
       setPersonalizedDeals(data.personalizedDeals || [])
       setTotalPotentialSavings(data.totalPotentialSavings || 0)
       if (data.weeklySummary) setWeeklySummary(data.weeklySummary)
-      toast.success(isPolish ? 'Promocje zaktualizowane!' : 'Promotions updated!')
+      toast.success(t('promotions.updated'))
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
-      toast.error(isPolish ? 'Nie udalo sie pobrac promocji' : 'Failed to fetch promotions')
+      toast.error(t('promotions.fetchFailed'))
     } finally {
       setScanning(false)
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lang, currency, isPolish])
 
   if (!mounted) return null
@@ -386,6 +363,12 @@ export default function PromotionsPage() {
       {/* ── Results ── */}
       {!scanning && promotions.length > 0 && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col gap-6">
+          {/* AI disclaimer */}
+          <div className="flex items-center gap-2 text-xs text-amber-700 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-3 py-2 rounded-lg">
+            <Info className="h-3.5 w-3.5 shrink-0" />
+            <span suppressHydrationWarning>{t('promotions.aiDisclaimer')}</span>
+          </div>
+
           {/* Weekly Summary */}
           {weeklySummary && <WeeklySummaryCard summary={weeklySummary} currency={currency} />}
 

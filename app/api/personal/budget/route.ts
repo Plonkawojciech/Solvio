@@ -1,34 +1,34 @@
-import { auth } from '@/lib/auth-compat'
+import { auth, getHubAuth } from '@/lib/auth-compat'
 import { NextResponse, NextRequest } from 'next/server'
 import { db, monthlyBudgets, expenses, categories, categoryBudgets } from '@/lib/db'
-import { eq, and, gte, lte, desc, sql } from 'drizzle-orm'
+import { eq, and, gte, lte, sql } from 'drizzle-orm'
 
 export async function GET(request: NextRequest) {
-  const { userId } = await auth()
+  let userId = (await auth()).userId
+  if (!userId) {
+    const hubAuth = getHubAuth(request)
+    if (hubAuth) userId = hubAuth.userId
+  }
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const month = request.nextUrl.searchParams.get('month') || new Date().toISOString().slice(0, 7)
 
   try {
-    // Get the monthly budget
-    const [budget] = await db
-      .select()
-      .from(monthlyBudgets)
-      .where(and(eq(monthlyBudgets.userId, userId), eq(monthlyBudgets.month, month)))
+    // First 3 queries are independent — run in parallel
+    const [budgetResult, catBudgets, userCategories] = await Promise.all([
+      db.select()
+        .from(monthlyBudgets)
+        .where(and(eq(monthlyBudgets.userId, userId), eq(monthlyBudgets.month, month))),
+      db.select()
+        .from(categoryBudgets)
+        .where(eq(categoryBudgets.userId, userId)),
+      db.select()
+        .from(categories)
+        .where(eq(categories.userId, userId)),
+    ])
+    const budget = budgetResult[0]
 
-    // Get category budgets
-    const catBudgets = await db
-      .select()
-      .from(categoryBudgets)
-      .where(eq(categoryBudgets.userId, userId))
-
-    // Get user categories
-    const userCategories = await db
-      .select()
-      .from(categories)
-      .where(eq(categories.userId, userId))
-
-    // Get expenses for this month
+    // Get expenses for this month grouped by category (single query)
     const monthStart = `${month}-01`
     const nextMonth = new Date(`${month}-01`)
     nextMonth.setMonth(nextMonth.getMonth() + 1)
@@ -49,16 +49,9 @@ export async function GET(request: NextRequest) {
       )
       .groupBy(expenses.categoryId)
 
-    const totalSpent = await db
-      .select({ total: sql<string>`COALESCE(SUM(CAST(amount AS DECIMAL)), 0)` })
-      .from(expenses)
-      .where(
-        and(
-          eq(expenses.userId, userId),
-          gte(expenses.date, monthStart),
-          lte(expenses.date, monthEnd)
-        )
-      )
+    // Calculate total spent from grouped results — no duplicate query needed
+    const totalSpentValue = monthExpenses.reduce((sum, e) => sum + parseFloat(e.total || '0'), 0)
+    const totalSpent = [{ total: totalSpentValue.toFixed(2) }]
 
     // Build category spending map
     const spendingByCategory = new Map<string, number>()
@@ -81,10 +74,39 @@ export async function GET(request: NextRequest) {
       }
     })
 
+    // Compute budget alerts (>80% = warning, >100% = critical)
+    const now = new Date()
+    const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
+    const dayOfMonth = now.getDate()
+    const monthProgress = dayOfMonth / daysInMonth // 0–1
+
+    const alerts: { type: 'critical' | 'warning'; category: string; spent: number; budgeted: number; pct: number }[] = []
+
+    for (const cat of categoryBreakdown) {
+      if (cat.budgeted <= 0) continue
+      const pct = cat.spent / cat.budgeted
+      if (pct >= 1.0) {
+        alerts.push({ type: 'critical', category: cat.name, spent: cat.spent, budgeted: cat.budgeted, pct: parseFloat(pct.toFixed(2)) })
+      } else if (pct >= 0.8) {
+        alerts.push({ type: 'warning', category: cat.name, spent: cat.spent, budgeted: cat.budgeted, pct: parseFloat(pct.toFixed(2)) })
+      }
+    }
+
+    const totalBudgetAmt = budget ? parseFloat(budget.totalBudget || '0') : 0
+    const spent = parseFloat(totalSpent[0]?.total || '0')
+    const totalPct = totalBudgetAmt > 0 ? spent / totalBudgetAmt : 0
+    if (totalBudgetAmt > 0 && totalPct >= 1.0) {
+      alerts.unshift({ type: 'critical', category: '__total__', spent, budgeted: totalBudgetAmt, pct: parseFloat(totalPct.toFixed(2)) })
+    } else if (totalBudgetAmt > 0 && totalPct >= 0.8) {
+      alerts.unshift({ type: 'warning', category: '__total__', spent, budgeted: totalBudgetAmt, pct: parseFloat(totalPct.toFixed(2)) })
+    }
+
     return NextResponse.json({
       budget: budget || null,
-      totalSpent: parseFloat(totalSpent[0]?.total || '0'),
+      totalSpent: spent,
       categoryBreakdown,
+      alerts,
+      monthProgress: parseFloat(monthProgress.toFixed(2)),
       month,
     })
   } catch (err) {
@@ -94,9 +116,14 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: Request) {
-  const { userId } = await auth()
+  let userId = (await auth()).userId
+  if (!userId) {
+    const hubAuth = getHubAuth(request)
+    if (hubAuth) userId = hubAuth.userId
+  }
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let body: any
   try {
     body = await request.json()

@@ -2,16 +2,52 @@ import SwiftUI
 
 /// Savings goals list — parity with `/app/(protected)/goals`. Emoji-first
 /// card, progress bar, quick deposit action via `/api/personal/goals/[id]/deposit`.
+///
+/// Reads from `AppDataStore.goals` so tab switches don't re-fetch.
 struct GoalsListView: View {
     @EnvironmentObject private var router: AppRouter
     @EnvironmentObject private var toast: ToastCenter
     @EnvironmentObject private var locale: AppLocale
-    @StateObject private var vm = GoalsViewModel()
+    @EnvironmentObject private var store: AppDataStore
     @State private var showCreate = false
     @State private var depositTarget: SavingsGoal?
     @State private var pendingDelete: SavingsGoal?
     @State private var showCompleted = false
     @State private var showAiTip = false
+
+    // MARK: - Derived state
+
+    private var goals: [SavingsGoal] { store.goals }
+    private var isLoading: Bool { store.goalsLoading }
+    private var errorMessage: String? { store.goalsError }
+    private var activeGoals: [SavingsGoal] { goals.filter { $0.isCompleted != true } }
+    private var completedGoals: [SavingsGoal] { goals.filter { $0.isCompleted == true } }
+    private var totalSaved: Double { goals.reduce(0) { $0 + $1.currentAmount.double } }
+
+    /// Fallback currency for summary tiles when goals have mixed or missing currencies.
+    private var currencyHint: String { goals.first?.currency ?? store.currency }
+
+    /// Monthly savings needed across active goals — matches web helper.
+    private var monthlyNeeded: Double {
+        activeGoals.reduce(0) { sum, g in
+            let target = g.targetAmount.double
+            let current = g.currentAmount.double
+            let remaining = target - current
+            guard remaining > 0 else { return sum }
+            if let deadlineIso = g.deadline,
+               let deadline = Self.parseIsoDay(deadlineIso) {
+                let daysLeft = max(1, Calendar.current.dateComponents([.day], from: Date(), to: deadline).day ?? 1)
+                return sum + (remaining / Double(daysLeft)) * 30
+            }
+            return sum + remaining / 12
+        }
+    }
+
+    private static func parseIsoDay(_ s: String) -> Date? {
+        let df = DateFormatter()
+        df.dateFormat = "yyyy-MM-dd"
+        return df.date(from: String(s.prefix(10)))
+    }
 
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
@@ -21,7 +57,7 @@ struct GoalsListView: View {
                         NBScreenHeader(
                             eyebrow: locale.t("goals.eyebrow"),
                             title: locale.t("goals.headerTitle"),
-                            subtitle: "\(vm.activeGoals.count) \(locale.t("goals.sectionActive").lowercased()) · \(vm.completedGoals.count) \(locale.t("goals.statCompleted").lowercased())"
+                            subtitle: "\(activeGoals.count) \(locale.t("goals.sectionActive").lowercased()) · \(completedGoals.count) \(locale.t("goals.statCompleted").lowercased())"
                         )
                     }
                     .padding(.horizontal, Theme.Spacing.md)
@@ -31,7 +67,7 @@ struct GoalsListView: View {
                 .listRowSeparator(.hidden)
                 .listRowInsets(EdgeInsets())
 
-                if vm.isLoading && vm.goals.isEmpty {
+                if isLoading && goals.isEmpty {
                     Section {
                         NBLoadingCard()
                             .padding(.horizontal, Theme.Spacing.md)
@@ -39,15 +75,15 @@ struct GoalsListView: View {
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
                     .listRowInsets(EdgeInsets())
-                } else if let message = vm.errorMessage {
+                } else if let message = errorMessage, goals.isEmpty {
                     Section {
-                        NBErrorCard(message: message) { Task { await vm.load() } }
+                        NBErrorCard(message: message) { Task { await store.awaitGoals(force: true) } }
                             .padding(.horizontal, Theme.Spacing.md)
                     }
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
                     .listRowInsets(EdgeInsets())
-                } else if vm.goals.isEmpty {
+                } else if goals.isEmpty {
                     Section {
                         NBEmptyState(
                             systemImage: "target",
@@ -65,7 +101,7 @@ struct GoalsListView: View {
                         VStack(alignment: .leading, spacing: Theme.Spacing.md) {
                             kpiStrip
                             aiTipBanner
-                            sectionHeader(locale.t("goals.sectionActive"), count: vm.activeGoals.count)
+                            sectionHeader(locale.t("goals.sectionActive"), count: activeGoals.count)
                         }
                         .padding(.horizontal, Theme.Spacing.md)
                     }
@@ -74,7 +110,7 @@ struct GoalsListView: View {
                     .listRowInsets(EdgeInsets())
 
                     Section {
-                        ForEach(vm.activeGoals) { g in
+                        ForEach(activeGoals) { g in
                             Button {
                                 router.push(.goalDetail(id: g.id))
                             } label: {
@@ -116,7 +152,7 @@ struct GoalsListView: View {
                         }
                     }
 
-                    if !vm.completedGoals.isEmpty {
+                    if !completedGoals.isEmpty {
                         Section {
                             completedDisclosure
                                 .padding(.horizontal, Theme.Spacing.md)
@@ -138,8 +174,8 @@ struct GoalsListView: View {
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
             .background(Theme.background)
-            .refreshable { await vm.load() }
-            .task { if vm.goals.isEmpty { await vm.load() } }
+            .refreshable { await store.awaitGoals(force: true) }
+            .task { store.ensureGoals() }
             .animation(.nbSpring, value: showCompleted)
             .animation(.nbSpring, value: showAiTip)
 
@@ -163,7 +199,7 @@ struct GoalsListView: View {
                     do {
                         _ = try await GoalsRepo.create(body)
                         toast.success(locale.t("goals.created"))
-                        await vm.load()
+                        store.didMutateGoals()
                     } catch {
                         toast.error(locale.t("goals.createFailed"), description: error.localizedDescription)
                     }
@@ -181,7 +217,7 @@ struct GoalsListView: View {
         ) { g in
             Button(locale.t("common.cancel"), role: .cancel) {}
             Button(locale.t("common.delete"), role: .destructive) {
-                Task { await vm.delete(id: g.id, locale: locale, toast: toast) }
+                Task { await deleteGoal(id: g.id) }
             }
         } message: { g in
             Text(g.name)
@@ -193,7 +229,7 @@ struct GoalsListView: View {
                         _ = try await GoalsRepo.deposit(goalId: goal.id, amount: amount, note: note)
                         toast.success(locale.t("goals.fundsAdded"))
                         depositTarget = nil
-                        await vm.load()
+                        store.didMutateGoals()
                     } catch {
                         toast.error(locale.t("goals.failed"), description: error.localizedDescription)
                     }
@@ -203,12 +239,22 @@ struct GoalsListView: View {
         }
     }
 
+    private func deleteGoal(id: String) async {
+        do {
+            try await GoalsRepo.delete(id: id)
+            toast.success(locale.t("goals.deleted"))
+            store.didMutateGoals()
+        } catch {
+            toast.error(locale.t("goals.deleteFailed"), description: error.localizedDescription)
+        }
+    }
+
     private var kpiStrip: some View {
         LazyVGrid(columns: [GridItem(.flexible(), spacing: Theme.Spacing.xs), GridItem(.flexible(), spacing: Theme.Spacing.xs)], spacing: Theme.Spacing.xs) {
-            NBStatTile(label: locale.t("goals.statSaved"), value: Fmt.amount(vm.totalSaved, currency: vm.currencyHint))
-            NBStatTile(label: locale.t("goals.statActive"), value: "\(vm.activeGoals.count)")
-            NBStatTile(label: locale.t("goals.statPerMonth"), value: Fmt.amount(vm.monthlyNeeded, currency: vm.currencyHint))
-            NBStatTile(label: locale.t("goals.statCompleted"), value: "\(vm.completedGoals.count)")
+            NBStatTile(label: locale.t("goals.statSaved"), value: Fmt.amount(totalSaved, currency: currencyHint))
+            NBStatTile(label: locale.t("goals.statActive"), value: "\(activeGoals.count)")
+            NBStatTile(label: locale.t("goals.statPerMonth"), value: Fmt.amount(monthlyNeeded, currency: currencyHint))
+            NBStatTile(label: locale.t("goals.statCompleted"), value: "\(completedGoals.count)")
         }
     }
 
@@ -217,8 +263,8 @@ struct GoalsListView: View {
     /// still surfacing the tip.
     @ViewBuilder
     private var aiTipBanner: some View {
-        let active = vm.activeGoals.count
-        let perMonth = Fmt.amount(vm.monthlyNeeded, currency: vm.currencyHint)
+        let active = activeGoals.count
+        let perMonth = Fmt.amount(monthlyNeeded, currency: currencyHint)
         Button {
             withAnimation(.nbSpring) { showAiTip.toggle() }
         } label: {
@@ -274,7 +320,7 @@ struct GoalsListView: View {
             }
         )) {
             VStack(spacing: Theme.Spacing.xs) {
-                ForEach(vm.completedGoals) { g in
+                ForEach(completedGoals) { g in
                     completedRow(g)
                 }
             }
@@ -289,7 +335,7 @@ struct GoalsListView: View {
                     .tracking(1)
                     .textCase(.uppercase)
                     .foregroundColor(Theme.mutedForeground)
-                Text("(\(vm.completedGoals.count))")
+                Text("(\(completedGoals.count))")
                     .font(AppFont.mono(10))
                     .foregroundColor(Theme.mutedForeground)
             }
@@ -372,63 +418,6 @@ struct GoalsListView: View {
         }
         .padding(Theme.Spacing.sm)
         .nbCard(radius: Theme.Radius.sm, shadow: Theme.Shadow.sm)
-    }
-}
-
-@MainActor
-final class GoalsViewModel: ObservableObject {
-    @Published var goals: [SavingsGoal] = []
-    @Published var isLoading = false
-    @Published var errorMessage: String?
-
-    var activeGoals: [SavingsGoal] { goals.filter { $0.isCompleted != true } }
-    var completedGoals: [SavingsGoal] { goals.filter { $0.isCompleted == true } }
-    var totalSaved: Double { goals.reduce(0) { $0 + $1.currentAmount.double } }
-
-    /// Fallback currency for summary tiles when goals have mixed or missing currencies.
-    var currencyHint: String { goals.first?.currency ?? "PLN" }
-
-    /// Monthly savings needed across active goals — matches web helper.
-    var monthlyNeeded: Double {
-        activeGoals.reduce(0) { sum, g in
-            let target = g.targetAmount.double
-            let current = g.currentAmount.double
-            let remaining = target - current
-            guard remaining > 0 else { return sum }
-            if let deadlineIso = g.deadline,
-               let deadline = parseIsoDay(deadlineIso) {
-                let daysLeft = max(1, Calendar.current.dateComponents([.day], from: Date(), to: deadline).day ?? 1)
-                return sum + (remaining / Double(daysLeft)) * 30
-            }
-            return sum + remaining / 12
-        }
-    }
-
-    private func parseIsoDay(_ s: String) -> Date? {
-        let df = DateFormatter()
-        df.dateFormat = "yyyy-MM-dd"
-        return df.date(from: String(s.prefix(10)))
-    }
-
-    func load() async {
-        isLoading = true
-        errorMessage = nil
-        defer { isLoading = false }
-        do {
-            goals = try await GoalsRepo.list()
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-    }
-
-    func delete(id: String, locale: AppLocale, toast: ToastCenter) async {
-        do {
-            try await GoalsRepo.delete(id: id)
-            toast.success(locale.t("goals.deleted"))
-            await load()
-        } catch {
-            toast.error(locale.t("goals.deleteFailed"), description: error.localizedDescription)
-        }
     }
 }
 

@@ -7,13 +7,20 @@ import { AddExpenseSheet } from './add-expense-sheet'
 import { useRouter } from 'next/navigation'
 import { useTranslation } from '@/lib/i18n'
 
+interface ExpenseForSuggestion {
+  vendor: string | null
+  title: string
+  categoryId: string | null
+}
+
 interface AddExpenseTriggerProps {
   onAction?: () => void
   open?: boolean
   onOpenChange?: (open: boolean) => void
+  allExpenses?: ExpenseForSuggestion[]
 }
 
-export function AddExpenseTrigger({ onAction, open, onOpenChange }: AddExpenseTriggerProps) {
+export function AddExpenseTrigger({ onAction, open, onOpenChange, allExpenses }: AddExpenseTriggerProps) {
   const { t } = useTranslation()
   const [internalOpen, setInternalOpen] = React.useState(false)
   const router = useRouter()
@@ -43,6 +50,7 @@ export function AddExpenseTrigger({ onAction, open, onOpenChange }: AddExpenseTr
         isOpen={isSheetOpen}
         onClose={() => setIsSheetOpen(false)}
         onAction={handleAction}
+        allExpenses={allExpenses}
       />
     </>
   )

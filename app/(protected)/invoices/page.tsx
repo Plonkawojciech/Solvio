@@ -1,15 +1,14 @@
 'use client'
 
 import { useEffect, useState, useCallback, useRef } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion } from 'framer-motion'
 import { useTranslation } from '@/lib/i18n'
 import { useProductType } from '@/hooks/use-product-type'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
-import { Skeleton } from '@/components/ui/skeleton'
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
@@ -21,13 +20,13 @@ import {
 } from '@/components/ui/table'
 import {
   FileText, Search, Upload, AlertCircle, RefreshCw, FileUp, Calendar,
-  Building2, CreditCard, Clock, AlertTriangle, ChevronLeft, Loader2,
-  Image as ImageIcon, Download, Eye, Receipt,
+  CreditCard, Clock, AlertTriangle, Loader2, Receipt,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { InvoiceCard, type Invoice } from '@/components/protected/business/invoice-card'
 import { cn } from '@/lib/utils'
 import dynamic from 'next/dynamic'
+import Image from 'next/image'
 
 const LazyVatPage = dynamic(() => import('../vat/page'), { ssr: false })
 
@@ -94,14 +93,17 @@ function InvoicesSkeleton() {
 function InvoicesError({ onRetry }: { onRetry: () => void }) {
   const { t } = useTranslation()
   return (
-    <div className="flex items-center justify-center min-h-[400px]">
+    <div className="flex items-center justify-center min-h-[400px]" role="alert">
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={{ duration: 0.35 }}
         className="flex flex-col items-center gap-4 text-center max-w-sm"
       >
-        <div className="h-16 w-16 rounded-full bg-destructive/10 flex items-center justify-center">
+        <p className="font-mono text-[10px] font-bold uppercase tracking-widest text-destructive" suppressHydrationWarning>
+          {'// '}{t('invoices.error.title')}
+        </p>
+        <div className="h-16 w-16 border-2 border-destructive bg-destructive/10 shadow-[3px_3px_0_hsl(var(--destructive))] rounded-md flex items-center justify-center">
           <AlertCircle className="h-8 w-8 text-destructive" />
         </div>
         <div className="space-y-1">
@@ -128,8 +130,11 @@ function InvoicesEmpty({ onUpload }: { onUpload: () => void }) {
       className="flex items-center justify-center min-h-[400px]"
     >
       <div className="flex flex-col items-center gap-4 text-center max-w-sm">
-        <div className="h-20 w-20 rounded-2xl bg-primary/10 flex items-center justify-center">
-          <FileText className="h-10 w-10 text-primary" />
+        <p className="font-mono text-[10px] font-bold uppercase tracking-widest text-muted-foreground" suppressHydrationWarning>
+          {'// '}{t('invoices.empty.title')}
+        </p>
+        <div className="h-20 w-20 border-2 border-foreground bg-secondary shadow-[3px_3px_0_hsl(var(--foreground))] rounded-md flex items-center justify-center">
+          <FileText className="h-10 w-10 text-foreground" />
         </div>
         <div className="space-y-1">
           <h3 className="text-lg font-semibold" suppressHydrationWarning>{t('invoices.empty.title')}</h3>
@@ -225,10 +230,13 @@ function InvoiceDetailSheet({
           {/* Invoice image */}
           {invoice.imageUrl && (
             <div className="rounded-lg border overflow-hidden">
-              <img
+              <Image
                 src={invoice.imageUrl}
                 alt="Invoice"
                 className="w-full h-auto max-h-64 object-contain bg-muted"
+                width={800}
+                height={256}
+                style={{ width: '100%', height: 'auto', maxHeight: '16rem' }}
               />
             </div>
           )}
@@ -425,6 +433,7 @@ export default function InvoicesPage() {
 
       setInvoicesList(data.invoices || [])
       setKpi(data.kpi || { totalInvoices: 0, unpaidAmount: 0, overdueCount: 0, thisMonthTotal: 0 })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
       if (err.name === 'AbortError') return
       setError(err instanceof Error ? err.message : 'Unknown error')
@@ -464,6 +473,7 @@ export default function InvoicesPage() {
 
       fetchData()
       setUploadOpen(false)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
       toast.error(err.message || t('invoices.uploadError'))
     } finally {

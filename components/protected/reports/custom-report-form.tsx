@@ -35,6 +35,7 @@ interface Category {
 export function CustomReportForm({ currency }: { currency: string }) {
   const { t, lang } = useTranslation()
   const [categories, setCategories] = useState<Category[]>([])
+  const [categoriesLoaded, setCategoriesLoaded] = useState(false)
   const [submitting, setSubmitting] = useState(false)
 
   const form = useForm<Values>({
@@ -54,8 +55,15 @@ export function CustomReportForm({ currency }: { currency: string }) {
   useEffect(() => {
     fetch('/api/data/settings')
       .then(r => r.json())
-      .then(data => { if (data?.categories) setCategories(data.categories) })
-      .catch(() => {})
+      .then(data => {
+        if (data?.categories) setCategories(data.categories)
+        setCategoriesLoaded(true)
+      })
+      .catch((error) => {
+        console.error('Failed to fetch categories:', error)
+        setCategories([])
+        setCategoriesLoaded(true)
+      })
   }, [])
 
   const selectedCategories = form.watch("categories")
@@ -199,7 +207,7 @@ export function CustomReportForm({ currency }: { currency: string }) {
                 </button>
               )
             })}
-            {categories.length === 0 && (
+            {!categoriesLoaded && (
               <span className="text-sm text-muted-foreground" suppressHydrationWarning>{t('reports.loadingCategories')}</span>
             )}
           </div>

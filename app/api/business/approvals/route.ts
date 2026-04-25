@@ -2,7 +2,7 @@ import { auth } from '@/lib/auth-compat'
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { expenseApprovals, expenses, companyMembers, categories, receipts, userSettings } from '@/lib/db/schema'
-import { eq, and, desc } from 'drizzle-orm'
+import { eq, and, desc, inArray } from 'drizzle-orm'
 
 export async function GET(req: NextRequest) {
   const { userId } = await auth()
@@ -51,69 +51,95 @@ export async function GET(req: NextRequest) {
       .orderBy(desc(expenseApprovals.submittedAt))
       .limit(200)
 
-    // Enrich with expense details and submitter info
-    const enrichedApprovals = await Promise.all(
-      approvals.map(async (approval) => {
-        // Get expense details
-        const expenseResult = await db.select({
-          title: expenses.title,
-          amount: expenses.amount,
-          date: expenses.date,
-          vendor: expenses.vendor,
-          categoryId: expenses.categoryId,
-          receiptId: expenses.receiptId,
-        })
-          .from(expenses)
-          .where(eq(expenses.id, approval.expenseId))
-          .limit(1)
+    // Batch-fetch all related data to avoid N+1 queries
+    const expenseIds = approvals.map(a => a.expenseId).filter(Boolean) as string[]
+    const submitterUserIds = [...new Set(approvals.map(a => a.submittedBy).filter(Boolean) as string[])]
 
-        const expense = expenseResult[0]
-
-        // Get submitter info
-        const submitterResult = await db.select({
-          displayName: companyMembers.displayName,
-          email: companyMembers.email,
-        })
-          .from(companyMembers)
-          .where(and(
-            eq(companyMembers.companyId, companyId),
-            eq(companyMembers.userId, approval.submittedBy),
-          ))
-          .limit(1)
-
-        // Get category name
-        let categoryName: string | null = null
-        if (expense?.categoryId) {
-          const catResult = await db.select({ name: categories.name })
-            .from(categories)
-            .where(eq(categories.id, expense.categoryId))
-            .limit(1)
-          categoryName = catResult[0]?.name || null
-        }
-
-        // Get receipt image
-        let receiptImageUrl: string | null = null
-        if (expense?.receiptId) {
-          const receiptResult = await db.select({ imageUrl: receipts.imageUrl })
-            .from(receipts)
-            .where(eq(receipts.id, expense.receiptId))
-            .limit(1)
-          receiptImageUrl = receiptResult[0]?.imageUrl || null
-        }
-
-        return {
-          ...approval,
-          submittedByName: submitterResult[0]?.displayName || null,
-          submittedByEmail: submitterResult[0]?.email || null,
-          expenseTitle: expense?.title || null,
-          expenseAmount: expense?.amount || null,
-          expenseDate: expense?.date || null,
-          expenseVendor: expense?.vendor || null,
-          expenseCategoryName: categoryName,
-          receiptImageUrl,
-        }
+    // Single batch query for all expenses
+    const expensesMap = new Map<string, {
+      title: string | null
+      amount: string
+      date: string
+      vendor: string | null
+      categoryId: string | null
+      receiptId: string | null
+    }>()
+    if (expenseIds.length > 0) {
+      const expenseRows = await db.select({
+        id: expenses.id,
+        title: expenses.title,
+        amount: expenses.amount,
+        date: expenses.date,
+        vendor: expenses.vendor,
+        categoryId: expenses.categoryId,
+        receiptId: expenses.receiptId,
       })
-    )
+        .from(expenses)
+        .where(inArray(expenses.id, expenseIds))
+      for (const e of expenseRows) expensesMap.set(e.id, e)
+    }
+
+    // Single batch query for all submitters
+    const membersMap = new Map<string, { displayName: string | null; email: string | null }>()
+    if (submitterUserIds.length > 0) {
+      const memberRows = await db.select({
+        userId: companyMembers.userId,
+        displayName: companyMembers.displayName,
+        email: companyMembers.email,
+      })
+        .from(companyMembers)
+        .where(and(
+          eq(companyMembers.companyId, companyId),
+          inArray(companyMembers.userId, submitterUserIds),
+        ))
+      for (const m of memberRows) membersMap.set(m.userId, m)
+    }
+
+    // Collect unique categoryIds and receiptIds from the fetched expenses
+    const categoryIds = [...new Set(
+      [...expensesMap.values()].map(e => e.categoryId).filter(Boolean) as string[]
+    )]
+    const receiptIds = [...new Set(
+      [...expensesMap.values()].map(e => e.receiptId).filter(Boolean) as string[]
+    )]
+
+    // Single batch query for categories
+    const categoriesMap = new Map<string, string>()
+    if (categoryIds.length > 0) {
+      const catRows = await db.select({ id: categories.id, name: categories.name })
+        .from(categories)
+        .where(inArray(categories.id, categoryIds))
+      for (const c of catRows) categoriesMap.set(c.id, c.name)
+    }
+
+    // Single batch query for receipt images
+    const receiptsMap = new Map<string, string | null>()
+    if (receiptIds.length > 0) {
+      const receiptRows = await db.select({ id: receipts.id, imageUrl: receipts.imageUrl })
+        .from(receipts)
+        .where(inArray(receipts.id, receiptIds))
+      for (const r of receiptRows) receiptsMap.set(r.id, r.imageUrl)
+    }
+
+    // Map results in JS — no more per-approval DB queries
+    const enrichedApprovals = approvals.map((approval) => {
+      const expense = expensesMap.get(approval.expenseId)
+      const submitter = membersMap.get(approval.submittedBy)
+      const categoryName = expense?.categoryId ? (categoriesMap.get(expense.categoryId) ?? null) : null
+      const receiptImageUrl = expense?.receiptId ? (receiptsMap.get(expense.receiptId) ?? null) : null
+
+      return {
+        ...approval,
+        submittedByName: submitter?.displayName || null,
+        submittedByEmail: submitter?.email || null,
+        expenseTitle: expense?.title || null,
+        expenseAmount: expense?.amount || null,
+        expenseDate: expense?.date || null,
+        expenseVendor: expense?.vendor || null,
+        expenseCategoryName: categoryName,
+        receiptImageUrl,
+      }
+    })
 
     // Get counts for all statuses
     const allApprovals = await db.select({ status: expenseApprovals.status })
@@ -183,10 +209,10 @@ export async function POST(req: NextRequest) {
       notes: body.notes || null,
     }).returning()
 
-    // Update expense approval status
+    // SECURITY FIX: Defense-in-depth — add userId to UPDATE WHERE
     await db.update(expenses)
       .set({ approvalStatus: 'pending' })
-      .where(eq(expenses.id, body.expenseId))
+      .where(and(eq(expenses.id, body.expenseId), eq(expenses.userId, userId)))
 
     return NextResponse.json({ approval })
   } catch (err) {

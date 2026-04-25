@@ -1,6 +1,10 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Remove X-Powered-By header
+  poweredByHeader: false,
+  // Catch React issues early
+  reactStrictMode: true,
   // Optimize images
   images: {
     formats: ['image/avif', 'image/webp'],
@@ -35,9 +39,54 @@ const nextConfig: NextConfig = {
     // Optimize CSS output
     optimizeCss: true,
   },
-  // Cache static assets aggressively
+  // Cache static assets aggressively + security headers
   async headers() {
     return [
+      {
+        // Apply security headers to all routes
+        source: '/:path*',
+        headers: [
+          {
+            key: 'X-Content-Type-Options',
+            value: 'nosniff',
+          },
+          {
+            key: 'X-Frame-Options',
+            value: 'SAMEORIGIN',
+          },
+          {
+            key: 'X-XSS-Protection',
+            value: '1; mode=block',
+          },
+          {
+            key: 'Referrer-Policy',
+            value: 'strict-origin-when-cross-origin',
+          },
+          {
+            key: 'Permissions-Policy',
+            value: 'camera=(), microphone=(), geolocation=()',
+          },
+          {
+            key: 'Strict-Transport-Security',
+            value: 'max-age=63072000; includeSubDomains; preload',
+          },
+          {
+            // CSP: allow self + Vercel Blob CDN for images, OpenAI + Azure for API calls
+            key: 'Content-Security-Policy',
+            value: [
+              "default-src 'self'",
+              "script-src 'self' 'unsafe-inline' 'unsafe-eval'", // unsafe-eval needed by Next.js dev; unsafe-inline needed by shadcn/Tailwind
+              "style-src 'self' 'unsafe-inline'",
+              "img-src 'self' data: blob: https://*.public.blob.vercel-storage.com",
+              "font-src 'self'",
+              "connect-src 'self' https://api.openai.com https://*.cognitiveservices.azure.com https://api.frankfurter.app https://*.inteligo.com.pl https://*.pkobp.pl",
+              "frame-ancestors 'none'",
+              "base-uri 'self'",
+              "form-action 'self'",
+            ].join('; '),
+          },
+        ],
+      },
       {
         source: '/manifest.json',
         headers: [
@@ -58,13 +107,13 @@ const nextConfig: NextConfig = {
       },
     ];
   },
-  // Ignore TypeScript errors during build
+  // Enforce TypeScript checks during build
   typescript: {
-    ignoreBuildErrors: true,
+    ignoreBuildErrors: false,
   },
-  // Ignore ESLint errors during build
+  // Enforce ESLint checks during build
   eslint: {
-    ignoreDuringBuilds: true,
+    ignoreDuringBuilds: false,
   },
   // To naprawia błędy z Mindee SDK (canvas, pdf-parse, sharp)
   webpack: (config, { isServer }) => {

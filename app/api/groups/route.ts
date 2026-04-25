@@ -2,7 +2,27 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth-compat'
 import { db } from '@/lib/db'
 import { groups, groupMembers, expenseSplits } from '@/lib/db/schema'
-import { eq, inArray } from 'drizzle-orm'
+import { eq, inArray, or } from 'drizzle-orm'
+import { z } from 'zod'
+
+const GroupMemberInputSchema = z.object({
+  displayName: z.string().max(100).optional(),
+  name: z.string().max(100).optional(),
+  email: z.string().email().optional().nullable(),
+  userId: z.string().optional().nullable(),
+  color: z.string().max(20).optional(),
+})
+
+const CreateGroupSchema = z.object({
+  name: z.string().min(1, 'Name is required').max(100),
+  description: z.string().max(500).optional().nullable(),
+  currency: z.string().length(3).optional().default('PLN'),
+  emoji: z.string().max(10).optional().default('👥'),
+  mode: z.string().max(50).optional().default('default'),
+  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
+  endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
+  members: z.array(GroupMemberInputSchema).optional(),
+})
 
 function normalizeMember(m: { id: string; displayName: string; email?: string | null; [key: string]: unknown }) {
   return { ...m, name: m.displayName }
@@ -35,8 +55,17 @@ export async function GET() {
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   try {
+    // Get all groupIds where user is a member
+    const memberOf = await db.select({ groupId: groupMembers.groupId })
+      .from(groupMembers).where(eq(groupMembers.userId, userId))
+    const memberGroupIds = memberOf.map(m => m.groupId)
+
     // Get groups where user is creator OR member
-    const userGroups = await db.select().from(groups).where(eq(groups.createdBy, userId))
+    const userGroups = await db.select().from(groups).where(
+      memberGroupIds.length > 0
+        ? or(eq(groups.createdBy, userId), inArray(groups.id, memberGroupIds))
+        : eq(groups.createdBy, userId)
+    )
 
     if (userGroups.length === 0) return NextResponse.json([])
 
@@ -81,29 +110,35 @@ export async function POST(req: NextRequest) {
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  try {
-    const body = await req.json()
-    const { name, description, currency, emoji, members, mode, startDate, endDate } = body
+  const body = await req.json().catch(() => null)
+  if (!body) return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
 
+  const parsed = CreateGroupSchema.safeParse(body)
+  if (!parsed.success) {
+    return NextResponse.json({ error: 'Invalid input', details: parsed.error.flatten().fieldErrors }, { status: 400 })
+  }
+  const data = parsed.data
+
+  try {
     const [group] = await db.insert(groups).values({
-      name,
-      description,
-      currency: currency || 'PLN',
-      emoji: emoji || '👥',
-      mode: mode || 'default',
-      startDate: startDate || null,
-      endDate: endDate || null,
+      name: data.name,
+      description: data.description ?? null,
+      currency: data.currency,
+      emoji: data.emoji,
+      mode: data.mode,
+      startDate: data.startDate ?? null,
+      endDate: data.endDate ?? null,
       createdBy: userId,
     }).returning()
 
     // Add creator as first member
-    if (members?.length) {
+    if (data.members?.length) {
       await db.insert(groupMembers).values(
-        members.map((m: { name?: string; displayName?: string; email?: string; userId?: string; color?: string }) => ({
+        data.members.map((m) => ({
           groupId: group.id,
           displayName: m.displayName || m.name || '',
-          email: m.email || null,
-          userId: m.userId || null,
+          email: m.email ?? null,
+          userId: m.userId ?? null,
           color: m.color || '#6366f1',
         }))
       )

@@ -20,7 +20,7 @@ struct GroupDetailView: View {
             VStack(alignment: .leading, spacing: Theme.Spacing.md) {
                 if vm.isLoading && vm.group == nil {
                     NBLoadingCard()
-                } else if let message = vm.errorMessage {
+                } else if let message = vm.errorMessage, vm.group == nil {
                     NBErrorCard(message: message) { Task { await vm.load(id: groupId) } }
                 } else if let g = vm.group {
                     hero(g)

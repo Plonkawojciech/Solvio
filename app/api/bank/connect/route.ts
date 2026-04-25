@@ -1,17 +1,16 @@
 // ══════════════════════════════════════════════════════════════════════════════
 // POST /api/bank/connect
-// Generate PKO OAuth2 authorization URL for connecting a bank account.
-// Returns { authorizationUrl, state }
+// Create a Nordigen requisition for connecting a bank account.
+// Body: { institutionId: string }
+// Returns { link, requisitionId }
 // ══════════════════════════════════════════════════════════════════════════════
 
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth-compat'
 import { db } from '@/lib/db'
 import { bankConnections } from '@/lib/db/schema'
-import { getPkoClient } from '@/lib/pko/client'
-import { encrypt } from '@/lib/pko/encryption'
+import { getNordigenClient } from '@/lib/nordigen/client'
 import * as crypto from 'crypto'
-import type { ScopeDetailsInput } from '@/lib/pko/types'
 
 export async function POST(request: NextRequest) {
   const { userId } = await auth()
@@ -20,80 +19,72 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const body = (await request.json()) as {
-      scope?: 'ais-accounts' | 'ais' | 'pis'
+    const body = (await request.json()) as { institutionId?: string }
+
+    if (!body.institutionId) {
+      return NextResponse.json(
+        { error: 'Missing required field: institutionId' },
+        { status: 400 },
+      )
     }
 
-    const scope = body.scope ?? 'ais'
-    const client = getPkoClient()
-
-    // Generate a cryptographic state parameter for CSRF protection
-    const state = crypto.randomBytes(32).toString('hex')
+    const client = getNordigenClient()
 
     // Build redirect URI
     const appUrl = process.env.NEXT_PUBLIC_APP_URL
       ?? (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000')
     const redirectUri = `${appUrl}/api/bank/callback`
 
-    // Generate a consent ID
-    const consentId = crypto.randomUUID()
+    // Generate a unique reference for this requisition
+    const reference = `solvio-${userId.slice(0, 8)}-${crypto.randomBytes(8).toString('hex')}`
 
-    // Build scope details for AIS consent (90-day validity, multiple usage)
-    const consentExpiry = new Date()
-    consentExpiry.setDate(consentExpiry.getDate() + 90)
+    // Create an End User Agreement (90 days access, all scopes)
+    const agreement = await client.createAgreement({
+      institution_id: body.institutionId,
+      max_historical_days: 90,
+      access_valid_for_days: 90,
+      access_scope: ['balances', 'details', 'transactions'],
+    })
 
-    const scopeDetails: ScopeDetailsInput = {
-      privilegeList: [
-        {
-          'ais-accounts:getAccounts': { scopeUsageLimit: 'multiple' },
-          'ais:getAccount': { scopeUsageLimit: 'multiple' },
-          'ais:getTransactionsDone': {
-            scopeUsageLimit: 'multiple',
-            maxAllowedHistoryLong: 365,
-          },
-          'ais:getTransactionsPending': {
-            scopeUsageLimit: 'multiple',
-            maxAllowedHistoryLong: 365,
-          },
-          'ais:getTransactionDetail': { scopeUsageLimit: 'multiple' },
-          'ais:getHolds': {
-            scopeUsageLimit: 'multiple',
-            maxAllowedHistoryLong: 365,
-          },
-        },
-      ],
-      scopeGroupType: scope,
-      consentId,
-      scopeTimeLimit: consentExpiry.toISOString(),
-      throttlingPolicy: 'psd2Regulatory',
+    // Create a requisition — user will be redirected to the bank for authorization
+    const requisition = await client.createRequisition({
+      redirect: redirectUri,
+      institution_id: body.institutionId,
+      reference,
+      agreement: agreement.id,
+      user_language: 'PL',
+    })
+
+    // Get institution name for display
+    let institutionName = body.institutionId
+    try {
+      const institution = await client.getInstitution(body.institutionId)
+      institutionName = institution.name
+    } catch {
+      // Non-critical — use institutionId as fallback
     }
 
-    // Request authorization URL from PKO
-    const authorizeResponse = await client.getAuthorizationUrl({
-      redirectUri,
-      scope,
-      scopeDetails,
-      state,
-    })
+    // Calculate consent expiry
+    const consentExpiry = new Date()
+    consentExpiry.setDate(consentExpiry.getDate() + 90)
 
     // Create a pending bank connection record
     await db.insert(bankConnections).values({
       userId,
-      provider: 'pko',
-      consentId,
+      provider: institutionName,
+      institutionId: body.institutionId,
+      requisitionId: requisition.id,
+      consentId: agreement.id,
       consentExpiresAt: consentExpiry,
       status: 'pending',
-      // Store the state encrypted so we can verify it in callback
-      accessToken: encrypt(JSON.stringify({ state, redirectUri, consentId })),
     })
 
     return NextResponse.json({
-      authorizationUrl: authorizeResponse.aspspRedirectUri,
-      state,
+      link: requisition.link,
+      requisitionId: requisition.id,
     })
   } catch (err) {
     console.error('[bank/connect POST]', err)
-    const message = err instanceof Error ? err.message : 'Failed to generate authorization URL'
-    return NextResponse.json({ error: message }, { status: 500 })
+    return NextResponse.json({ error: 'Operation failed' }, { status: 500 })
   }
 }

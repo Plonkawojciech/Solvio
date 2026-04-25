@@ -6,6 +6,7 @@ import { useTranslation } from '@/lib/i18n'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Skeleton } from '@/components/ui/skeleton'
 import Link from 'next/link'
 import {
   Tag,
@@ -23,6 +24,7 @@ import {
   Lightbulb,
   Zap,
   Receipt,
+  Info,
 } from 'lucide-react'
 
 /* ─── Types ─── */
@@ -54,6 +56,7 @@ interface PriceData {
   bestStoreOverall: string
   tip: string
   productsAnalyzed: number
+  isEstimated?: boolean
 }
 
 // Safe number helper — handles strings, null, undefined from AI responses
@@ -188,11 +191,11 @@ function LoadingSkeleton({ isPolish }: { isPolish: boolean }) {
         {[0, 1, 2, 3].map(i => (
           <Card key={i}>
             <CardHeader className="pb-2">
-              <div className="h-3 w-24 rounded bg-muted animate-pulse" style={{ animationDelay: `${i * 80}ms` }} />
+              <Skeleton className="h-3 w-24" />
             </CardHeader>
             <CardContent>
-              <div className="h-7 w-28 rounded bg-muted animate-pulse mb-1.5" style={{ animationDelay: `${i * 80 + 40}ms` }} />
-              <div className="h-3 w-20 rounded bg-muted/60 animate-pulse" style={{ animationDelay: `${i * 80 + 70}ms` }} />
+              <Skeleton className="h-7 w-28 mb-1.5" />
+              <Skeleton className="h-3 w-20 opacity-60" />
             </CardContent>
           </Card>
         ))}
@@ -203,19 +206,19 @@ function LoadingSkeleton({ isPolish }: { isPolish: boolean }) {
         {[0, 1, 2, 3, 4, 5].map(i => (
           <Card key={i} className="overflow-hidden">
             <CardHeader className="pb-3">
-              <div className="h-4 w-32 rounded bg-muted animate-pulse" style={{ animationDelay: `${i * 60}ms` }} />
-              <div className="h-3 w-20 rounded bg-muted/60 animate-pulse mt-1.5" style={{ animationDelay: `${i * 60 + 30}ms` }} />
+              <Skeleton className="h-4 w-32" />
+              <Skeleton className="h-3 w-20 opacity-60 mt-1.5" />
             </CardHeader>
             <CardContent className="space-y-3">
               {[0, 1, 2].map(j => (
                 <div key={j} className="flex items-center justify-between">
-                  <div className="h-3 w-20 rounded bg-muted/70 animate-pulse" />
-                  <div className="h-4 w-16 rounded bg-muted animate-pulse" />
+                  <Skeleton className="h-3 w-20 opacity-70" />
+                  <Skeleton className="h-4 w-16" />
                 </div>
               ))}
               <div className="h-px bg-muted rounded" />
-              <div className="h-3 w-full rounded bg-muted/50 animate-pulse" />
-              <div className="h-3 w-4/5 rounded bg-muted/50 animate-pulse" />
+              <Skeleton className="h-3 w-full opacity-50" />
+              <Skeleton className="h-3 w-4/5 opacity-50" />
             </CardContent>
           </Card>
         ))}
@@ -424,7 +427,7 @@ function SummaryBanner({ data, currency, isPolish }: { data: PriceData; currency
 
 /* ─── Page ─── */
 export default function PricesPage() {
-  const { lang, mounted } = useTranslation()
+  const { t, lang, mounted } = useTranslation()
   const isPolish = lang === 'pl'
 
   const [loading, setLoading] = useState(false)
@@ -439,7 +442,7 @@ export default function PricesPage() {
     fetch('/api/data/settings')
       .then(r => r.json())
       .then(d => { if (d?.settings?.currency) setCurrency(d.settings.currency.toUpperCase()) })
-      .catch(() => {})
+      .catch((err) => console.error('Failed to fetch settings:', err))
   }, [])
 
   const checkPrices = useCallback(async () => {
@@ -553,6 +556,11 @@ export default function PricesPage() {
                   ? 'AI sprawdzi Twoje ostatnie zakupy i znajdzie lepsze ceny w Lidlu, Biedronce, Żabce i innych sklepach.'
                   : "AI will check your recent purchases and find better prices at Lidl, Biedronka, Żabka and other stores."}
               </p>
+              <p className="text-xs text-muted-foreground/70">
+                {isPolish
+                  ? 'Zeskanuj kilka paragonów, a AI znajdzie gdzie możesz oszczędzić na tych samych produktach.'
+                  : 'Scan a few receipts and AI will find where you can save on the same products.'}
+              </p>
             </div>
             {/* Store badges */}
             <div className="flex flex-wrap gap-2 justify-center">
@@ -620,19 +628,28 @@ export default function PricesPage() {
               </motion.div>
             </div>
             <div className="space-y-2 max-w-sm">
-              <h2 className="text-xl font-bold">{isPolish ? 'Brak paragonów' : 'No receipts yet'}</h2>
+              <h2 className="text-xl font-bold">{t('prices.noReceipts')}</h2>
               <p className="text-muted-foreground text-sm">
-                {isPolish
-                  ? 'Najpierw zeskanuj paragony, aby włączyć porównywanie cen.'
-                  : 'Scan your receipts first to enable price comparison.'}
+                {t('prices.noReceiptsDesc')}
+              </p>
+              <p className="text-xs text-muted-foreground/70">
+                {t('prices.readyHint')}
               </p>
             </div>
-            <Button asChild>
-              <Link href="/dashboard">
-                <ArrowRight className="h-4 w-4 mr-2" />
-                {isPolish ? 'Idź do panelu i zeskanuj paragon' : 'Go to dashboard and scan a receipt'}
-              </Link>
-            </Button>
+            <div className="flex flex-col sm:flex-row gap-3 items-center">
+              <Button asChild>
+                <Link href="/dashboard">
+                  <ArrowRight className="h-4 w-4 mr-2" />
+                  {isPolish ? 'Idź do panelu i zeskanuj paragon' : 'Go to dashboard and scan a receipt'}
+                </Link>
+              </Button>
+              <Button asChild variant="outline">
+                <Link href="/expenses">
+                  <Receipt className="h-4 w-4 mr-2" />
+                  {isPolish ? 'Dodaj wydatek ręcznie' : 'Add expense manually'}
+                </Link>
+              </Button>
+            </div>
           </motion.div>
         )}
 
@@ -675,6 +692,16 @@ export default function PricesPage() {
         >
           {/* Summary banner */}
           <SummaryBanner data={data} currency={currency} isPolish={isPolish} />
+
+          {/* AI disclaimer */}
+          {data.isEstimated && (
+            <div className="flex items-center gap-2 text-xs text-amber-700 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-3 py-2 rounded-lg">
+              <Info className="h-3.5 w-3.5 shrink-0" />
+              {isPolish
+                ? 'Ceny szacunkowe na podstawie AI. Mogą się różnić od rzeczywistych.'
+                : 'Estimated prices based on AI. May differ from actual prices.'}
+            </div>
+          )}
 
           {/* Comparisons grid */}
           {data.comparisons && data.comparisons.length > 0 && (

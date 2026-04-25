@@ -154,6 +154,7 @@ export function GroupReceiptCard({
               <motion.div
                 initial={{ width: 0 }}
                 animate={{ width: `${progress}%` }}
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 transition={{ delay: index * 0.06 + 0.2, duration: 0.5, ease: [0.32, 0.72, 0, 1] as any }}
                 className={`h-full rounded-full ${
                   isComplete

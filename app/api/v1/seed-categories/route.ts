@@ -17,8 +17,9 @@ export async function POST() {
 
   } catch (error) {
     console.error('[Seed Categories] Unexpected error:', error)
+    // SECURITY FIX: Don't expose internal error details to client
     return NextResponse.json(
-      { error: 'Unexpected error', details: error instanceof Error ? error.message : 'Unknown' },
+      { error: 'Operation failed' },
       { status: 500 }
     )
   }

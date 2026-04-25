@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Skeleton } from '@/components/ui/skeleton'
 import {
   ShoppingCart, TrendingDown, TrendingUp, Loader2, RefreshCcw,
   Sparkles, Tag, AlertCircle, CheckCircle2, Store, ArrowRight,
@@ -218,11 +219,11 @@ function AuditSkeleton({ isPolish }: { isPolish: boolean }) {
         {[0, 1, 2, 3].map(i => (
           <Card key={i} className="overflow-hidden">
             <CardHeader className="pb-2">
-              <div className="h-3 w-24 rounded bg-muted animate-pulse" style={{ animationDelay: `${i * 100}ms` }} />
+              <Skeleton className="h-3 w-24" />
             </CardHeader>
             <CardContent>
-              <div className="h-7 w-28 rounded bg-muted animate-pulse mb-2" style={{ animationDelay: `${i * 100 + 50}ms` }} />
-              <div className="h-3 w-20 rounded bg-muted/60 animate-pulse" style={{ animationDelay: `${i * 100 + 80}ms` }} />
+              <Skeleton className="h-7 w-28 mb-2" />
+              <Skeleton className="h-3 w-20 opacity-60" />
             </CardContent>
           </Card>
         ))}
@@ -231,29 +232,29 @@ function AuditSkeleton({ isPolish }: { isPolish: boolean }) {
       {/* AI summary skeleton */}
       <Card className="border-primary/20">
         <CardHeader>
-          <div className="h-4 w-40 rounded bg-muted animate-pulse" />
+          <Skeleton className="h-4 w-40" />
         </CardHeader>
         <CardContent className="space-y-3">
-          <div className="h-4 w-full rounded bg-muted animate-pulse" />
-          <div className="h-4 w-5/6 rounded bg-muted animate-pulse" />
-          <div className="h-4 w-4/6 rounded bg-muted animate-pulse" />
+          <Skeleton className="h-4 w-full" />
+          <Skeleton className="h-4 w-5/6" />
+          <Skeleton className="h-4 w-4/6" />
         </CardContent>
       </Card>
 
       {/* Price comparisons skeleton */}
       <Card>
         <CardHeader>
-          <div className="h-4 w-36 rounded bg-muted animate-pulse" />
+          <Skeleton className="h-4 w-36" />
         </CardHeader>
         <CardContent className="space-y-5">
           {[0, 1, 2].map(i => (
             <div key={i} className="space-y-2">
-              <div className="h-4 w-32 rounded bg-muted animate-pulse" style={{ animationDelay: `${i * 120}ms` }} />
+              <Skeleton className="h-4 w-32" />
               {[0, 1, 2].map(j => (
                 <div key={j} className="flex items-center gap-2">
-                  <div className="h-3 w-20 rounded bg-muted/60 animate-pulse" />
-                  <div className="flex-1 h-2 rounded-full bg-muted animate-pulse" />
-                  <div className="h-3 w-16 rounded bg-muted/60 animate-pulse" />
+                  <Skeleton className="h-3 w-20 opacity-60" />
+                  <Skeleton className="flex-1 h-2 rounded-full" />
+                  <Skeleton className="h-3 w-16 opacity-60" />
                 </div>
               ))}
             </div>
@@ -284,7 +285,7 @@ export default function AuditPage() {
     fetch('/api/data/settings')
       .then(r => r.json())
       .then(data => { if (data?.settings?.currency) setCurrency(data.settings.currency.toUpperCase()) })
-      .catch(() => {})
+      .catch((err) => console.error('Failed to fetch settings:', err))
   }, [])
 
   const generateAudit = useCallback(async () => {
@@ -468,9 +469,9 @@ export default function AuditPage() {
           {/* Web search badge */}
           {audit.webSearchUsed && (
             <motion.div custom={0} initial="hidden" animate="show" variants={fadeUp}
-              className="flex items-center gap-2 text-xs text-emerald-600 bg-emerald-500/10 border border-emerald-500/20 px-3 py-2 rounded-lg w-fit">
+              className="flex items-center gap-2 text-xs text-amber-700 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-3 py-2 rounded-lg w-fit">
               <Globe className="h-3.5 w-3.5" />
-              {t('Dane z internetu i aktualnych gazetek', 'Data sourced from internet and current promotional leaflets')}
+              {t('Szacunki AI — weryfikuj ceny w sklepach', 'AI estimates — verify prices in stores')}
             </motion.div>
           )}
 

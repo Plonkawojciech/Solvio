@@ -70,7 +70,7 @@ export function buildJpkV7M(
   vatEntries: VatEntry[],
   period: string
 ): string {
-  const { year, month, startDate, endDate } = getPeriodDates(period)
+  const { year, month } = getPeriodDates(period)
   const now = new Date().toISOString()
 
   // Separate input (purchases) and output (sales) entries

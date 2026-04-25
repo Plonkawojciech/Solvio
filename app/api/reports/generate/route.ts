@@ -4,15 +4,36 @@ import { db, expenses, userSettings, categories } from '@/lib/db'
 import { eq, gte, lte, and } from 'drizzle-orm'
 import { buildCsvBuffer, buildPdfBuffer, buildDocxBuffer } from '@/lib/reports/builders'
 import { put } from '@vercel/blob'
+import { z } from 'zod'
+
+const ReportFormDataSchema = z.union([
+  z.object({
+    type: z.literal('yearly'),
+    year: z.string().regex(/^\d{4}$/, 'year must be a 4-digit year'),
+    ym: z.string().optional().nullable(),
+  }),
+  z.object({
+    type: z.literal('monthly'),
+    ym: z.string().regex(/^\d{4}-\d{2}$/, 'ym must be YYYY-MM'),
+    year: z.string().optional().nullable(),
+  }),
+])
 
 export async function POST(request: Request) {
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const formData = await request.formData()
-  const type = formData.get('type') as 'yearly' | 'monthly'
+  const rawType = formData.get('type')
   const year = formData.get('year') as string | null
   const ym = formData.get('ym') as string | null
+
+  const parsedForm = ReportFormDataSchema.safeParse({ type: rawType, year, ym })
+  if (!parsedForm.success) {
+    return NextResponse.json({ error: 'Invalid parameters', details: parsedForm.error.flatten().fieldErrors }, { status: 400 })
+  }
+
+  const type = parsedForm.data.type
 
   let startDate: string
   let endDate: string
@@ -35,22 +56,19 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Invalid parameters' }, { status: 400 })
   }
 
-  // Fetch user settings for currency
-  const settingsData = await db.select().from(userSettings)
-    .where(eq(userSettings.userId, userId)).limit(1)
-  const currency = (settingsData[0]?.currency || 'PLN').toUpperCase()
-
-  // Fetch categories for join
-  const cats = await db.select().from(categories).where(eq(categories.userId, userId))
-  const catById = new Map(cats.map(c => [c.id, c]))
-
-  // Fetch expenses
-  const expensesData = await db.select().from(expenses)
-    .where(and(
+  // PERF FIX: parallel execution with Promise.all
+  // Fetch user settings, categories, and expenses concurrently
+  const [settingsData, cats, expensesData] = await Promise.all([
+    db.select().from(userSettings).where(eq(userSettings.userId, userId)).limit(1),
+    db.select().from(categories).where(eq(categories.userId, userId)),
+    db.select().from(expenses).where(and(
       eq(expenses.userId, userId),
       gte(expenses.date, startDate),
       lte(expenses.date, endDate)
-    ))
+    )),
+  ])
+  const currency = (settingsData[0]?.currency || 'PLN').toUpperCase()
+  const catById = new Map(cats.map(c => [c.id, c]))
 
   const rows = expensesData.map((e) => ({
     id: e.id,
@@ -83,8 +101,9 @@ export async function POST(request: Request) {
     })
   } catch (err) {
     console.error('[reports/generate] build error:', err)
+    // SECURITY FIX: Don't expose internal error details to client
     return NextResponse.json(
-      { error: 'Failed to generate report', details: err instanceof Error ? err.message : 'Unknown' },
+      { error: 'Failed to process request' },
       { status: 500 }
     )
   }

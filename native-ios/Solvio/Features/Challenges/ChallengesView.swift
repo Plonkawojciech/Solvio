@@ -6,12 +6,29 @@ import SwiftUI
 ///
 /// NOTE: `ChallengesRepo` exposes only `list()` + `create(_:)` — the web
 /// API has no PATCH/DELETE endpoints, so the iOS UI mirrors that.
+///
+/// Reads from `AppDataStore.challenges` so tab switches don't re-fetch.
 struct ChallengesView: View {
     @EnvironmentObject private var toast: ToastCenter
     @EnvironmentObject private var locale: AppLocale
-    @StateObject private var vm = ChallengesViewModel()
+    @EnvironmentObject private var store: AppDataStore
     @State private var showCreate = false
     @State private var showCompleted = false
+
+    private var challenges: [Challenge] { store.challenges }
+    private var isLoading: Bool { store.challengesLoading }
+    private var errorMessage: String? { store.challengesError }
+    private var currency: String { store.currency }
+    private var activeChallenges: [Challenge] {
+        challenges.filter { ($0.isActive ?? false) && ($0.isCompleted != true) }
+    }
+    private var completedChallenges: [Challenge] {
+        challenges.filter { $0.isCompleted == true }
+    }
+    /// Sum of current progress across all challenges — best-effort "saved" KPI.
+    private var totalSaved: Double {
+        challenges.reduce(0) { $0 + ($1.currentProgress?.double ?? 0) }
+    }
 
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
@@ -20,14 +37,14 @@ struct ChallengesView: View {
                     NBScreenHeader(
                         eyebrow: locale.t("challenges.eyebrow"),
                         title: locale.t("challenges.headerTitle"),
-                        subtitle: "\(vm.activeChallenges.count) \(locale.t("challenges.active").lowercased()) · \(vm.completedChallenges.count) \(locale.t("challenges.completed").lowercased())"
+                        subtitle: "\(activeChallenges.count) \(locale.t("challenges.active").lowercased()) · \(completedChallenges.count) \(locale.t("challenges.completed").lowercased())"
                     )
 
-                    if vm.isLoading && vm.challenges.isEmpty {
+                    if isLoading && challenges.isEmpty {
                         NBLoadingCard()
-                    } else if let message = vm.errorMessage {
-                        NBErrorCard(message: message) { Task { await vm.load() } }
-                    } else if vm.challenges.isEmpty {
+                    } else if let message = errorMessage, challenges.isEmpty {
+                        NBErrorCard(message: message) { Task { await store.awaitChallenges(force: true) } }
+                    } else if challenges.isEmpty {
                         NBEmptyState(
                             systemImage: "trophy.fill",
                             title: locale.t("challenges.emptyTitle"),
@@ -36,15 +53,15 @@ struct ChallengesView: View {
                         )
                     } else {
                         kpiStrip
-                        if !vm.activeChallenges.isEmpty {
-                            sectionHeader(locale.t("challenges.sectionActive"), count: vm.activeChallenges.count)
+                        if !activeChallenges.isEmpty {
+                            sectionHeader(locale.t("challenges.sectionActive"), count: activeChallenges.count)
                             LazyVStack(spacing: Theme.Spacing.xs) {
-                                ForEach(vm.activeChallenges) { c in
+                                ForEach(activeChallenges) { c in
                                     activeCard(c)
                                 }
                             }
                         }
-                        if !vm.completedChallenges.isEmpty {
+                        if !completedChallenges.isEmpty {
                             completedSection
                         }
                     }
@@ -54,8 +71,8 @@ struct ChallengesView: View {
                 .padding(.top, Theme.Spacing.md)
             }
             .background(Theme.background)
-            .refreshable { await vm.load() }
-            .task { if vm.challenges.isEmpty { await vm.load() } }
+            .refreshable { await store.awaitChallenges(force: true) }
+            .task { store.ensureChallenges() }
 
             Button { showCreate = true } label: {
                 Image(systemName: "plus")
@@ -77,7 +94,7 @@ struct ChallengesView: View {
                     do {
                         _ = try await ChallengesRepo.create(body)
                         toast.success(locale.t("challenges.created"))
-                        await vm.load()
+                        store.didMutateChallenges()
                     } catch {
                         toast.error(locale.t("challenges.createFailed"), description: error.localizedDescription)
                     }
@@ -95,9 +112,9 @@ struct ChallengesView: View {
             GridItem(.flexible(), spacing: Theme.Spacing.xs),
             GridItem(.flexible(), spacing: Theme.Spacing.xs),
         ], spacing: Theme.Spacing.xs) {
-            NBStatTile(label: locale.t("challenges.statActive"), value: "\(vm.activeChallenges.count)")
-            NBStatTile(label: locale.t("challenges.statCompleted"), value: "\(vm.completedChallenges.count)")
-            NBStatTile(label: locale.t("challenges.statSaved"), value: Fmt.amount(vm.totalSaved, currency: vm.currency))
+            NBStatTile(label: locale.t("challenges.statActive"), value: "\(activeChallenges.count)")
+            NBStatTile(label: locale.t("challenges.statCompleted"), value: "\(completedChallenges.count)")
+            NBStatTile(label: locale.t("challenges.statSaved"), value: Fmt.amount(totalSaved, currency: currency))
         }
     }
 
@@ -159,7 +176,7 @@ struct ChallengesView: View {
             if target > 0 {
                 NBProgressBar(value: pct, over: pct > 1)
                 HStack {
-                    Text("\(Fmt.amount(progress, currency: vm.currency)) / \(Fmt.amount(target, currency: vm.currency))")
+                    Text("\(Fmt.amount(progress, currency: currency)) / \(Fmt.amount(target, currency: currency))")
                         .font(AppFont.caption)
                         .foregroundColor(Theme.mutedForeground)
                     Spacer()
@@ -189,7 +206,7 @@ struct ChallengesView: View {
                 HStack {
                     Image(systemName: "checkmark.seal.fill")
                         .foregroundColor(Theme.success)
-                    Text(String(format: locale.t("challenges.completedCountFmt"), vm.completedChallenges.count))
+                    Text(String(format: locale.t("challenges.completedCountFmt"), completedChallenges.count))
                         .font(AppFont.bodyMedium)
                         .foregroundColor(Theme.foreground)
                     Spacer()
@@ -203,7 +220,7 @@ struct ChallengesView: View {
             .buttonStyle(.plain)
 
             if showCompleted {
-                ForEach(vm.completedChallenges) { c in
+                ForEach(completedChallenges) { c in
                     completedRow(c)
                 }
             }
@@ -219,7 +236,7 @@ struct ChallengesView: View {
                     .font(AppFont.bodyMedium)
                     .foregroundColor(Theme.foreground)
                 if let target = c.targetAmount {
-                    Text(Fmt.amount(target, currency: vm.currency))
+                    Text(Fmt.amount(target, currency: currency))
                         .font(AppFont.caption)
                         .foregroundColor(Theme.mutedForeground)
                 }
@@ -241,43 +258,6 @@ struct ChallengesView: View {
         guard let target = df.date(from: String(iso.prefix(10))) else { return nil }
         let days = Calendar.current.dateComponents([.day], from: Date(), to: target).day ?? 0
         return max(0, days)
-    }
-}
-
-// MARK: - View model
-
-@MainActor
-final class ChallengesViewModel: ObservableObject {
-    @Published var challenges: [Challenge] = []
-    @Published var isLoading = false
-    @Published var errorMessage: String?
-    @Published var currency: String = "PLN"
-
-    var activeChallenges: [Challenge] {
-        challenges.filter { ($0.isActive ?? false) && ($0.isCompleted != true) }
-    }
-    var completedChallenges: [Challenge] {
-        challenges.filter { $0.isCompleted == true }
-    }
-    /// Sum of current progress across all challenges — best-effort "saved" KPI.
-    var totalSaved: Double {
-        challenges.reduce(0) { $0 + ($1.currentProgress?.double ?? 0) }
-    }
-
-    func load() async {
-        isLoading = true
-        errorMessage = nil
-        defer { isLoading = false }
-        async let challengeList = ChallengesRepo.list()
-        async let settings = try? SettingsRepo.fetch()
-        do {
-            challenges = try await challengeList
-            if let c = (await settings)?.settings?.currency, !c.isEmpty {
-                currency = c
-            }
-        } catch {
-            errorMessage = error.localizedDescription
-        }
     }
 }
 

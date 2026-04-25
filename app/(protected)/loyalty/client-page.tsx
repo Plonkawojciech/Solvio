@@ -5,7 +5,6 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useTranslation } from '@/lib/i18n'
 import { useProductType } from '@/hooks/use-product-type'
 import { useRouter } from 'next/navigation'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -14,7 +13,6 @@ import {
 } from '@/components/ui/sheet'
 import {
   CreditCard, Plus, AlertCircle, RefreshCw, Loader2,
-  Sparkles, Tag,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { LoyaltyCardComponent, STORE_BRANDS, type LoyaltyCardData } from '@/components/protected/personal/loyalty-card'
@@ -97,21 +95,15 @@ function LoyaltyEmpty({ onAdd, t }: { onAdd: () => void; t: (key: string) => str
       animate={{ opacity: 1, scale: 1 }}
       className="flex flex-col items-center justify-center py-20 gap-6 text-center"
     >
-      <div className="relative">
-        <div className="h-24 w-24 rounded-full bg-primary/10 flex items-center justify-center">
-          <CreditCard className="h-12 w-12 text-primary" />
-        </div>
-        <motion.div
-          animate={{ scale: [1, 1.08, 1] }}
-          transition={{ duration: 2.5, repeat: Infinity }}
-          className="absolute -top-1 -right-1 h-8 w-8 rounded-full bg-emerald-500/20 flex items-center justify-center border border-emerald-500/30"
-        >
-          <Tag className="h-4 w-4 text-emerald-500" />
-        </motion.div>
+      <div className="font-mono text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+        {'// '}{t('loyalty.emptyTitle')}
+      </div>
+      <div className="flex h-16 w-16 items-center justify-center rounded-md border-2 border-foreground bg-card text-foreground shadow-[3px_3px_0_hsl(var(--foreground))]">
+        <CreditCard className="h-7 w-7" aria-hidden="true" />
       </div>
       <div className="space-y-2 max-w-sm">
-        <h2 className="text-xl font-bold" suppressHydrationWarning>{t('loyalty.emptyTitle')}</h2>
-        <p className="text-muted-foreground text-sm" suppressHydrationWarning>{t('loyalty.emptyDesc')}</p>
+        <h2 className="text-xl font-extrabold tracking-tight" suppressHydrationWarning>{t('loyalty.emptyTitle')}</h2>
+        <p className="text-muted-foreground text-sm leading-snug" suppressHydrationWarning>{t('loyalty.emptyDesc')}</p>
       </div>
 
       {/* Store previews */}
@@ -148,7 +140,7 @@ function LoyaltyEmpty({ onAdd, t }: { onAdd: () => void; t: (key: string) => str
 
 /* ─── Page ─── */
 export default function LoyaltyPage() {
-  const { t, lang, mounted } = useTranslation()
+  const { t, mounted } = useTranslation()
   const { isBusiness } = useProductType()
   const router = useRouter()
 
@@ -178,6 +170,7 @@ export default function LoyaltyPage() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = await res.json()
       setCards(data.cards || [])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
       if (err.name === 'AbortError') return
       setError(err.message || 'Unknown error')

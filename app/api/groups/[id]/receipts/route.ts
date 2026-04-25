@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth-compat'
 import { db } from '@/lib/db'
 import { receipts, receiptItems, receiptItemAssignments, groups, groupMembers } from '@/lib/db/schema'
-import { eq, and } from 'drizzle-orm'
+import { eq, and, inArray } from 'drizzle-orm'
 
 export async function GET(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { userId } = await auth()
@@ -21,31 +21,50 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
       .from(receipts)
       .where(and(eq(receipts.groupId, id), eq(receipts.status, 'processed')))
 
-    // For each receipt, get items and assignments
-    const result = []
+    // Batch-fetch all items and assignments to avoid N+1 queries
     const members = await db.select().from(groupMembers).where(eq(groupMembers.groupId, id))
 
-    for (const receipt of groupReceipts) {
-      const items = await db
-        .select()
-        .from(receiptItems)
-        .where(eq(receiptItems.receiptId, receipt.id))
+    const allReceiptIds = groupReceipts.map(r => r.id)
 
-      const assignments = await db
-        .select()
-        .from(receiptItemAssignments)
-        .where(eq(receiptItemAssignments.groupId, id))
+    // Single query for all receipt items across all receipts
+    const allItems = allReceiptIds.length > 0
+      ? await db.select().from(receiptItems).where(inArray(receiptItems.receiptId, allReceiptIds))
+      : []
 
-      // Filter assignments to only those belonging to this receipt's items
-      const itemIds = new Set(items.map((i) => i.id))
-      const receiptAssignments = assignments.filter((a) => itemIds.has(a.receiptItemId))
+    // Single query for all assignments for this group (groupId is constant)
+    const allAssignments = await db
+      .select()
+      .from(receiptItemAssignments)
+      .where(eq(receiptItemAssignments.groupId, id))
 
-      // Find who paid
+    // Build Maps for O(1) lookups
+    const itemsByReceiptId = new Map<string, typeof allItems>()
+    for (const item of allItems) {
+      const list = itemsByReceiptId.get(item.receiptId) ?? []
+      list.push(item)
+      itemsByReceiptId.set(item.receiptId, list)
+    }
+
+    const assignmentsByItemId = new Map<string, typeof allAssignments>()
+    for (const assignment of allAssignments) {
+      const list = assignmentsByItemId.get(assignment.receiptItemId) ?? []
+      list.push(assignment)
+      assignmentsByItemId.set(assignment.receiptItemId, list)
+    }
+
+    const membersById = new Map(members.map(m => [m.id, m]))
+
+    // Build result in JS without further DB queries
+    const result = groupReceipts.map((receipt) => {
+      const items = itemsByReceiptId.get(receipt.id) ?? []
+      const itemIds = new Set(items.map(i => i.id))
+      const receiptAssignments = allAssignments.filter(a => itemIds.has(a.receiptItemId))
+
       const paidByMember = receipt.paidByMemberId
-        ? members.find((m) => m.id === receipt.paidByMemberId)
+        ? membersById.get(receipt.paidByMemberId) ?? null
         : null
 
-      result.push({
+      return {
         ...receipt,
         receiptItems: items,
         assignments: receiptAssignments,
@@ -54,8 +73,8 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
           : null,
         assignedItemCount: new Set(receiptAssignments.map((a) => a.receiptItemId)).size,
         totalItemCount: items.length,
-      })
-    }
+      }
+    })
 
     return NextResponse.json({
       receipts: result,

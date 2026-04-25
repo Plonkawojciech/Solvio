@@ -1,28 +1,54 @@
 import SwiftUI
 
-/// Detail + edit + delete screen for a single expense. Fetches the full
-/// list (no dedicated `/api/data/expenses/:id` endpoint exists) and
-/// selects the matching row. Updates via `ExpensesRepo.update`, deletes
-/// via `ExpensesRepo.delete(ids:)`.
+/// Detail + edit + delete screen for a single expense.
+///
+/// Pulls the row out of `AppDataStore.expenses` (no dedicated
+/// `/api/data/expenses/:id` endpoint exists, but the dashboard payload
+/// already contains every recent expense — refetching the full list per
+/// detail screen was the single biggest offender for "loading everywhere").
+/// Receipt items, when present, are fetched on demand from
+/// `ReceiptsRepo.detail` since the list endpoint omits the heavy `items`
+/// jsonb.
 struct ExpenseDetailView: View {
     let expenseId: String
 
     @EnvironmentObject private var router: AppRouter
     @EnvironmentObject private var toast: ToastCenter
     @EnvironmentObject private var locale: AppLocale
-    @StateObject private var vm = ExpenseDetailViewModel()
+    @EnvironmentObject private var store: AppDataStore
 
+    @State private var receiptItems: [ReceiptItem] = []
+    @State private var loadingReceipt = false
+    @State private var lastFetchedReceiptId: String? = nil
     @State private var showEdit = false
     @State private var showDelete = false
+
+    private var expense: Expense? {
+        store.expenses.first(where: { $0.id == expenseId })
+    }
+    private var categories: [Category] { store.categories }
+    private var defaultCurrency: String {
+        store.dashboard?.settings?.currency ?? "PLN"
+    }
+    private var categoryById: [String: Category] {
+        Dictionary(uniqueKeysWithValues: categories.map { ($0.id, $0) })
+    }
+    private var isLoading: Bool { store.dashboardLoading && store.dashboard == nil }
+    private var notFound: Bool {
+        // Only treat as not-found once the store has loaded at least once.
+        store.dashboardLoadedAt != nil && expense == nil
+    }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-                if vm.isLoading && vm.expense == nil {
+                if isLoading {
                     NBLoadingCard()
-                } else if let message = vm.errorMessage {
-                    NBErrorCard(message: locale.t(message)) { Task { await vm.load(id: expenseId) } }
-                } else if let e = vm.expense {
+                } else if notFound {
+                    NBErrorCard(message: locale.t("expenseDetail.notFound")) {
+                        Task { await store.awaitDashboard(force: true) }
+                    }
+                } else if let e = expense {
                     hero(e)
                     metaCard(e)
                     if let notes = e.notes, !notes.isEmpty { notesCard(notes) }
@@ -38,8 +64,17 @@ struct ExpenseDetailView: View {
         .background(Theme.background)
         .navigationTitle(locale.t("expenseDetail.eyebrow").capitalized)
         .navigationBarTitleDisplayMode(.inline)
-        .task { await vm.load(id: expenseId) }
-        .refreshable { await vm.load(id: expenseId) }
+        .task {
+            store.ensureDashboard()
+            await maybeLoadReceiptItems()
+        }
+        .refreshable {
+            await store.awaitDashboard(force: true)
+            await maybeLoadReceiptItems(force: true)
+        }
+        .onChange(of: expense?.receiptId) { _ in
+            Task { await maybeLoadReceiptItems() }
+        }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
@@ -47,17 +82,17 @@ struct ExpenseDetailView: View {
                 } label: {
                     Image(systemName: "pencil").foregroundColor(Theme.foreground)
                 }
-                .disabled(vm.expense == nil)
+                .disabled(expense == nil)
             }
         }
         .sheet(isPresented: $showEdit) {
-            if let e = vm.expense {
-                ExpenseEditSheet(expense: e, categories: vm.categories) { payload in
+            if let e = expense {
+                ExpenseEditSheet(expense: e, categories: categories) { payload in
                     Task {
                         do {
                             try await ExpensesRepo.update(payload)
                             toast.success(locale.t("toast.updated"))
-                            await vm.load(id: expenseId)
+                            store.didMutateExpenses()
                         } catch {
                             toast.error(locale.t("toast.error"), description: error.localizedDescription)
                         }
@@ -71,10 +106,13 @@ struct ExpenseDetailView: View {
             Button(locale.t("common.delete"), role: .destructive) {
                 Task {
                     do {
+                        store.removeExpensesOptimistic(ids: [expenseId])
                         try await ExpensesRepo.delete(ids: [expenseId])
                         toast.success(locale.t("expenseDetail.deleted"))
+                        store.didMutateExpenses()
                         router.popToRoot()
                     } catch {
+                        store.didMutateExpenses() // rollback optimistic
                         toast.error(locale.t("toast.error"), description: error.localizedDescription)
                     }
                 }
@@ -84,12 +122,39 @@ struct ExpenseDetailView: View {
         }
     }
 
+    // MARK: - Receipt items loader
+
+    private func maybeLoadReceiptItems(force: Bool = false) async {
+        guard let receiptId = expense?.receiptId else {
+            receiptItems = []
+            lastFetchedReceiptId = nil
+            return
+        }
+        if !force, lastFetchedReceiptId == receiptId, !receiptItems.isEmpty { return }
+        loadingReceipt = true
+        defer { loadingReceipt = false }
+        do {
+            let r = try await ReceiptsRepo.detail(id: receiptId)
+            receiptItems = r.items ?? []
+            lastFetchedReceiptId = receiptId
+        } catch ApiError.cancelled {
+            // SwiftUI cancelled the .task block when the view disappeared
+            // mid-fetch — totally normal, not a failure. Skip the log.
+        } catch {
+            // Silent — we'll show the empty state. Toast on refresh failure
+            // would be noisy if the user is just opening the detail.
+            #if DEBUG
+            print("[ExpenseDetailView] receipt items fetch failed: \(error)")
+            #endif
+        }
+    }
+
     // MARK: - Sections
 
     private func hero(_ e: Expense) -> some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
             NBEyebrow(text: locale.t("expenseDetail.amount").uppercased())
-            Text(Fmt.amount(e.amount, currency: e.currency ?? vm.defaultCurrency))
+            Text(Fmt.amount(e.amount, currency: e.currency ?? defaultCurrency))
                 .font(AppFont.black(34))
                 .foregroundColor(Theme.foreground)
             Text(e.title)
@@ -165,15 +230,15 @@ struct ExpenseDetailView: View {
             HStack(spacing: Theme.Spacing.xs) {
                 NBEyebrow(text: locale.t("expenseDetail.items").uppercased())
                 Spacer()
-                if !vm.receiptItems.isEmpty {
-                    Text("\(vm.receiptItems.count)")
+                if !receiptItems.isEmpty {
+                    Text("\(receiptItems.count)")
                         .font(AppFont.mono(11))
                         .tracking(0.5)
                         .foregroundColor(Theme.mutedForeground)
                 }
             }
 
-            if vm.isLoadingReceipt && vm.receiptItems.isEmpty {
+            if loadingReceipt && receiptItems.isEmpty {
                 HStack {
                     ProgressView().scaleEffect(0.8)
                     Text(locale.t("common.loading"))
@@ -181,16 +246,16 @@ struct ExpenseDetailView: View {
                         .foregroundColor(Theme.mutedForeground)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-            } else if vm.receiptItems.isEmpty {
+            } else if receiptItems.isEmpty {
                 Text(locale.t("expenseDetail.noItems"))
                     .font(AppFont.caption)
                     .foregroundColor(Theme.mutedForeground)
                     .frame(maxWidth: .infinity, alignment: .leading)
             } else {
                 VStack(spacing: 0) {
-                    ForEach(Array(vm.receiptItems.enumerated()), id: \.offset) { idx, item in
-                        itemRow(item, currency: e.currency ?? vm.defaultCurrency)
-                        if idx < vm.receiptItems.count - 1 {
+                    ForEach(Array(receiptItems.enumerated()), id: \.offset) { idx, item in
+                        itemRow(item, currency: e.currency ?? defaultCurrency)
+                        if idx < receiptItems.count - 1 {
                             Divider().background(Theme.foreground.opacity(0.1))
                         }
                     }
@@ -233,13 +298,13 @@ struct ExpenseDetailView: View {
                 Label(locale.t("common.edit"), systemImage: "pencil")
             }
             .buttonStyle(NBSecondaryButtonStyle())
-            .disabled(vm.expense == nil)
+            .disabled(expense == nil)
 
             Button { showDelete = true } label: {
                 Label(locale.t("common.delete"), systemImage: "trash")
             }
             .buttonStyle(NBDestructiveButtonStyle())
-            .disabled(vm.expense == nil)
+            .disabled(expense == nil)
         }
     }
 
@@ -247,59 +312,8 @@ struct ExpenseDetailView: View {
 
     private func categoryName(for e: Expense) -> String? {
         if let n = e.categoryName, !n.isEmpty { return n }
-        if let id = e.categoryId, let c = vm.categoryById[id] { return c.name }
+        if let id = e.categoryId, let c = categoryById[id] { return c.name }
         return nil
-    }
-}
-
-// MARK: - View model
-
-@MainActor
-final class ExpenseDetailViewModel: ObservableObject {
-    @Published var expense: Expense?
-    @Published var categories: [Category] = []
-    @Published var defaultCurrency: String = "PLN"
-    @Published var isLoading = false
-    @Published var isLoadingReceipt = false
-    @Published var errorMessage: String?
-    @Published var receiptItems: [ReceiptItem] = []
-
-    var categoryById: [String: Category] {
-        Dictionary(uniqueKeysWithValues: categories.map { ($0.id, $0) })
-    }
-
-    func load(id: String) async {
-        isLoading = true
-        errorMessage = nil
-        defer { isLoading = false }
-        do {
-            let list = try await ExpensesRepo.list()
-            categories = list.categories ?? categories
-            if let c = list.settings?.currency { defaultCurrency = c }
-            expense = list.expenses.first(where: { $0.id == id })
-            if expense == nil {
-                errorMessage = "expenseDetail.notFound"
-                return
-            }
-            if let receiptId = expense?.receiptId {
-                await loadReceipt(id: receiptId)
-            } else {
-                receiptItems = []
-            }
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-    }
-
-    private func loadReceipt(id: String) async {
-        isLoadingReceipt = true
-        defer { isLoadingReceipt = false }
-        do {
-            let r = try await ReceiptsRepo.detail(id: id)
-            receiptItems = r.items ?? []
-        } catch {
-            receiptItems = []
-        }
     }
 }
 

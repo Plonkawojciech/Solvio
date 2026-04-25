@@ -101,8 +101,9 @@ export async function POST(req: NextRequest) {
     });
   } catch (error) {
     console.error('[ConvertHEIC] Error:', error);
-    return new Response(JSON.stringify({ 
-      error: error instanceof Error ? error.message : 'Conversion failed' 
+    // SECURITY FIX: Don't expose internal error details to client
+    return new Response(JSON.stringify({
+      error: 'Failed to process request'
     }), {
       status: 500,
       headers: { 'Content-Type': 'application/json' },

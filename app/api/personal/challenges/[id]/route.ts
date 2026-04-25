@@ -2,6 +2,15 @@ import { auth } from '@/lib/auth-compat'
 import { NextResponse } from 'next/server'
 import { db, financialChallenges } from '@/lib/db'
 import { eq, and } from 'drizzle-orm'
+import { z } from 'zod'
+
+// SECURITY FIX: Zod schema validation for PUT body
+const ChallengeUpdateSchema = z.object({
+  currentProgress: z.union([z.number().nonnegative(), z.string().regex(/^\d+(\.\d+)?$/)]).optional(),
+  isCompleted: z.boolean().optional(),
+  isActive: z.boolean().optional(),
+  name: z.string().min(1).max(100).optional(),
+}).strict()
 
 export async function PUT(
   request: Request,
@@ -12,15 +21,21 @@ export async function PUT(
 
   const { id } = await params
 
-  let body: any
+  let rawBody: unknown
   try {
-    body = await request.json()
+    rawBody = await request.json()
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
 
+  const parsed = ChallengeUpdateSchema.safeParse(rawBody)
+  if (!parsed.success) {
+    return NextResponse.json({ error: 'Invalid input' }, { status: 400 })
+  }
+  const body = parsed.data
+
   try {
-    const updateData: any = {}
+    const updateData: Record<string, unknown> = {}
     if (body.currentProgress !== undefined) updateData.currentProgress = String(body.currentProgress)
     if (body.isCompleted !== undefined) updateData.isCompleted = body.isCompleted
     if (body.isActive !== undefined) updateData.isActive = body.isActive

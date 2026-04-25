@@ -7,7 +7,7 @@ import { NextResponse } from 'next/server'
 import { auth } from '@/lib/auth-compat'
 import { db } from '@/lib/db'
 import { bankAccounts, bankConnections } from '@/lib/db/schema'
-import { eq, and } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 
 export async function GET() {
   const { userId } = await auth()

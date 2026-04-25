@@ -1,11 +1,14 @@
 'use client'
 
 import * as React from 'react'
+import dynamic from 'next/dynamic'
 import { Button } from '@/components/ui/button'
 import { Camera } from 'lucide-react'
 import { useRouter } from 'next/navigation'
-import { ScanReceiptSheet } from './scan-receipt-sheet'
 import { useTranslation } from '@/lib/i18n'
+
+/* ScanReceiptSheet is ~1000+ lines — lazy-load it so it only downloads when the sheet opens */
+const ScanReceiptSheet = dynamic(() => import('./scan-receipt-sheet').then(m => ({ default: m.ScanReceiptSheet })), { ssr: false })
 
 export function ScanReceiptButton({ onAction }: { onAction?: () => void }) {
   const { t } = useTranslation()

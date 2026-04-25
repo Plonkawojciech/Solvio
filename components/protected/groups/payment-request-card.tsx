@@ -115,7 +115,7 @@ export function PaymentRequestCard({
 
   const isPending = request.status === 'pending'
   const isSettled = request.status === 'settled'
-  const isDeclined = request.status === 'declined'
+
 
   const statusColor = isPending
     ? 'text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800'

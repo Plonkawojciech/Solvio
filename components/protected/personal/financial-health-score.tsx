@@ -17,7 +17,7 @@ interface FinancialHealthScoreProps {
 }
 
 export function FinancialHealthScore({ className = '' }: FinancialHealthScoreProps) {
-  const { t, lang } = useTranslation()
+  const { t } = useTranslation()
   const [data, setData] = useState<HealthData | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -27,7 +27,7 @@ export function FinancialHealthScore({ className = '' }: FinancialHealthScorePro
       .then(d => {
         if (d && typeof d.score === 'number') setData(d)
       })
-      .catch(() => {})
+      .catch((err) => console.error('Failed to fetch financial health:', err))
       .finally(() => setLoading(false))
   }, [])
 
@@ -108,7 +108,7 @@ export function FinancialHealthScore({ className = '' }: FinancialHealthScorePro
             >
               {score}
             </motion.span>
-            <span className="text-xs text-muted-foreground font-medium">{t(labelKey as any)}</span>
+            <span className="text-xs text-muted-foreground font-medium">{t(labelKey as Parameters<typeof t>[0])}</span>
           </div>
         </div>
 

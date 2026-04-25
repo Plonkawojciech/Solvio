@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { CheckCircle2, Clock, XCircle, Copy, ArrowRight, Loader2 } from 'lucide-react'
+import { formatAmount, formatDate } from '@/lib/format'
 
 interface ItemBreakdown {
   itemName: string
@@ -46,31 +47,6 @@ function getInitials(name: string): string {
     .toUpperCase()
 }
 
-function formatCurrency(amount: number, currency: string): string {
-  try {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency,
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(amount)
-  } catch {
-    return `${amount.toFixed(2)} ${currency}`
-  }
-}
-
-function formatDate(dateStr: string | null | undefined): string {
-  if (!dateStr) return ''
-  try {
-    return new Date(dateStr).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-    })
-  } catch {
-    return dateStr
-  }
-}
 
 export function SettlementPageClient({
   data,
@@ -173,7 +149,7 @@ export function SettlementPageClient({
 
             {/* Amount */}
             <p className="text-5xl font-black text-white tracking-tight tabular-nums">
-              {formatCurrency(data.amount, data.currency)}
+              {formatAmount(data.amount, data.currency)}
             </p>
 
             {/* Status */}
@@ -213,7 +189,7 @@ export function SettlementPageClient({
                 </div>
                 <div className="text-center">
                   <p className="text-sm font-semibold text-gray-900">{data.fromName}</p>
-                  <p className="text-[10px] text-gray-400 uppercase tracking-wider">Owes</p>
+                  <p className="text-[10px] text-gray-500 uppercase tracking-wider">Owes</p>
                 </div>
               </div>
 
@@ -225,7 +201,7 @@ export function SettlementPageClient({
                     background: `linear-gradient(to right, ${data.fromColor}, ${data.toColor})`,
                   }}
                 />
-                <ArrowRight className="h-5 w-5 text-gray-400" />
+                <ArrowRight className="h-5 w-5 text-gray-500" />
               </div>
 
               {/* To */}
@@ -241,7 +217,7 @@ export function SettlementPageClient({
                 </div>
                 <div className="text-center">
                   <p className="text-sm font-semibold text-gray-900">{data.toName}</p>
-                  <p className="text-[10px] text-gray-400 uppercase tracking-wider">Receives</p>
+                  <p className="text-[10px] text-gray-500 uppercase tracking-wider">Receives</p>
                 </div>
               </div>
             </div>
@@ -255,7 +231,7 @@ export function SettlementPageClient({
           {/* Note */}
           {data.note && (
             <div className="px-8 py-4">
-              <p className="text-xs text-gray-400 uppercase tracking-wider mb-1.5">Message</p>
+              <p className="text-xs text-gray-500 uppercase tracking-wider mb-1.5">Message</p>
               <div className="bg-gray-50 rounded-xl p-3">
                 <p className="text-sm text-gray-700 italic">&ldquo;{data.note}&rdquo;</p>
               </div>
@@ -265,7 +241,7 @@ export function SettlementPageClient({
           {/* Bank account */}
           {data.bankAccount && isPending && (
             <div className="px-8 py-4">
-              <p className="text-xs text-gray-400 uppercase tracking-wider mb-1.5">
+              <p className="text-xs text-gray-500 uppercase tracking-wider mb-1.5">
                 Bank account for transfer
               </p>
               <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 flex items-center justify-between gap-2">
@@ -273,11 +249,12 @@ export function SettlementPageClient({
                   {data.bankAccount}
                 </span>
                 <button
+                  type="button"
                   onClick={() => handleCopy(data.bankAccount!)}
-                  className="shrink-0 p-1.5 rounded-lg hover:bg-blue-100 transition-colors"
-                  title="Copy"
+                  className="shrink-0 p-1.5 rounded-lg hover:bg-blue-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 transition-colors min-h-[36px] min-w-[36px] flex items-center justify-center"
+                  aria-label="Copy bank account number to clipboard"
                 >
-                  <Copy className="h-4 w-4 text-blue-600" />
+                  <Copy className="h-4 w-4 text-blue-600" aria-hidden="true" />
                 </button>
               </div>
             </div>
@@ -287,12 +264,17 @@ export function SettlementPageClient({
           {data.itemBreakdown && data.itemBreakdown.length > 0 && (
             <div className="px-8 py-4">
               <button
+                type="button"
                 onClick={() => setShowBreakdown(!showBreakdown)}
-                className="text-xs text-gray-400 uppercase tracking-wider mb-2 hover:text-gray-600 transition-colors cursor-pointer flex items-center gap-1"
+                aria-expanded={showBreakdown}
+                aria-controls="settlement-breakdown-list"
+                aria-label={`${showBreakdown ? 'Hide' : 'Show'} item breakdown (${data.itemBreakdown.length} items)`}
+                className="text-xs text-gray-500 uppercase tracking-wider mb-2 hover:text-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400 rounded transition-colors cursor-pointer flex items-center gap-1"
               >
                 Details ({data.itemBreakdown.length} items)
                 <svg
                   className={`h-3 w-3 transition-transform ${showBreakdown ? 'rotate-180' : ''}`}
+                  aria-hidden="true"
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
@@ -302,7 +284,7 @@ export function SettlementPageClient({
               </button>
 
               {showBreakdown && (
-                <div className="space-y-1.5">
+                <div id="settlement-breakdown-list" className="space-y-1.5">
                   {data.itemBreakdown.map((item, i) => (
                     <div
                       key={i}
@@ -311,18 +293,18 @@ export function SettlementPageClient({
                       <div>
                         <span className="text-gray-800">{item.itemName}</span>
                         {item.store && (
-                          <span className="text-gray-400 text-xs ml-1">({item.store})</span>
+                          <span className="text-gray-500 text-xs ml-1">({item.store})</span>
                         )}
                       </div>
                       <span className="font-medium text-gray-900 tabular-nums">
-                        {formatCurrency(item.share, data.currency)}
+                        {formatAmount(item.share, data.currency)}
                       </span>
                     </div>
                   ))}
                   <div className="flex items-center justify-between text-sm font-semibold pt-2 border-t border-gray-200 px-3">
                     <span className="text-gray-600">Total</span>
                     <span className="text-gray-900 tabular-nums">
-                      {formatCurrency(
+                      {formatAmount(
                         data.itemBreakdown.reduce((sum, i) => sum + i.share, 0),
                         data.currency
                       )}
@@ -340,7 +322,7 @@ export function SettlementPageClient({
 
           {/* Date info */}
           <div className="px-8 py-4 text-center">
-            <p className="text-xs text-gray-400">
+            <p className="text-xs text-gray-500">
               Created {formatDate(data.createdAt)}
             </p>
             {isSettled && data.settledAt && (
@@ -387,10 +369,10 @@ export function SettlementPageClient({
 
           {/* Footer */}
           <div className="px-8 py-4 bg-gray-50 text-center">
-            <p className="text-[10px] text-gray-400">
+            <p className="text-[10px] text-gray-500">
               ID: <span className="font-mono">{data.id.slice(0, 8)}...</span>
             </p>
-            <p className="text-[10px] text-gray-400 mt-0.5">
+            <p className="text-[10px] text-gray-500 mt-0.5">
               Powered by{' '}
               <a
                 href="https://solvio-lac.vercel.app"
@@ -408,10 +390,12 @@ export function SettlementPageClient({
         {/* Actions below card — hidden on print */}
         <div className="mt-6 flex justify-center gap-3 print:hidden">
           <button
+            type="button"
             onClick={() => window.print()}
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-gray-800 text-white text-sm font-medium hover:bg-gray-700 transition-colors"
+            aria-label="Print this settlement receipt"
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-gray-800 text-white text-sm font-medium hover:bg-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-800 focus-visible:ring-offset-2 transition-colors"
           >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-4 h-4" aria-hidden="true" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path
                 strokeLinecap="round"
                 strokeLinejoin="round"
@@ -423,7 +407,8 @@ export function SettlementPageClient({
           </button>
           <a
             href="https://solvio-lac.vercel.app"
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg border border-gray-200 bg-white text-gray-700 text-sm font-medium hover:bg-gray-50 transition-colors"
+            aria-label="Open Solvio home page"
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg border border-gray-200 bg-white text-gray-700 text-sm font-medium hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400 focus-visible:ring-offset-2 transition-colors"
           >
             Open Solvio
           </a>
