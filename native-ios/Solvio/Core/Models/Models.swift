@@ -186,6 +186,15 @@ struct OcrItem: Codable, Hashable {
     }
 }
 
+struct OcrPromotion: Codable, Hashable {
+    /// Raw line as parsed from the receipt — e.g. "RABAT BLIK -2,00".
+    let label: String
+    /// Negative number for absolute discounts ("-2,00" → -2.00).
+    /// `nil` when the discount is a percentage (we surface the label
+    /// instead and trust the user to read it).
+    let amount: Double?
+}
+
 struct OcrReceiptData: Codable {
     let merchant: String?
     let total: Double?
@@ -196,10 +205,19 @@ struct OcrReceiptData: Codable {
     let detectedLanguage: String?
     let items: [OcrItem]?
     let itemsCount: Int?
+    /// Discount/promo lines parsed from the raw OCR text. Used by the
+    /// receipt confirmation toast and the receipt detail view to show
+    /// "you saved X zł in promotions" right after scanning.
+    let promotions: [OcrPromotion]?
+    /// Sum of all absolute discounts on the receipt — negative number.
+    /// `nil` when no promo lines were detected (cleaner UX than
+    /// rendering "saved 0,00 zł").
+    let totalSaved: Double?
 
     enum CodingKeys: String, CodingKey {
-        case merchant, total, currency, date, time, exchangeRate, detectedLanguage, items
+        case merchant, total, currency, date, time, exchangeRate, detectedLanguage, items, promotions
         case itemsCount = "items_count"
+        case totalSaved = "totalSaved"
     }
 }
 

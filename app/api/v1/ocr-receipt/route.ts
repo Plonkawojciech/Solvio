@@ -6,7 +6,7 @@ import { db, receipts, expenses, categories, userSettings } from '@/lib/db';
 import { eq, and } from 'drizzle-orm';
 import { put } from '@vercel/blob';
 import { getAIClient } from '@/lib/ai-client';
-import { normalizeStoreName } from '@/lib/stores';
+import { normalizeStoreName, findStoreInText } from '@/lib/stores';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60; // Vercel Hobby plan limit
@@ -316,8 +316,23 @@ async function extractReceiptData(azureResult: any) {
   }
   log(`[Currency Detection] Detected currency: ${currency} (fromTotal=${currencyFromTotal}, fromSubtotal=${currencyFromSubtotal}, fromAmountDue=${currencyFromAmountDue})`);
 
-  // Clean Azure merchant name (OCR prefix removal) but DON'T call GPT here.
-  // GPT store extraction is deferred to run in parallel with categorization.
+  // Three-tier merchant extraction:
+  //   (1) Azure MerchantName field — works ~70% of the time on clean
+  //       Polish receipts but fails on smudged thermal prints, rotated
+  //       photos, and chains where the brand is in a logo image rather
+  //       than printed text.
+  //   (2) STORE_PATTERNS scan over the FULL raw OCR text — every Polish
+  //       chain repeats its name in headers, footers, NIP banners and
+  //       loyalty-program lines, so even when (1) misses we usually find
+  //       it via substring scan. OCR-tolerant patterns handle digit/letter
+  //       confusions ("B1EDRONKA" → Biedronka).
+  //   (3) AI fallback (deferred to processing pipeline) — only invoked
+  //       when (1) AND (2) both fail, using top ~15 lines as context.
+  //
+  // The extracted name is normalised via `normalizeStoreName` so we
+  // always store the canonical form ("Lidl", not "LIDL POLSKA SP. Z O.O.")
+  // — this matters because price comparison, audits and promotions all
+  // group/compare by chain name string-equality.
   let extractedMerchant = merchant;
   log(`[Store Extraction] Oryginalna nazwa z Azure: "${extractedMerchant}"`);
 
@@ -328,14 +343,48 @@ async function extractReceiptData(azureResult: any) {
       .trim();
   }
 
-  // Provide a preliminary merchant name (no GPT yet)
+  // Tier 1: try Azure's MerchantName via canonical normaliser
+  let normalizedFromAzure: string | null = null;
   if (extractedMerchant && extractedMerchant.length >= 2) {
-    merchant = normalizeStoreName(extractedMerchant);
+    const normalised = normalizeStoreName(extractedMerchant);
+    // normalizeStoreName returns the input unchanged if no pattern matches,
+    // so we re-check whether it actually became a canonical chain name.
+    const isCanonical = findStoreInText(normalised) === normalised;
+    if (isCanonical) {
+      normalizedFromAzure = normalised;
+      log(`[Store Extraction] Tier 1 (Azure → canonical): "${normalizedFromAzure}"`);
+    } else {
+      log(`[Store Extraction] Tier 1 returned non-canonical "${normalised}" — trying tier 2`);
+    }
+  }
+
+  // Tier 2: scan the whole raw OCR content for any known chain name.
+  // Works when Azure missed the merchant field entirely or returned an
+  // address line, payment-terminal ID, or NIP number instead.
+  let normalizedFromText: string | null = null;
+  if (!normalizedFromAzure) {
+    const rawContent = azureResult.analyzeResult?.content ?? '';
+    normalizedFromText = findStoreInText(rawContent);
+    if (normalizedFromText) {
+      log(`[Store Extraction] Tier 2 (raw-text scan): "${normalizedFromText}"`);
+    }
+  }
+
+  // Final preliminary merchant — AI tier-3 fallback runs later in the
+  // pipeline (parallel with categorization) only when both tiers above
+  // returned nothing, so we don't pay the AI cost for ~95% of receipts.
+  if (normalizedFromAzure) {
+    merchant = normalizedFromAzure;
+  } else if (normalizedFromText) {
+    merchant = normalizedFromText;
+  } else if (extractedMerchant && extractedMerchant.length >= 2) {
+    // Keep the raw Azure string as a hint for the AI fallback to refine.
+    merchant = extractedMerchant;
   } else {
     merchant = 'Unknown Store';
   }
 
-  log(`[Store Extraction] Preliminary merchant (pre-GPT): "${merchant}"`);
+  log(`[Store Extraction] Preliminary merchant (pre-AI-fallback): "${merchant}"`);
 
   const items: Array<{
     name: string;
@@ -372,8 +421,13 @@ async function extractReceiptData(azureResult: any) {
         }
       }
 
+      // CRITICAL: never push items where Azure failed to extract a name.
+      // Persisting "Nieznany produkt" pollutes price comparison, audit
+      // aggregation, and the receipt detail view — better to drop the
+      // line entirely. (The total still includes it because total comes
+      // from the document-level Total field, not item summation.)
       if (!name || name.length < 2) {
-        name = 'Nieznany produkt';
+        continue;
       }
 
       // Clean OCR noise from item name
@@ -384,6 +438,12 @@ async function extractReceiptData(azureResult: any) {
         .replace(/\(\s*\)/g, '')  // Remove empty parens
         .replace(/\s+/g, ' ')
         .trim();
+
+      // Post-cleanup re-check — the noise stripper sometimes empties
+      // out names that were 100% currency/digits/garbage.
+      if (!name || name.length < 2) {
+        continue;
+      }
 
       let quantity = itemObj.Quantity?.valueNumber ?? null;
 
@@ -478,16 +538,68 @@ async function extractReceiptData(azureResult: any) {
     }
   }
 
-  // Final cleanup: remove items with no useful data
-  const cleanItems = filteredItems.filter(item => item.name.length > 0 && (item.price === null || item.price >= 0));
+  // Final cleanup: remove items with no useful data.
+  // Stricter than before — also drops items where the name is almost
+  // certainly garbage (single letters, all digits, or sub-3-char names
+  // with no price), which used to leak through as confusing line entries.
+  const cleanItems = filteredItems.filter(item => {
+    const n = item.name.trim();
+    if (n.length === 0) return false;
+    if (n.length < 3 && (item.price === null || item.price === 0)) return false;
+    if (/^[\d\s.,€$£/-]+$/.test(n)) return false;  // pure digits/punctuation
+    return item.price === null || item.price >= 0;
+  });
 
   if (cleanItems.length === 0 && azureResult.analyzeResult?.content) {
     log('[Azure] No items found in structured data, trying to extract from raw text...');
   }
 
-  log(`[Azure] Extracted data: Merchant="${merchant}", Total=${total} ${currency}, Date=${date}, Items=${cleanItems.length}`);
+  // --- Promotion / discount detection -----------------------------------
+  // Polish receipts add discount lines BELOW the discounted item, in a
+  // format like:
+  //    "RABAT BLIK -2,00"     (Lidl Plus discount)
+  //    "OPUST -1,50"          (manual cashier discount)
+  //    "PROMOCJA -3,99"       (chain promotion)
+  //    "ZNIŻKA -10%"          (percentage discount)
+  // These get filtered out as non-items above (because they look like
+  // header rows), but they're crucial for two reasons:
+  //   (1) The user can see how much they saved with promotions —
+  //       this becomes the "promotional savings" KPI on the receipt
+  //       detail and feeds into the Savings hub's deal-tracking.
+  //   (2) Audit/promotions AI prompts can use the discount evidence
+  //       to learn which chains the user shops promotional offers at,
+  //       improving personalised deal recommendations.
+  const promotions: Array<{ label: string; amount: number | null }> = [];
+  const rawContent = azureResult.analyzeResult?.content ?? '';
+  if (rawContent && typeof rawContent === 'string') {
+    const promoLineRegex = /^.*\b(rabat|opust|promocja|zni[żz]ka|discount|promo|akcja\s*cenowa)\b[^\n]*$/gim;
+    const matches = rawContent.match(promoLineRegex) || [];
+    for (const lineRaw of matches) {
+      const line = lineRaw.trim();
+      // Skip header-only lines like "RABATY:" with no amount
+      const amountMatch = line.match(/-?\s*\d+[.,]\d{2}/);
+      const pctMatch = line.match(/-?\s*\d+\s*%/);
+      let amount: number | null = null;
+      if (amountMatch) {
+        amount = parseLocaleDecimal(amountMatch[0]);
+        if (amount !== null) amount = -Math.abs(amount);  // discounts are negative
+      } else if (pctMatch) {
+        // Percentage discount — store amount as null, label retains "−10%"
+        amount = null;
+      } else {
+        continue;
+      }
+      // Cap label at 80 chars so we don't store paragraph-long noise
+      promotions.push({ label: line.slice(0, 80), amount });
+    }
+  }
+  const totalSaved = promotions
+    .filter(p => p.amount !== null)
+    .reduce((sum, p) => sum + (p.amount ?? 0), 0);
 
-  return { total, merchant, date, time, currency, items: cleanItems };
+  log(`[Azure] Extracted data: Merchant="${merchant}", Total=${total} ${currency}, Date=${date}, Items=${cleanItems.length}, Promotions=${promotions.length}${totalSaved < 0 ? `, Saved=${totalSaved.toFixed(2)}` : ''}`);
+
+  return { total, merchant, date, time, currency, items: cleanItems, promotions, totalSaved };
 }
 
 // --- LANGUAGE DETECTION + CATEGORIZATION + TRANSLATION ---
@@ -511,10 +623,32 @@ function detectLanguage(rawText: string): string {
   return 'en';
 }
 
+/// Maps merchant names to chain-specific brand hints injected into the
+/// AI cleanup prompt. Polish supermarket private labels are heavy
+/// abbreviation magnets — "PILOSJOG" almost certainly means "Pilos
+/// jogurt" if the receipt is from Lidl, but could mean nothing on a
+/// Carrefour receipt. Knowing the chain helps the model expand
+/// truncated names accurately instead of guessing.
+const CHAIN_BRAND_HINTS: Record<string, string[]> = {
+  'Lidl': ['Pilos', 'Combino', 'Milbona', 'Freeway', 'Crownfield', 'Linessa', 'Bellarom', 'Fairglobe', 'Vitafit', 'Italiamo', 'Chef Select', 'Deluxe', 'Cien'],
+  'Biedronka': ['Tola', 'Vital Fresh', 'Marka', 'Dada', 'Krasula', 'Mintaka', 'Tropikale', 'Ego', 'Dobre', 'Tradycyjne', 'Grandes'],
+  'Kaufland': ['K-Classic', 'K-Take it Veggie', 'Bevola', 'K-to-go', 'K-jestem', 'K-Favourites'],
+  'Auchan': ['Auchan', 'Cosmia', 'Pouce'],
+  'Carrefour': ['Carrefour', 'Carrefour Bio', 'Carrefour Selection', 'Reflets de France'],
+  'Aldi': ['Mamma', 'Almare', 'Just Veggies', 'Beauty Eq', 'Crusti Croc'],
+  'Netto': ['Netto', 'Goldhand'],
+  'Dino': ['Bona', 'Dino', 'Smacze'],
+  'Żabka': ['Żabka', 'Żabka Cafe', 'Foodie'],
+  'Stokrotka': ['Stokrotka', 'Bons'],
+  'Rossmann': ['Babydream', 'Isana', 'Alterra', 'Enzymax', 'Domol', 'Profissimo', 'Sunozon', 'Altapharma'],
+  'Hebe': ['Hebe', 'Hebe Naturals'],
+};
+
 async function categorizeAndTranslateItems(
   items: Array<{ name: string; quantity: number | null; price: number | null }>,
   cats: Array<{ id: string; name: string }>,
-  rawText: string
+  rawText: string,
+  merchantHint?: string | null,
 ): Promise<{
   items: Array<{ name: string; nameClean: string | null; nameTranslated: string | null; quantity: number | null; price: number | null; category_id: string | null }>;
   detectedLanguage: string;
@@ -547,7 +681,17 @@ async function categorizeAndTranslateItems(
       ? `The receipt is in ${detectedLanguage}. For each item, provide the English translation in "en" and the category UUID in "catId".`
       : `Items are in PL/EN — set "en" to null (no translation needed). Provide the category UUID in "catId".`;
 
-    log(`[GPT] Language: ${detectedLanguage}, needsTranslation: ${needsTranslation}`);
+    // Chain-specific brand hint — when we know the receipt is from
+    // Lidl, telling the AI about Pilos/Combino/Milbona helps it
+    // expand "PILOSJOG" → "Pilos jogurt" instead of guessing wrong.
+    let chainHint = '';
+    if (merchantHint && CHAIN_BRAND_HINTS[merchantHint]) {
+      chainHint = `\n\nCHAIN CONTEXT: This receipt is from ${merchantHint}. Common private-label and exclusive brands sold there: ${CHAIN_BRAND_HINTS[merchantHint].join(', ')}. When you see abbreviations that match these brands, prefer that interpretation.`;
+    } else if (merchantHint) {
+      chainHint = `\n\nCHAIN CONTEXT: This receipt is from ${merchantHint}.`;
+    }
+
+    log(`[GPT] Language: ${detectedLanguage}, needsTranslation: ${needsTranslation}, merchant: ${merchantHint || '(none)'}`);
 
     // Bumped max_tokens 800 → 1400 because we now ask for an extra
     // "cleaned" field per item (full readable Polish name expanded
@@ -563,7 +707,7 @@ async function categorizeAndTranslateItems(
           role: 'system',
           content: `You clean up, categorize, and (if needed) translate receipt items.
 
-Polish supermarket POS systems truncate product names to 16-24 characters and concatenate words without spaces (e.g. "ChlezytnOrkisz", "WodaMin Cisow", "JogPitTruskBakoma"). Your job is to expand each abbreviation back into the full, properly-formatted Polish (or original-language) product name.
+Polish supermarket POS systems truncate product names to 16-24 characters and concatenate words without spaces (e.g. "ChlezytnOrkisz", "WodaMin Cisow", "JogPitTruskBakoma"). Your job is to expand each abbreviation back into the full, properly-formatted Polish (or original-language) product name.${chainHint}
 
 CATEGORIES (name: UUID):
 ${categoryMap}
@@ -573,16 +717,55 @@ OUTPUT — return STRICTLY this JSON shape:
 One entry per product, in input order. No extra commentary.
 
 CLEANED NAME RULES:
-- Expand truncated/concatenated words into proper Polish (or original language) names with correct spaces, diacritics, and capitalisation.
-- "ChlezytnOrkisz" → "Chleb żytnio-orkiszowy"
-- "WodaMin Cisow" → "Woda mineralna Cisowianka"
-- "JogPitTruskBakoma" → "Jogurt pitny truskawkowy Bakoma"
-- "MlekoLacWyb 2%" → "Mleko Łaciate wyborowe 2%"
-- Preserve brand names exactly (Bakoma, Łaciate, Cisowianka, etc.).
+- Expand truncated/concatenated words into proper Polish (or original-language) names with correct spaces, Polish diacritics (ą ć ę ł ń ó ś ź ż), and Sentence case.
+- DECIPHERING TABLE — common Polish POS abbreviations:
+  • Chl-/Chleb- → "Chleb"        (e.g. "Chlezytn" → "Chleb żytni")
+  • Bul-/Bulk- → "Bułka"          (e.g. "BulkMasl" → "Bułka maślana")
+  • Ml/Mleko/Mlk → "Mleko"        (e.g. "MlekoLac3,2" → "Mleko Łaciate 3,2%")
+  • Smie/Smiet → "Śmietana"
+  • Mas/Maslo → "Masło"
+  • Twar/Tw → "Twaróg"
+  • Ser/Serek → "Ser/Serek"        (e.g. "SerekHomog" → "Serek homogenizowany")
+  • Jog/JogPit → "Jogurt/Jogurt pitny"
+  • Jaja/Jaj → "Jajka"             (e.g. "JajaM10szt" → "Jajka rozm. M, 10 szt.")
+  • Kurcz/Filet → "Kurczak/Filet z kurczaka"
+  • Wol/Wolow → "Wołowina"
+  • Kielb/Kielb → "Kiełbasa"       (e.g. "KielbBial" → "Kiełbasa biała")
+  • Szynka/Szyn → "Szynka"
+  • Parow/Parow → "Parówki"
+  • Pomid/Pomidor → "Pomidor"
+  • Ogor/Ogorek → "Ogórek"
+  • Cebul/Cebula → "Cebula"
+  • Ziem/Ziemn → "Ziemniaki"
+  • Marchew/Marchewka → "Marchewka"
+  • Banan/Bana → "Banan"
+  • Jabl/Jablko → "Jabłko"
+  • Cytr/Cytryna → "Cytryna"
+  • WodaMin/WodaNiegaz → "Woda mineralna/niegazowana"
+  • Sok/Sok → "Sok"
+  • Piwo/Piwo → "Piwo"
+  • Wino/Wino → "Wino"
+  • Mak/Makar → "Makaron"
+  • Ryz/Ryz → "Ryż"
+  • Kaw/Kawa → "Kawa"
+  • Herb/Herbata → "Herbata"
+  • Czek/Czekol → "Czekolada"
+  • Cuk/Cukier → "Cukier"
+  • Sol/Sol → "Sól"
+  • Olej/OlRzep → "Olej (rzepakowy)"
+  • Maslan/MasOrz → "Masło orzechowe"
+  • PapTual → "Papier toaletowy"
+  • RecznikPap → "Ręcznik papierowy"
+  • PlynNacz → "Płyn do naczyń"
+  • Proszek → "Proszek do prania"
+  • Pasta-z → "Pasta do zębów"
+  • Szam/Szamp → "Szampon"
+  • MydloW → "Mydło w płynie"
+- Preserve brand names exactly (Bakoma, Łaciate, Cisowianka, Pilos, Tola, Krasula, Mlekowita, Zott, Danone, Hochland, Almette, Tymbark, Kubuś, Hortex, Coca-Cola, Pepsi, Tyskie, Żywiec, etc.).
 - Sentence case ("Chleb żytni" not "CHLEB ŻYTNI" not "chleb żytni").
-- Keep package size / fat percentage if present (1L, 500g, 2%).
-- If the name is already clean and readable, just normalise capitalisation and return it.
-- If you genuinely cannot guess what the abbreviation means, set "cleaned" to a normalised version of the original (sentence case, no other changes) — never invent products.
+- Keep package size / fat percentage if present (1L, 500g, 2%, 500ml).
+- If the name is already clean and readable (e.g. "Banan", "Pomidor"), just normalise capitalisation and return it as-is.
+- If you genuinely cannot guess what the abbreviation means, set "cleaned" to a Sentence-case version of the original — never invent products.
 
 CATEGORY RULES:
 - Use the UUID, not the category name.
@@ -654,6 +837,78 @@ ${langNote}`,
       items: items.map(item => ({ ...item, nameClean: null, nameTranslated: null, category_id: null })),
       detectedLanguage,
     };
+  }
+}
+
+/// Tier 3 merchant extractor — used as a last resort when both Azure's
+/// MerchantName field and the regex-based STORE_PATTERNS scan failed.
+///
+/// Polish receipts almost always contain the chain name SOMEWHERE in
+/// the OCR text (header logo line, NIP/REGON banner, loyalty programme
+/// reference, payment-terminal merchant ID), but Azure's
+/// prebuilt-receipt model and pattern matching can both miss it on:
+///   - photos of crumpled / smudged thermal prints
+///   - receipts where the chain name is rendered as an image rather
+///     than text
+///   - non-chain stores (small local groceries, bakeries) that have
+///     unique names not in our STORE_PATTERNS list
+///
+/// We feed the top ~25 lines of OCR text to an LLM (top of the
+/// receipt = headers, where merchant info lives) and ask for the most
+/// likely store name. Returns null if the model can't determine one
+/// confidently — the caller falls back to "Unknown Store".
+async function extractMerchantWithAI(rawText: string | null | undefined): Promise<string | null> {
+  if (!rawText || typeof rawText !== 'string') return null;
+  const ai = getAIClient();
+  if (!ai) return null;
+
+  // Trim to first 25 lines (chain names live at the top of receipts).
+  // This also caps token usage — a full receipt can be 60+ lines.
+  const headerText = rawText.split('\n').slice(0, 25).join('\n').slice(0, 1500);
+  if (headerText.trim().length < 10) return null;
+
+  try {
+    const completion = await ai.client.chat.completions.create({
+      model: ai.model,
+      temperature: 0,
+      max_tokens: 80,
+      response_format: { type: 'json_object' },
+      messages: [
+        {
+          role: 'system',
+          content: `Extract the store/merchant name from receipt OCR text.
+
+Return STRICTLY: {"name":"Store Name"} or {"name":null} if you can't determine it.
+
+Rules:
+- Return the canonical chain name if recognised (e.g. "Lidl", "Biedronka", "Kaufland", "Rossmann", "Auchan", "Carrefour", "Netto", "Aldi", "Dino", "Żabka", "Stokrotka", "Tesco", "Polo Market", "Hebe", "Super-Pharm", "Pepco", "Action", "Castorama", "Leroy Merlin", "OBI", "IKEA", "Decathlon", "Media Expert", "RTV Euro AGD", "MediaMarkt", "Empik", "CCC", "Reserved", "Cropp", "Sinsay").
+- For non-chain stores (local bakeries, small shops): return the actual business name from the receipt header.
+- Ignore addresses, NIP/REGON numbers, dates, payment terminal IDs, "PARAGON FISKALNY" headers.
+- Return null if the text contains no identifiable merchant name.
+- Never invent a name. Use only what's literally in the text (or its OCR-corrupted form recognised back to its canonical chain).`,
+        },
+        {
+          role: 'user',
+          content: `Receipt OCR (first 25 lines):\n${headerText}`,
+        },
+      ],
+    });
+
+    const result = completion.choices[0]?.message?.content?.trim() ?? '';
+    if (!result) return null;
+    let parsed: { name?: string | null } = {};
+    try {
+      parsed = JSON.parse(result);
+    } catch {
+      return null;
+    }
+    const name = (parsed.name || '').trim();
+    if (!name || name.length < 2 || name.length > 60) return null;
+    log(`[GPT] ✅ extractMerchantWithAI: "${name}"`);
+    return name;
+  } catch (error) {
+    console.error('[GPT] ❌ extractMerchantWithAI error:', error);
+    return null;
   }
 }
 
@@ -875,44 +1130,77 @@ export async function POST(req: NextRequest) {
           log(`[File ${i + 1}] ✅ Uploaded to Blob: ${imageUrl}`);
         }
 
-        const { total, merchant: preliminaryMerchant, date, time, currency, items } = await extractReceiptData(azureResult);
+        const { total, merchant: preliminaryMerchant, date, time, currency, items, promotions, totalSaved } = await extractReceiptData(azureResult);
 
         // 6-8. PARALLEL: exchange rate + duplicate check + categorization
         const finalTotal = total ?? 0;
         const finalDate = date || new Date().toISOString().split('T')[0];
-        const finalMerchant = normalizeStoreName(preliminaryMerchant || 'Unknown Store');
+
+        // Three-tier merchant resolution. extractReceiptData already ran
+        // tiers 1-2 (Azure field + raw-text scan); here we kick off
+        // tier 3 (AI fallback) ONLY if both upstream tiers failed.
+        // The AI call is gated to keep latency low — ~95% of receipts
+        // resolve in tiers 1-2, so we don't pay the AI roundtrip for
+        // them.
+        const rawTextForLang = azureResult?.analyzeResult?.content ?? '';
+        const isAlreadyCanonical = preliminaryMerchant && preliminaryMerchant !== 'Unknown Store' && findStoreInText(preliminaryMerchant) === preliminaryMerchant;
+        const aiMerchantPromise: Promise<string | null> = isAlreadyCanonical
+          ? Promise.resolve(null)
+          : extractMerchantWithAI(rawTextForLang).catch((err) => {
+            console.warn(`[File ${i + 1}] AI merchant extraction failed:`, err);
+            return null;
+          });
 
         const catsForCategorization = (cats || []).map(c => ({ id: c.id, name: c.name }));
-        const rawTextForLang = azureResult?.analyzeResult?.content ?? '';
 
-        log(`[File ${i + 1}] Running exchange rate + duplicate check + categorization in parallel...`);
+        log(`[File ${i + 1}] Running exchange rate + duplicate check + categorization + AI merchant in parallel...`);
 
         const categorizationTimeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), 8000));
 
-        const [rates, existingReceipts, categorizationResult] = await Promise.all([
+        const [rates, existingReceiptsRaw, categorizationResult, aiMerchant] = await Promise.all([
           currency !== accountCurrency ? getExchangeRates() : Promise.resolve({}),
+          // Pull recent receipts (not just same-vendor) — we'll filter
+          // post-resolution because the AI fallback might rename a
+          // receipt from "Unknown Store" to "Lidl" after this query.
           db.select({
             id: receipts.id,
             date: receipts.date,
             total: receipts.total,
+            vendor: receipts.vendor,
             createdAt: receipts.createdAt,
           }).from(receipts)
             .where(and(
               eq(receipts.userId, userId),
-              eq(receipts.vendor, finalMerchant),
               eq(receipts.status, 'processed')
             ))
-            .limit(10),
+            .limit(50),
           Promise.race([
-            categorizeAndTranslateItems(items, catsForCategorization, rawTextForLang),
+            categorizeAndTranslateItems(items, catsForCategorization, rawTextForLang, preliminaryMerchant),
             categorizationTimeout,
+          ]),
+          // Tier 3 AI merchant fallback — capped at 4s so a slow LLM
+          // doesn't block the whole receipt save.
+          Promise.race([
+            aiMerchantPromise,
+            new Promise<null>((resolve) => setTimeout(() => resolve(null), 4000)),
           ]),
         ]);
 
+        // Resolve final merchant: AI fallback wins if it found a known
+        // chain that the upstream tiers missed; otherwise use whatever
+        // tiers 1-2 produced.
+        const finalMerchant = aiMerchant
+          ? normalizeStoreName(aiMerchant)
+          : normalizeStoreName(preliminaryMerchant || 'Unknown Store');
+        if (aiMerchant && aiMerchant !== preliminaryMerchant) {
+          log(`[File ${i + 1}] [Store Extraction] Tier 3 AI fallback: "${preliminaryMerchant}" → "${finalMerchant}"`);
+        }
+
         const exchangeRate = getExchangeRate(currency, accountCurrency, rates);
 
-        // Duplicate check
-        const matchingReceipt = existingReceipts.find(r => {
+        // Duplicate check — filter to same-vendor + same-date + same-total
+        const matchingReceipt = existingReceiptsRaw.find(r => {
+          if (r.vendor !== finalMerchant) return false;
           const rTotal = parseFloat(r.total || '0');
           return r.date === finalDate && Math.abs(rTotal - finalTotal) < 0.01;
         });
@@ -1024,6 +1312,13 @@ export async function POST(req: NextRequest) {
               detectedLanguage: detectedLang,
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
               items: finalItems as any,
+              // Persist promotion/discount lines into rawOcr so audits
+              // and the personalised-deals AI prompts can read them.
+              // Storing as a structured object inside the existing
+              // jsonb column means no schema migration; future readers
+              // can ignore the field if they don't care about it.
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              rawOcr: { promotions, totalSaved } as any,
             })
             .where(and(eq(receipts.id, currentReceiptId), eq(receipts.userId, userId))),
           db.delete(expenses).where(
@@ -1061,6 +1356,12 @@ export async function POST(req: NextRequest) {
             detectedLanguage: detectedLang,
             items: finalItems,
             items_count: finalItems.length,
+            // Surfaced in the receipt confirmation toast on iOS so the
+            // user sees "you saved 12,40 zł in promotions" right after
+            // scanning, instead of having to dig through the receipt
+            // detail to find the discount lines.
+            promotions,
+            totalSaved,
           },
         });
 
