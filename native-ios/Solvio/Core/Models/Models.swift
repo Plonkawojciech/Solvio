@@ -1065,4 +1065,12 @@ struct ShoppingOptimizeResult: Decodable {
     let tip: String?
     let bestStoreItems: [LineItem]
     let alternatives: [Alternative]
+    /// Server-side cache freshness — populated by the new
+    /// `lib/store-intel` SWR cache. iOS uses these to render an
+    /// "as of HH:MM" line below the result card so the user knows
+    /// how live the data is. Optional so older backend versions
+    /// (pre-cache refactor) still decode cleanly.
+    let fetchedAt: String?
+    let freshUntil: String?
+    let cacheState: String?     // "fresh" | "stale" | "miss"
 }

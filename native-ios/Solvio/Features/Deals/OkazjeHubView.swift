@@ -400,10 +400,67 @@ struct OkazjeHubView: View {
                         .stroke(Theme.warning, lineWidth: Theme.Border.widthThin)
                 )
             }
+
+            // Freshness footer — show the timestamp the prices were
+            // fetched at, plus a tag for the cache state. Helps the
+            // user trust (or distrust) the numbers without us having
+            // to write "live data" copy somewhere.
+            freshnessFooter(for: r)
         }
         .padding(Theme.Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
         .nbCard(radius: Theme.Radius.md, shadow: Theme.Shadow.sm)
+    }
+
+    @ViewBuilder
+    private func freshnessFooter(for r: ShoppingOptimizeResult) -> some View {
+        if let iso = r.fetchedAt, let date = iso8601(iso) {
+            HStack(spacing: 6) {
+                Image(systemName: "clock")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(Theme.mutedForeground)
+                Text(String(format: locale.t("shoppingList.asOfFmt"), Self.formatTime(date)))
+                    .font(AppFont.mono(10))
+                    .foregroundColor(Theme.mutedForeground)
+                if let state = r.cacheState {
+                    NBTag(
+                        text: cacheStateLabel(state),
+                        background: cacheStateColor(state).opacity(0.15),
+                        foreground: cacheStateColor(state)
+                    )
+                }
+                Spacer()
+            }
+            .padding(.top, 4)
+        }
+    }
+
+    private func iso8601(_ s: String) -> Date? {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f.date(from: s) ?? ISO8601DateFormatter().date(from: s)
+    }
+
+    private static func formatTime(_ d: Date) -> String {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd HH:mm"
+        return f.string(from: d)
+    }
+
+    private func cacheStateLabel(_ state: String) -> String {
+        switch state {
+        case "fresh": return locale.t("shoppingList.cacheFresh")
+        case "stale": return locale.t("shoppingList.cacheStale")
+        default:      return locale.t("shoppingList.cacheLive")
+        }
+    }
+
+    private func cacheStateColor(_ state: String) -> Color {
+        switch state {
+        case "fresh": return Theme.success
+        case "stale": return Theme.warning
+        default:      return Theme.foreground
+        }
     }
 
     // MARK: - Launcher tiles

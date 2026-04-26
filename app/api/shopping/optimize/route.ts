@@ -3,33 +3,26 @@ import { NextResponse } from 'next/server'
 import { getAIClient } from '@/lib/ai-client'
 import { rateLimit } from '@/lib/rate-limit'
 import { GROCERY_STORES } from '@/lib/stores'
+import { freshOrRefresh } from '@/lib/store-intel'
+import crypto from 'crypto'
 
 /// `/api/shopping/optimize` — given a user-typed shopping list and an
 /// optional location, returns the single store that would minimise the
 /// total bill, plus a per-item price breakdown. Powered by Azure OpenAI
 /// / OpenAI with web search for live store prices.
 ///
-/// Request shape (mirrors iOS `ShoppingOptimizeRequest`):
-///   {
-///     items: [{ name: string, quantity: number }],
-///     lang: "pl" | "en",
-///     currency: "PLN" | "EUR" | "USD",
-///     lat?: number,
-///     lng?: number
-///   }
+/// Caching is now Postgres-backed via `lib/store-intel` (table
+/// `store_intel`). This means:
+///   - Cold serverless starts no longer flush the cache.
+///   - Identical lists across users dedupe (cache key omits `userId`).
+///   - Stale-while-revalidate kicks in past the soft revalidate window
+///     so users keep seeing instant responses while a refresh runs in
+///     the background.
+///   - A cron route (`/api/cron/refresh-intel`) GCs expired rows and
+///     pre-warms popular leaflet entries.
 ///
-/// Response shape (mirrors iOS `ShoppingOptimizeResult`):
-///   {
-///     bestStore: string,
-///     bestStoreAddress: string | null,
-///     bestTotal: number,
-///     currency: string,
-///     savings: number | null,           // vs. average alternative
-///     summary: string | null,           // 1-2 sentence verdict
-///     tip: string | null,               // optional savings tip
-///     bestStoreItems: [{ name, qty, unitPrice, total }],
-///     alternatives: [{ store, total, address }]
-///   }
+/// Request shape (mirrors iOS `ShoppingOptimizeRequest`):
+///   { items: [{ name, quantity }], lang, currency, lat?, lng? }
 
 interface ShoppingItem { name: string; quantity: number }
 interface ShoppingRequestBody {
@@ -40,25 +33,38 @@ interface ShoppingRequestBody {
   lng?: number
 }
 
-// Module-level in-memory cache. Same pattern as audit/prices: shopping
-// queries change less often than expense data, so caching keyed by the
-// request hash gives instant repeat-runs.
-//
-// We hash on items (names+qty) + currency + lang + rounded location;
-// the AI doesn't change its mind between identical inputs within an
-// hour and the result feels "live enough" with a 1h TTL.
-const optimizeCache = new Map<string, { result: unknown; expiresAt: number }>()
-const OPTIMIZE_TTL_MS = 60 * 60 * 1000   // 1 hour
+interface OptimizeResultPayload {
+  bestStore: string
+  bestStoreAddress: string | null
+  bestTotal: number
+  currency: string
+  savings: number | null
+  summary: string | null
+  tip: string | null
+  bestStoreItems: Array<{ name: string; qty: number | null; unitPrice: number | null; total: number }>
+  alternatives: Array<{ store: string; total: number; address: string | null }>
+}
 
-function cacheKey(userId: string, items: ShoppingItem[], lang: string, currency: string, lat?: number, lng?: number): string {
+// Cache freshness windows. The optimize result is "live" for 30 minutes,
+// then we serve stale + refresh in the background up to 6 hours, then
+// hard-evict. These match how often supermarket prices realistically
+// change in a day — leaflets refresh weekly, but daily promotions
+// shift a few times per day, so 30 min keeps things tight.
+const FRESH_SECONDS = 30 * 60          // 30 min — fresh window
+const HARD_EXPIRES_SECONDS = 6 * 60 * 60   // 6 h — hard staleness ceiling
+
+function hashKey(items: ShoppingItem[], lang: string, currency: string, lat?: number, lng?: number): string {
   const itemsKey = items
     .map(i => `${i.name.trim().toLowerCase()}|${i.quantity}`)
     .sort()
     .join(';')
-  // Round location to 0.05° — same store cluster within ~5 km.
+  // Round location to 0.05° (~5 km) — same store cluster.
   const round = (n: number) => Math.round(n * 20) / 20
   const loc = (lat != null && lng != null) ? `@${round(lat)},${round(lng)}` : ''
-  return `${userId}:${lang}:${currency}${loc}:${itemsKey}`
+  const raw = `${lang}:${currency}${loc}:${itemsKey}`
+  // Hash to fit varchar(256) — long shopping lists otherwise blow past
+  // the column limit and the unique index.
+  return crypto.createHash('sha256').update(raw).digest('hex').slice(0, 48)
 }
 
 export async function POST(request: Request) {
@@ -88,17 +94,10 @@ export async function POST(request: Request) {
     }, { status: 400 })
   }
 
-  const key = cacheKey(userId, items, lang, currency, lat, lng)
-  const cached = optimizeCache.get(key)
-  if (cached && cached.expiresAt > Date.now()) {
-    return NextResponse.json(cached.result, {
-      headers: { 'X-Cache': 'HIT', 'Cache-Control': 'private, max-age=300' },
-    })
-  }
-
-  // Rate limit only on cache miss — cache hits are essentially free.
-  // 10 req/hour/userId — generous so a typical session of a few list
-  // edits doesn't get blocked, but stops abuse.
+  // Per-user rate limit gates AI cost; cache hits are free so we don't
+  // count them. We can't easily tell up front whether the call will be
+  // a cache hit, so we always count and accept that legitimate users
+  // doing 11+ unique lists in an hour will hit the wall.
   const rl = rateLimit(`ai:shopping-optimize:${userId}`, { maxRequests: 10, windowMs: 60 * 60 * 1000 })
   if (!rl.allowed) {
     return NextResponse.json(
@@ -107,17 +106,53 @@ export async function POST(request: Request) {
     )
   }
 
-  const ai = getAIClient()
-  if (!ai) {
-    return NextResponse.json({ error: 'ai_unavailable', message: isPolish ? 'Usługa AI nieosiągalna.' : 'AI service unavailable.' }, { status: 503 })
+  const key = hashKey(items, lang, currency, lat, lng)
+
+  const entry = await freshOrRefresh<OptimizeResultPayload>(
+    'optimize',
+    key,
+    HARD_EXPIRES_SECONDS,
+    () => fetchFromAI({ items, lang, currency, lat, lng, isPolish }),
+    { revalidateAfterSeconds: FRESH_SECONDS },
+  )
+
+  // Surface freshness via headers AND inline so iOS can show a
+  // "as of HH:MM" label without parsing headers.
+  const payloadWithMeta = {
+    ...entry.data,
+    fetchedAt: entry.fetchedAt.toISOString(),
+    freshUntil: entry.expiresAt.toISOString(),
+    cacheState: entry.state,
   }
 
-  // Prompt — instruct the model to return strict JSON. We provide the
-  // store list (Polish chains) as a hint so it doesn't hallucinate
-  // names like "Tesco" (which doesn't operate in Poland anymore).
+  return NextResponse.json(payloadWithMeta, {
+    headers: {
+      'X-Cache': entry.state.toUpperCase(),
+      'X-Fetched-At': entry.fetchedAt.toISOString(),
+      'Cache-Control': 'private, max-age=120',
+    },
+  })
+}
+
+/// Single AI call that returns a clean, type-coerced
+/// `OptimizeResultPayload`. Returns null on any unrecoverable error
+/// so `freshOrRefresh` can surface a stale fallback.
+async function fetchFromAI(args: {
+  items: ShoppingItem[]
+  lang: string
+  currency: string
+  lat?: number
+  lng?: number
+  isPolish: boolean
+}): Promise<{ data: OptimizeResultPayload; source?: string } | null> {
+  const { items, currency, lat, lng, isPolish } = args
+  const ai = getAIClient()
+  if (!ai) return null
+
   const storeHints = GROCERY_STORES.slice(0, 30).join(', ')
   const itemsLines = items.map((i, idx) => `${idx + 1}. ${i.name} (${i.quantity}×)`).join('\n')
 
+  const today = new Date().toISOString().slice(0, 10)
   const locationHint = (lat != null && lng != null)
     ? (isPolish
         ? `Użytkownik jest w pobliżu współrzędnych ${lat.toFixed(3)}, ${lng.toFixed(3)} — preferuj sklepy w pobliżu (Lidl, Biedronka, Dino, Auchan, Carrefour, Kaufland, Stokrotka itp.).`
@@ -127,7 +162,9 @@ export async function POST(request: Request) {
         : 'No location — use typical Polish grocery chains.')
 
   const prompt = isPolish
-    ? `Jesteś asystentem zakupowym. Mam listę produktów do kupienia. Powiedz mi w którym JEDNYM sklepie kupię to wszystko najtaniej i podaj cenę każdego produktu w tym sklepie.
+    ? `Jesteś asystentem zakupowym. Mam listę produktów do kupienia. Dziś jest ${today}.
+
+ZADANIE: Sprawdź AKTUALNE ceny i promocje (gazetki Lidl/Biedronka/Kaufland/Auchan/Carrefour itp.) i wskaż w którym JEDNYM sklepie kupię to wszystko najtaniej DZISIAJ. Podaj realistyczne ceny każdego produktu w tym sklepie.
 
 LISTA ZAKUPÓW:
 ${itemsLines}
@@ -136,6 +173,12 @@ ${locationHint}
 
 PRZYKŁADOWE SIECI: ${storeHints}
 
+WAŻNE — ŹRÓDŁA DANYCH:
+- Sprawdź gazetki promocyjne sieci na ten tydzień (lidl.pl/c/gazetka, biedronka.pl/pl/gazetka, kaufland.pl/oferta-tygodnia, auchan.pl/aktualnosci-i-promocje, carrefour.pl/gazetki, dino.pl).
+- Uwzględnij promocje 1+1, „2 za cenę 1", rabaty z aplikacji.
+- Jeśli brak promocji na produkt — użyj ceny regularnej z bieżącego cennika.
+- Brak danych = oszacuj rozsądnie z marży branżowej.
+
 Zwróć **wyłącznie** JSON o dokładnie tej strukturze (ceny w ${currency}, suma to suma cen × ilości):
 
 {
@@ -143,8 +186,8 @@ Zwróć **wyłącznie** JSON o dokładnie tej strukturze (ceny w ${currency}, su
   "bestStoreAddress": "ulica i miasto albo null",
   "bestTotal": 123.45,
   "savings": 12.50,
-  "summary": "1-2 zdania dlaczego ten sklep jest najtańszy",
-  "tip": "1 zdanie z poradą oszczędności",
+  "summary": "1-2 zdania dlaczego ten sklep jest najtańszy DZISIAJ — wymień konkretne promocje jeśli występują",
+  "tip": "1 zdanie z poradą oszczędności (np. „w tym tygodniu Lidl ma sery -30%")",
   "bestStoreItems": [
     {"name": "mleko 2%", "qty": 2, "unitPrice": 3.49, "total": 6.98}
   ],
@@ -154,8 +197,10 @@ Zwróć **wyłącznie** JSON o dokładnie tej strukturze (ceny w ${currency}, su
   ]
 }
 
-Podaj REALNE ceny w polskich sklepach (kwiecień 2026). Jeśli nie znasz dokładnej ceny — oszacuj rozsądnie. ZAWSZE zwróć valid JSON. Liczby jako number, nie string.`
-    : `You are a shopping assistant. I have a shopping list. Tell me which SINGLE store will be cheapest overall and give me the per-item price at that store.
+ZAWSZE zwróć valid JSON. Liczby jako number, nie string.`
+    : `You are a shopping assistant. I have a shopping list. Today is ${today}.
+
+TASK: Check CURRENT prices and weekly promotions (Lidl/Biedronka/Kaufland/Auchan/Carrefour leaflets) and tell me which SINGLE store will be cheapest TODAY. Provide realistic per-item prices at that store.
 
 SHOPPING LIST:
 ${itemsLines}
@@ -164,6 +209,12 @@ ${locationHint}
 
 CHAIN HINTS: ${storeHints}
 
+IMPORTANT — DATA SOURCES:
+- Check this week's chain leaflets (lidl.pl/c/gazetka, biedronka.pl/pl/gazetka, kaufland.pl/oferta-tygodnia, auchan.pl/aktualnosci-i-promocje, carrefour.pl/gazetki, dino.pl).
+- Include 1+1, "2 for 1", and app-only discounts.
+- No promo on an item → use the current regular price.
+- No data → estimate sensibly from typical retail margin.
+
 Return **only** JSON with this exact structure (prices in ${currency}, total = sum of unit prices × qty):
 
 {
@@ -171,8 +222,8 @@ Return **only** JSON with this exact structure (prices in ${currency}, total = s
   "bestStoreAddress": "street and city or null",
   "bestTotal": 123.45,
   "savings": 12.50,
-  "summary": "1-2 sentences explaining why this store is cheapest",
-  "tip": "1 sentence savings tip",
+  "summary": "1-2 sentences explaining why this store is cheapest TODAY — name specific promotions if any",
+  "tip": "1 sentence savings tip (e.g. 'Lidl has cheeses at -30% this week')",
   "bestStoreItems": [
     {"name": "2% milk", "qty": 2, "unitPrice": 3.49, "total": 6.98}
   ],
@@ -182,10 +233,11 @@ Return **only** JSON with this exact structure (prices in ${currency}, total = s
   ]
 }
 
-Use realistic Polish grocery prices (April 2026). If you don't know the exact price, estimate reasonably. ALWAYS return valid JSON. Numbers as number, not string.`
+ALWAYS return valid JSON. Numbers as number, not string.`
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let webData: any = null
+  let usedSource: string | undefined
 
   // Web search via OpenAI Responses API where available; otherwise plain chat.
   if (ai.backend === 'openai') {
@@ -196,7 +248,7 @@ Use realistic Polish grocery prices (April 2026). If you don't know the exact pr
         input: prompt,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } as any)
-      const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), 12000))
+      const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), 15000))
       const response = await Promise.race([webSearchCall, timeout])
       if (response) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -204,10 +256,11 @@ Use realistic Polish grocery prices (April 2026). If you don't know the exact pr
         const jsonMatch = rawText.match(/\{[\s\S]*\}/)
         if (jsonMatch) {
           webData = JSON.parse(jsonMatch[0])
+          usedSource = 'openai:web_search_preview'
         }
       }
     } catch {
-      // Fall through to chat completions.
+      // fall through to plain chat completions
     }
   }
 
@@ -220,23 +273,14 @@ Use realistic Polish grocery prices (April 2026). If you don't know the exact pr
         temperature: 0.3,
       })
       webData = JSON.parse(completion.choices[0]?.message?.content || '{}')
-    } catch (err) {
-      // Stale fallback — at least show *something* if we have it.
-      if (cached) {
-        return NextResponse.json(cached.result, {
-          headers: { 'X-Cache': 'STALE', 'Cache-Control': 'private, max-age=60' },
-        })
-      }
-      return NextResponse.json({
-        error: 'ai_failed',
-        message: isPolish ? 'Nie udało się przeanalizować listy. Spróbuj ponownie.' : 'Couldn\'t analyze the list. Please try again.',
-      }, { status: 502 })
+      usedSource = ai.backend === 'azure' ? 'azure:chat' : 'openai:chat'
+    } catch {
+      return null
     }
   }
 
-  // Defensive cleanup — coerce whatever the model returned into a
-  // shape iOS can actually decode. iOS uses strict Decodable, so
-  // one wonky field would blow up the whole response.
+  // Defensive coercion — iOS Decodable will reject `"3.49"` (string)
+  // and a missing field. Run every value through a guard.
   const num = (v: unknown, fallback = 0): number => {
     if (typeof v === 'number' && isFinite(v)) return v
     if (typeof v === 'string') {
@@ -248,7 +292,7 @@ Use realistic Polish grocery prices (April 2026). If you don't know the exact pr
   const str = (v: unknown): string | null => (typeof v === 'string' && v.trim().length > 0) ? v : null
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const rawItems = Array.isArray((webData as any).bestStoreItems) ? (webData as any).bestStoreItems : []
+  const rawItems: any[] = Array.isArray((webData as any).bestStoreItems) ? (webData as any).bestStoreItems : []
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const cleanItems = rawItems.map((it: any) => ({
     name: typeof it?.name === 'string' ? it.name : (typeof it?.product === 'string' ? it.product : 'item'),
@@ -258,52 +302,40 @@ Use realistic Polish grocery prices (April 2026). If you don't know the exact pr
   }))
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const rawAlts = Array.isArray((webData as any).alternatives) ? (webData as any).alternatives : []
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const rawAlts: unknown[] = Array.isArray((webData as any).alternatives) ? (webData as any).alternatives : []
   const cleanAlts = rawAlts
-    .map((a: any) => ({
-      store: typeof a?.store === 'string' ? a.store : null,
-      total: num(a?.total),
-      address: str(a?.address),
-    }))
-    .filter((a: { store: string | null }) => a.store != null) as Array<{ store: string; total: number; address: string | null }>
+    .map((a) => {
+      const obj = (a ?? {}) as Record<string, unknown>
+      return {
+        store: typeof obj.store === 'string' ? obj.store : null,
+        total: num(obj.total),
+        address: str(obj.address),
+      }
+    })
+    .filter((a): a is { store: string; total: number; address: string | null } => a.store != null)
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const bestStore = typeof (webData as any).bestStore === 'string' && (webData as any).bestStore.trim().length > 0
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ? (webData as any).bestStore
+  const bestStore = typeof webData.bestStore === 'string' && webData.bestStore.trim().length > 0
+    ? webData.bestStore
     : (isPolish ? 'Lidl' : 'Lidl')
 
-  // If the model didn't compute bestTotal, derive it from items so the
-  // KPI on iOS shows a real number rather than 0.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const itemsTotal = cleanItems.reduce((s: number, it: any) => s + num(it.total), 0)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const bestTotal = num((webData as any).bestTotal, itemsTotal)
+  const itemsTotal = cleanItems.reduce((s: number, it) => s + num(it.total), 0)
+  const bestTotal = num(webData.bestTotal, itemsTotal)
+  const altMin = cleanAlts.length > 0 ? Math.min(...cleanAlts.map(a => num(a.total, bestTotal))) : null
+  const savings = altMin != null && altMin > bestTotal
+    ? Math.round((altMin - bestTotal) * 100) / 100
+    : (typeof webData.savings === 'number' ? Math.round(webData.savings * 100) / 100 : null)
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const altMin = cleanAlts.length > 0 ? Math.min(...cleanAlts.map((a: any) => num(a.total, bestTotal))) : null
-  const savings = altMin != null && altMin > bestTotal ? Math.round((altMin - bestTotal) * 100) / 100 : null
-
-  const result = {
+  const data: OptimizeResultPayload = {
     bestStore,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    bestStoreAddress: str((webData as any).bestStoreAddress),
+    bestStoreAddress: str(webData.bestStoreAddress),
     bestTotal: Math.round(bestTotal * 100) / 100,
     currency,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    savings: typeof (webData as any).savings === 'number' ? Math.round((webData as any).savings * 100) / 100 : savings,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    summary: str((webData as any).summary),
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    tip: str((webData as any).tip),
+    savings,
+    summary: str(webData.summary),
+    tip: str(webData.tip),
     bestStoreItems: cleanItems,
     alternatives: cleanAlts,
   }
 
-  optimizeCache.set(key, { result, expiresAt: Date.now() + OPTIMIZE_TTL_MS })
-
-  return NextResponse.json(result, {
-    headers: { 'X-Cache': 'MISS', 'Cache-Control': 'private, max-age=300' },
-  })
+  return { data, source: usedSource }
 }

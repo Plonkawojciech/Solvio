@@ -561,6 +561,54 @@ export const expenseApprovals = pgTable('expense_approvals', {
   index('idx_expense_approvals_company_id').on(t.companyId),
 ])
 
+/**
+ * `store_intel` — server-side cache of live shopping intelligence.
+ *
+ * Backs `/api/shopping/optimize`, `/api/personal/promotions`, etc.
+ * Replaces the per-route module-level Maps that disappeared on
+ * serverless cold-starts. Now any node in the fleet sees the same
+ * cached row, and a cron job keeps the freshest items warm.
+ *
+ * Rows are written by AI calls (chain leaflet, store-list shopping
+ * optimize answer, opening hours scrape) and read by the same routes
+ * on subsequent hits. `expires_at` is the staleness ceiling — past
+ * that we refetch. `fetched_at` is shown to the user as
+ * "as of HH:MM" so they know how live the data is.
+ *
+ * `kind` is the namespace:
+ *   - `leaflet`        — weekly chain leaflet URLs and dates
+ *   - `hours`          — opening hours per chain (rough, not per-branch)
+ *   - `optimize`       — full /api/shopping/optimize result keyed by
+ *                        the request hash (across users so identical
+ *                        lists deduplicate cost)
+ *   - `prices`         — per-product price snapshots used by
+ *                        `/api/prices/compare` and the optimizer
+ *
+ * `key` is the kind-local identifier:
+ *   - leaflet → chain name lower-cased ("lidl", "biedronka")
+ *   - optimize → hash of (lang|currency|location|items)
+ *   - prices  → product slug + chain
+ */
+export const storeIntel = pgTable('store_intel', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  kind: varchar('kind', { length: 32 }).notNull(),
+  key: varchar('key', { length: 256 }).notNull(),
+  data: jsonb('data').$type<unknown>().notNull(),
+  fetchedAt: timestamp('fetched_at', { withTimezone: true }).defaultNow().notNull(),
+  // Hard staleness boundary — past this we refetch (or surface
+  // a "data jest stary" UI hint).
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  // Soft revalidation hint — past this we still serve the cached row
+  // but kick off a background refresh. Stays null when unused.
+  revalidateAfter: timestamp('revalidate_after', { withTimezone: true }),
+  // Optional source URL the AI cited or the page we scraped; helps
+  // debugging when a price feels off.
+  source: text('source'),
+}, (t) => [
+  uniqueIndex('store_intel_kind_key').on(t.kind, t.key),
+  index('idx_store_intel_expires_at').on(t.expiresAt),
+])
+
 export const vatEntries = pgTable('vat_entries', {
   id: uuid('id').primaryKey().defaultRandom(),
   companyId: uuid('company_id').notNull(),
