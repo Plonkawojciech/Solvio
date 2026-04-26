@@ -614,9 +614,10 @@ struct ShoppingItemDraft: Identifiable, Equatable {
 /// reused elsewhere.
 @MainActor
 final class ShoppingListVM: ObservableObject {
-    @Published var items: [ShoppingItemDraft] = [
-        ShoppingItemDraft(name: "", qtyText: "1"),
-    ]
+    /// Items default to whatever the user submitted last time, falling
+    /// back to a single empty row on first launch. Saves a tedious
+    /// re-type for users who run the same weekly list.
+    @Published var items: [ShoppingItemDraft] = ShoppingListVM.loadPersisted()
     @Published var useLocation: Bool = true
     @Published var isLoading: Bool = false
     @Published var error: String?
@@ -625,6 +626,38 @@ final class ShoppingListVM: ObservableObject {
     private weak var locale: AppLocale?
     private weak var store: AppDataStore?
     private let locationProvider = ShoppingLocationProvider()
+
+    /// UserDefaults key for the last successful shopping list. Stored as
+    /// a JSON-encoded `[PersistedItem]` (id is regenerated on load so we
+    /// don't collide with live row identity).
+    private static let storageKey = "solvio.shoppingList.last.v1"
+
+    private struct PersistedItem: Codable {
+        let name: String
+        let qty: String
+    }
+
+    static func loadPersisted() -> [ShoppingItemDraft] {
+        guard let data = UserDefaults.standard.data(forKey: storageKey),
+              let decoded = try? JSONDecoder().decode([PersistedItem].self, from: data),
+              !decoded.isEmpty else {
+            return [ShoppingItemDraft(name: "", qtyText: "1")]
+        }
+        return decoded.map { ShoppingItemDraft(name: $0.name, qtyText: $0.qty) }
+    }
+
+    private func persistItems() {
+        let payload = items
+            .filter { !$0.name.trimmingCharacters(in: .whitespaces).isEmpty }
+            .map { PersistedItem(name: $0.name, qty: $0.qtyText) }
+        if payload.isEmpty {
+            UserDefaults.standard.removeObject(forKey: Self.storageKey)
+            return
+        }
+        if let data = try? JSONEncoder().encode(payload) {
+            UserDefaults.standard.set(data, forKey: Self.storageKey)
+        }
+    }
 
     func bind(locale: AppLocale, store: AppDataStore) {
         self.locale = locale
@@ -677,6 +710,10 @@ final class ShoppingListVM: ObservableObject {
         )
         do {
             result = try await ShoppingRepo.optimize(body)
+            // Persist on success only — a failed call probably means
+            // the user typed something the AI couldn't parse, no point
+            // resurrecting it next session.
+            persistItems()
         } catch let apiError as ApiError {
             error = apiError.errorDescription ?? locale?.t("errors.unknown")
         } catch {
