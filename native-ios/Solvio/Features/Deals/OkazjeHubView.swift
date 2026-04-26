@@ -208,12 +208,28 @@ struct OkazjeHubView: View {
             }
 
             // Location toggle — when on, we send lat/lng to backend
-            // so it can prefer nearby chains.
-            HStack {
-                Toggle(locale.t("shoppingList.useLocation"), isOn: $shoppingVM.useLocation)
-                    .font(AppFont.bodyMedium)
-                    .tint(Theme.foreground)
+            // so it can prefer nearby chains. Custom row so the whole
+            // thing is tappable (native SwiftUI Toggle's hit area is
+            // limited to the switch itself; users hitting the label
+            // got nothing). The Toggle still drives `isOn` so iOS
+            // accessibility/voice-over keeps working.
+            Button {
+                shoppingVM.useLocation.toggle()
+            } label: {
+                HStack(spacing: 8) {
+                    Text(locale.t("shoppingList.useLocation"))
+                        .font(AppFont.bodyMedium)
+                        .foregroundColor(Theme.foreground)
+                    Spacer()
+                    Toggle("", isOn: $shoppingVM.useLocation)
+                        .labelsHidden()
+                        .tint(Theme.foreground)
+                        .allowsHitTesting(false)
+                }
+                .contentShape(Rectangle())
+                .padding(.vertical, 4)
             }
+            .buttonStyle(.plain)
 
             Button {
                 Task { await shoppingVM.optimize() }
@@ -233,6 +249,11 @@ struct OkazjeHubView: View {
             // spinner during a 12-15s call feels broken). Stage labels
             // are cosmetic — they cycle on a timer, not tied to backend
             // progress (the route doesn't report it).
+            //
+            // ETA: 30s. Real Vercel cold-start with web_search_preview
+            // can take 50s+, but the bar caps at 95% so we'd rather be
+            // visibly almost-done than under-estimate at 14s and have
+            // the bar pegged for a minute.
             if shoppingVM.isLoading {
                 NBProgressCard(
                     title: locale.t("shoppingList.progressTitle"),
@@ -242,7 +263,7 @@ struct OkazjeHubView: View {
                         locale.t("shoppingList.stageCompare"),
                         locale.t("shoppingList.stageFinalize"),
                     ],
-                    estimatedSeconds: 14
+                    estimatedSeconds: 30
                 )
             }
 
@@ -263,8 +284,22 @@ struct OkazjeHubView: View {
 
     private func shoppingRow(_ item: Binding<ShoppingItemDraft>) -> some View {
         HStack(spacing: Theme.Spacing.xs) {
+            // Submit-on-Return adds a new empty row and (best-effort)
+            // moves focus to it. Without this, a user typing "milk →
+            // Return" on the last row got nothing — no new row, no
+            // submit, and the keyboard stayed open with no "Done"
+            // affordance. Enter-to-add-row matches the user's mental
+            // model from web shopping lists.
             TextField(locale.t("shoppingList.itemPlaceholder"), text: item.name)
                 .font(AppFont.body)
+                .submitLabel(.next)
+                .onSubmit {
+                    let trimmed = item.wrappedValue.name.trimmingCharacters(in: .whitespaces)
+                    guard !trimmed.isEmpty else { return }
+                    if shoppingVM.items.last?.id == item.wrappedValue.id {
+                        shoppingVM.addRow()
+                    }
+                }
                 .padding(.horizontal, Theme.Spacing.sm)
                 .frame(height: 38)
                 .background(Theme.card)
@@ -657,14 +692,36 @@ final class ShoppingListVM: ObservableObject {
 /// updates, no monitoring, no background. Keeping it local to this
 /// feature avoids adding scaffolding to the shared `NearbyStoresView`
 /// location code.
+///
+/// Hard 5s timeout — if the user hasn't responded to the permission
+/// prompt or the GPS fix is slow, we fall back to "no location" so
+/// the shopping list call never deadlocks. Without this the very
+/// first call on a fresh install hung forever.
 final class ShoppingLocationProvider: NSObject, CLLocationManagerDelegate {
     private let manager = CLLocationManager()
     private var continuation: CheckedContinuation<CLLocation?, Never>?
+    private var timeoutTask: Task<Void, Never>?
+
+    /// Max wait for either a permission decision or a location fix.
+    /// 5s is generous for a real device, brutal for a sim with no
+    /// stored coordinates — both desirable, since hanging the UI is
+    /// strictly worse than skipping the location hint.
+    private static let timeoutSeconds: UInt64 = 5
 
     func fetch() async -> CLLocation? {
         await withCheckedContinuation { (cont: CheckedContinuation<CLLocation?, Never>) in
             self.continuation = cont
             manager.delegate = self
+
+            // Arm a hard timeout regardless of which branch we take —
+            // even the "authorized" path occasionally hangs on sim
+            // when no coordinate has been set.
+            self.timeoutTask = Task { [weak self] in
+                try? await Task.sleep(nanoseconds: Self.timeoutSeconds * 1_000_000_000)
+                if Task.isCancelled { return }
+                await MainActor.run { self?.finish(nil) }
+            }
+
             switch manager.authorizationStatus {
             case .notDetermined:
                 manager.requestWhenInUseAuthorization()
@@ -696,6 +753,8 @@ final class ShoppingLocationProvider: NSObject, CLLocationManagerDelegate {
     }
 
     private func finish(_ location: CLLocation?) {
+        timeoutTask?.cancel()
+        timeoutTask = nil
         guard let cont = continuation else { return }
         continuation = nil
         cont.resume(returning: location)

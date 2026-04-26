@@ -153,13 +153,18 @@ async function fetchFromAI(args: {
   const itemsLines = items.map((i, idx) => `${idx + 1}. ${i.name} (${i.quantity}×)`).join('\n')
 
   const today = new Date().toISOString().slice(0, 10)
+  // CRITICAL: when location is missing, the address field MUST be null —
+  // otherwise the AI hallucinates plausible-looking but fake street
+  // addresses that erode user trust ("ul. Wrocławska 12, Poznań" for
+  // a user in Warsaw). The location hint below tells the model exactly
+  // when it may and may not include a specific address.
   const locationHint = (lat != null && lng != null)
     ? (isPolish
-        ? `Użytkownik jest w pobliżu współrzędnych ${lat.toFixed(3)}, ${lng.toFixed(3)} — preferuj sklepy w pobliżu (Lidl, Biedronka, Dino, Auchan, Carrefour, Kaufland, Stokrotka itp.).`
-        : `User is near ${lat.toFixed(3)}, ${lng.toFixed(3)} — prefer nearby stores (Lidl, Biedronka, Dino, Auchan, Carrefour, Kaufland, Stokrotka, etc.).`)
+        ? `Użytkownik jest w pobliżu współrzędnych ${lat.toFixed(3)}, ${lng.toFixed(3)} — preferuj sklepy w pobliżu (Lidl, Biedronka, Dino, Auchan, Carrefour, Kaufland, Stokrotka itp.). Jeśli znasz REALNĄ ulicę i miasto najbliższego sklepu danej sieci do tych współrzędnych, podaj je w "bestStoreAddress". Jeśli nie jesteś PEWIEN konkretnego adresu — bestStoreAddress MUSI być null. NIGDY nie wymyślaj adresu.`
+        : `User is near ${lat.toFixed(3)}, ${lng.toFixed(3)} — prefer nearby stores (Lidl, Biedronka, Dino, Auchan, Carrefour, Kaufland, Stokrotka, etc.). If you know the REAL street and city of the nearest branch of that chain to these coordinates, include it in "bestStoreAddress". If you are not CERTAIN of a specific address — bestStoreAddress MUST be null. NEVER fabricate an address.`)
     : (isPolish
-        ? 'Brak lokalizacji — użyj typowych polskich sklepów spożywczych.'
-        : 'No location — use typical Polish grocery chains.')
+        ? 'Brak lokalizacji — użyj typowych polskich sklepów spożywczych. WAŻNE: bestStoreAddress MUSI być null (nie znasz lokalizacji użytkownika, więc adres konkretnego oddziału byłby zmyślony).'
+        : 'No location — use typical Polish grocery chains. IMPORTANT: bestStoreAddress MUST be null (you do not know the user\'s location, so any specific branch address would be fabricated).')
 
   const prompt = isPolish
     ? `Jesteś asystentem zakupowym. Mam listę produktów do kupienia. Dziś jest ${today}.
@@ -325,9 +330,14 @@ ALWAYS return valid JSON. Numbers as number, not string.`
     ? Math.round((altMin - bestTotal) * 100) / 100
     : (typeof webData.savings === 'number' ? Math.round(webData.savings * 100) / 100 : null)
 
+  // Belt-and-suspenders on the address: if the caller didn't send
+  // coordinates, force the address to null even if the AI returned
+  // one. We can't trust any specific branch address without location.
+  const safeAddress = (lat != null && lng != null) ? str(webData.bestStoreAddress) : null
+
   const data: OptimizeResultPayload = {
     bestStore,
-    bestStoreAddress: str(webData.bestStoreAddress),
+    bestStoreAddress: safeAddress,
     bestTotal: Math.round(bestTotal * 100) / 100,
     currency,
     savings,
