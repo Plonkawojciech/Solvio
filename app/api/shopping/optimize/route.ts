@@ -1,6 +1,6 @@
 import { auth } from '@/lib/auth-compat'
 import { NextResponse } from 'next/server'
-import { getAIClient } from '@/lib/ai-client'
+import { getAIClient, getAIClientForWebSearch } from '@/lib/ai-client'
 import { rateLimit } from '@/lib/rate-limit'
 import { GROCERY_STORES } from '@/lib/stores'
 import { freshOrRefresh } from '@/lib/store-intel'
@@ -41,8 +41,25 @@ interface OptimizeResultPayload {
   savings: number | null
   summary: string | null
   tip: string | null
-  bestStoreItems: Array<{ name: string; qty: number | null; unitPrice: number | null; total: number }>
+  bestStoreItems: Array<{
+    name: string
+    qty: number | null
+    unitPrice: number | null
+    total: number
+    /// "regular" | "1+1" | "2za1" | "percent" | "buy_x_get_y" | "app_only"
+    /// Helps iOS render a badge ("PROMOCJA", "1+1", etc).
+    promoType: string | null
+    /// Human-readable promo description (e.g. "2 za 12 zł", "kup 3, zapłać za 2").
+    promoDescription: string | null
+  }>
   alternatives: Array<{ store: string; total: number; address: string | null }>
+  /// "live_web_search" when the AI actually queried current chain
+  /// pages, "estimate" when the response was generated from training
+  /// data only. Lets iOS show a "ESTYMATA" badge for transparency.
+  dataSource: 'live_web_search' | 'estimate'
+  /// Optional citation URLs from the web search (chain leaflet pages,
+  /// product pages). iOS shows them as small links under the result.
+  sources: string[]
 }
 
 // Cache freshness windows. The optimize result is "live" for 30 minutes,
@@ -137,6 +154,16 @@ export async function POST(request: Request) {
 /// Single AI call that returns a clean, type-coerced
 /// `OptimizeResultPayload`. Returns null on any unrecoverable error
 /// so `freshOrRefresh` can surface a stale fallback.
+///
+/// Strategy:
+///   1. Try OpenAI Responses API with `web_search_preview` — this is
+///      the ONLY path that gets actually-live current-week data. Azure
+///      does not support Responses API, so any backend that resolves
+///      to Azure means the model is guessing from training data.
+///   2. If web-search OpenAI is not configured, fall back to whichever
+///      backend the default `getAIClient()` returns (Azure or OpenAI
+///      chat completions). Mark the response `dataSource: 'estimate'`
+///      so iOS can badge it accordingly.
 async function fetchFromAI(args: {
   items: ShoppingItem[]
   lang: string
@@ -146,8 +173,9 @@ async function fetchFromAI(args: {
   isPolish: boolean
 }): Promise<{ data: OptimizeResultPayload; source?: string } | null> {
   const { items, currency, lat, lng, isPolish } = args
-  const ai = getAIClient()
-  if (!ai) return null
+  const webSearchAI = getAIClientForWebSearch()
+  const fallbackAI = getAIClient()
+  if (!webSearchAI && !fallbackAI) return null
 
   const storeHints = GROCERY_STORES.slice(0, 30).join(', ')
   const itemsLines = items.map((i, idx) => `${idx + 1}. ${i.name} (${i.quantity}×)`).join('\n')
@@ -167,9 +195,9 @@ async function fetchFromAI(args: {
         : 'No location — use typical Polish grocery chains. IMPORTANT: bestStoreAddress MUST be null (you do not know the user\'s location, so any specific branch address would be fabricated).')
 
   const prompt = isPolish
-    ? `Jesteś asystentem zakupowym. Mam listę produktów do kupienia. Dziś jest ${today}.
+    ? `Jesteś asystentem zakupowym z dostępem do bieżących polskich gazetek promocyjnych. Dziś jest ${today}.
 
-ZADANIE: Sprawdź AKTUALNE ceny i promocje (gazetki Lidl/Biedronka/Kaufland/Auchan/Carrefour itp.) i wskaż w którym JEDNYM sklepie kupię to wszystko najtaniej DZISIAJ. Podaj realistyczne ceny każdego produktu w tym sklepie.
+ZADANIE: Użyj wyszukiwarki internetowej (web_search) żeby SPRAWDZIĆ AKTUALNE ceny i promocje TEGO TYGODNIA w sieciach: Lidl, Biedronka, Kaufland, Auchan, Carrefour, Netto, Dino, Stokrotka, Aldi, Żabka. Następnie wskaż w którym JEDNYM sklepie kupię całą listę najtaniej DZISIAJ.
 
 LISTA ZAKUPÓW:
 ${itemsLines}
@@ -178,34 +206,66 @@ ${locationHint}
 
 PRZYKŁADOWE SIECI: ${storeHints}
 
-WAŻNE — ŹRÓDŁA DANYCH:
-- Sprawdź gazetki promocyjne sieci na ten tydzień (lidl.pl/c/gazetka, biedronka.pl/pl/gazetka, kaufland.pl/oferta-tygodnia, auchan.pl/aktualnosci-i-promocje, carrefour.pl/gazetki, dino.pl).
-- Uwzględnij promocje 1+1, „2 za cenę 1", rabaty z aplikacji.
-- Jeśli brak promocji na produkt — użyj ceny regularnej z bieżącego cennika.
-- Brak danych = oszacuj rozsądnie z marży branżowej.
+JAK SZUKAĆ DANYCH (nie pomijaj tego kroku!):
+1. Sprawdź "gazetka [chain] aktualna" + nazwa produktu — np. "gazetka Lidl banany kwiecień 2026".
+2. Sprawdź oficjalne strony: lidl.pl/c/gazetka-promocyjna, biedronka.pl/pl/gazetki, kaufland.pl/oferta, auchan.pl/oferta-tygodnia, carrefour.pl/promocje.
+3. Promocje wielosztukowe ("2 za 12 zł", "kup 3 zapłać za 2", "1+1 gratis") MUSZĄ być uwzględnione — to często znaczna oszczędność.
+4. Promocje "tylko w aplikacji" sieci (Lidl Plus, Biedronka aplikacja, Kaufland Card) — uwzględnij je jeśli widnieją w gazetce/web.
+5. Jeśli NIE ZNAJDZIESZ produktu w gazetkach — użyj typowej ceny regularnej z bieżącego cennika sieci.
+6. NIGDY nie wymyślaj promocji — jeśli nie ma jej w żadnej znalezionej gazetce, podaj cenę regularną.
 
-Zwróć **wyłącznie** JSON o dokładnie tej strukturze (ceny w ${currency}, suma to suma cen × ilości):
+POLA promoType (per item):
+- "regular": cena regularna, bez promocji
+- "1+1": kup 1, drugi gratis
+- "2za1": kup 2, zapłać za 1 (lub "3za2" itp.)
+- "percent": -X% rabatu
+- "buy_x_get_y": np. kup 3 za 12 zł
+- "app_only": promocja widoczna tylko po zalogowaniu w app sieci
+- "multipack_price": wieloszt. cena pakietu (np. "2× 5,99 zł")
+
+Zwróć **wyłącznie** JSON, bez markdown. Schema:
 
 {
-  "bestStore": "nazwa sieci",
-  "bestStoreAddress": "ulica i miasto albo null",
+  "bestStore": "nazwa sieci (np. Lidl)",
+  "bestStoreAddress": "ulica i miasto albo null gdy nie pewien",
   "bestTotal": 123.45,
   "savings": 12.50,
-  "summary": "1-2 zdania dlaczego ten sklep jest najtańszy DZISIAJ — wymień konkretne promocje jeśli występują",
-  "tip": "1 zdanie z poradą oszczędności (np. „w tym tygodniu Lidl ma sery -30%")",
+  "summary": "1-2 zdania dlaczego ten sklep jest najtańszy DZISIAJ — wymień konkretne promocje z gazetki jeśli są",
+  "tip": "1 zdanie z konkretną poradą (np. „Lidl Plus daje dodatkowe -2 zł na masło")",
   "bestStoreItems": [
-    {"name": "mleko 2%", "qty": 2, "unitPrice": 3.49, "total": 6.98}
+    {
+      "name": "mleko 2% Łaciate 1L",
+      "qty": 2,
+      "unitPrice": 3.49,
+      "total": 6.98,
+      "promoType": "regular",
+      "promoDescription": null
+    },
+    {
+      "name": "masło ekstra 200g",
+      "qty": 2,
+      "unitPrice": 4.99,
+      "total": 9.98,
+      "promoType": "2za1",
+      "promoDescription": "kup 2 sztuki — drugie 50% taniej"
+    }
   ],
   "alternatives": [
-    {"store": "inny sklep", "total": 130.00, "address": null},
-    {"store": "kolejny", "total": 135.50, "address": null}
+    {"store": "Biedronka", "total": 130.00, "address": null},
+    {"store": "Kaufland", "total": 135.50, "address": null}
+  ],
+  "sources": [
+    "https://www.lidl.pl/c/gazetka-promocyjna/...",
+    "https://www.biedronka.pl/pl/gazetki/..."
   ]
 }
 
-ZAWSZE zwróć valid JSON. Liczby jako number, nie string.`
-    : `You are a shopping assistant. I have a shopping list. Today is ${today}.
+KRYTYCZNE:
+- "sources" MUSI zawierać URL-e stron z których faktycznie wziąłeś ceny. Pusta tablica jeśli nie miałeś dostępu do web_search.
+- Liczby jako number, nie string. Zawsze valid JSON.`
+    : `You are a shopping assistant with access to live Polish supermarket leaflet data. Today is ${today}.
 
-TASK: Check CURRENT prices and weekly promotions (Lidl/Biedronka/Kaufland/Auchan/Carrefour leaflets) and tell me which SINGLE store will be cheapest TODAY. Provide realistic per-item prices at that store.
+TASK: Use web search to look up CURRENT prices and THIS WEEK'S promotions across: Lidl, Biedronka, Kaufland, Auchan, Carrefour, Netto, Dino, Stokrotka, Aldi, Żabka. Then tell me which SINGLE store is cheapest for the whole list TODAY.
 
 SHOPPING LIST:
 ${itemsLines}
@@ -214,46 +274,70 @@ ${locationHint}
 
 CHAIN HINTS: ${storeHints}
 
-IMPORTANT — DATA SOURCES:
-- Check this week's chain leaflets (lidl.pl/c/gazetka, biedronka.pl/pl/gazetka, kaufland.pl/oferta-tygodnia, auchan.pl/aktualnosci-i-promocje, carrefour.pl/gazetki, dino.pl).
-- Include 1+1, "2 for 1", and app-only discounts.
-- No promo on an item → use the current regular price.
-- No data → estimate sensibly from typical retail margin.
+HOW TO SOURCE DATA (don't skip this step!):
+1. Search "gazetka [chain] aktualna" plus product name — e.g. "gazetka Lidl banany april 2026".
+2. Check official pages: lidl.pl/c/gazetka-promocyjna, biedronka.pl/pl/gazetki, kaufland.pl/oferta, auchan.pl/oferta-tygodnia, carrefour.pl/promocje.
+3. Multipack promotions ("2 for 12 PLN", "buy 3 pay for 2", "1+1 free") MUST be included — often significant savings.
+4. App-only promotions (Lidl Plus, Biedronka app, Kaufland Card) — include them if visible in the leaflet/web.
+5. If you can't find the product in any leaflet — use the typical current regular price.
+6. NEVER fabricate promotions — if there's no actual promo found, return the regular price.
 
-Return **only** JSON with this exact structure (prices in ${currency}, total = sum of unit prices × qty):
+promoType values (per item):
+- "regular": no promotion
+- "1+1": buy 1 get 1 free
+- "2za1": buy 2 pay for 1 (or "3za2" etc.)
+- "percent": -X% discount
+- "buy_x_get_y": e.g. 3 for 12 PLN
+- "app_only": app-exclusive promotion
+- "multipack_price": multi-pack price
+
+Return **only** JSON, no markdown. Schema:
 
 {
   "bestStore": "chain name",
-  "bestStoreAddress": "street and city or null",
+  "bestStoreAddress": "street and city or null when unsure",
   "bestTotal": 123.45,
   "savings": 12.50,
-  "summary": "1-2 sentences explaining why this store is cheapest TODAY — name specific promotions if any",
-  "tip": "1 sentence savings tip (e.g. 'Lidl has cheeses at -30% this week')",
+  "summary": "1-2 sentences explaining why this store is cheapest TODAY — cite specific leaflet promotions",
+  "tip": "1 concrete savings tip",
   "bestStoreItems": [
-    {"name": "2% milk", "qty": 2, "unitPrice": 3.49, "total": 6.98}
+    {
+      "name": "2% milk Łaciate 1L",
+      "qty": 2,
+      "unitPrice": 3.49,
+      "total": 6.98,
+      "promoType": "regular",
+      "promoDescription": null
+    }
   ],
   "alternatives": [
-    {"store": "other store", "total": 130.00, "address": null},
-    {"store": "another", "total": 135.50, "address": null}
-  ]
+    {"store": "Biedronka", "total": 130.00, "address": null}
+  ],
+  "sources": ["https://www.lidl.pl/c/gazetka-promocyjna/..."]
 }
 
-ALWAYS return valid JSON. Numbers as number, not string.`
+CRITICAL:
+- "sources" MUST contain URLs you actually pulled prices from. Empty array if web_search wasn't available.
+- Numbers as numbers, not strings. Always valid JSON.`
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let webData: any = null
   let usedSource: string | undefined
+  let usedLiveSearch = false
 
-  // Web search via OpenAI Responses API where available; otherwise plain chat.
-  if (ai.backend === 'openai') {
+  // Step 1: Try OpenAI Responses API with web_search_preview — the only
+  // path that actually queries the live web. We give it 30s because
+  // chain leaflet pages aren't fast.
+  if (webSearchAI) {
     try {
-      const webSearchCall = ai.client.responses.create({
-        model: ai.model,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const webSearchCall = (webSearchAI.client as any).responses.create({
+        model: webSearchAI.model,
         tools: [{ type: 'web_search_preview' }],
         input: prompt,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } as any)
-      const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), 15000))
+      const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), 30000))
       const response = await Promise.race([webSearchCall, timeout])
       if (response) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -262,27 +346,33 @@ ALWAYS return valid JSON. Numbers as number, not string.`
         if (jsonMatch) {
           webData = JSON.parse(jsonMatch[0])
           usedSource = 'openai:web_search_preview'
+          usedLiveSearch = true
         }
       }
     } catch {
-      // fall through to plain chat completions
+      // fall through to chat completions
     }
   }
 
-  if (!webData) {
+  // Step 2: Fall back to plain chat completions (Azure or OpenAI). The
+  // model will hallucinate "current promotions" — we mark the response
+  // accordingly so the UI can badge it as estimate.
+  if (!webData && fallbackAI) {
     try {
-      const completion = await ai.client.chat.completions.create({
-        model: ai.model,
+      const completion = await fallbackAI.client.chat.completions.create({
+        model: fallbackAI.model,
         messages: [{ role: 'user', content: prompt }],
         response_format: { type: 'json_object' },
         temperature: 0.3,
       })
       webData = JSON.parse(completion.choices[0]?.message?.content || '{}')
-      usedSource = ai.backend === 'azure' ? 'azure:chat' : 'openai:chat'
+      usedSource = fallbackAI.backend === 'azure' ? 'azure:chat' : 'openai:chat'
+      usedLiveSearch = false
     } catch {
       return null
     }
   }
+  if (!webData) return null
 
   // Defensive coercion — iOS Decodable will reject `"3.49"` (string)
   // and a missing field. Run every value through a guard.
@@ -296,15 +386,28 @@ ALWAYS return valid JSON. Numbers as number, not string.`
   }
   const str = (v: unknown): string | null => (typeof v === 'string' && v.trim().length > 0) ? v : null
 
+  // Whitelist of acceptable promoType values — anything outside this set
+  // gets dropped to "regular" so the iOS UI doesn't have to handle
+  // arbitrary strings. New types can be added here as we add UI for them.
+  const VALID_PROMO_TYPES = new Set([
+    'regular', '1+1', '2za1', '3za2', 'percent',
+    'buy_x_get_y', 'app_only', 'multipack_price',
+  ])
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const rawItems: any[] = Array.isArray((webData as any).bestStoreItems) ? (webData as any).bestStoreItems : []
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const cleanItems = rawItems.map((it: any) => ({
-    name: typeof it?.name === 'string' ? it.name : (typeof it?.product === 'string' ? it.product : 'item'),
-    qty: it?.qty != null ? num(it.qty, 1) : (it?.quantity != null ? num(it.quantity, 1) : null),
-    unitPrice: it?.unitPrice != null ? num(it.unitPrice) : (it?.price != null ? num(it.price) : null),
-    total: num(it?.total ?? (num(it?.unitPrice ?? it?.price ?? 0) * num(it?.qty ?? it?.quantity ?? 1, 1))),
-  }))
+  const cleanItems = rawItems.map((it: any) => {
+    const promoTypeRaw = typeof it?.promoType === 'string' ? it.promoType.trim().toLowerCase() : null
+    const promoType = promoTypeRaw && VALID_PROMO_TYPES.has(promoTypeRaw) ? promoTypeRaw : 'regular'
+    return {
+      name: typeof it?.name === 'string' ? it.name : (typeof it?.product === 'string' ? it.product : 'item'),
+      qty: it?.qty != null ? num(it.qty, 1) : (it?.quantity != null ? num(it.quantity, 1) : null),
+      unitPrice: it?.unitPrice != null ? num(it.unitPrice) : (it?.price != null ? num(it.price) : null),
+      total: num(it?.total ?? (num(it?.unitPrice ?? it?.price ?? 0) * num(it?.qty ?? it?.quantity ?? 1, 1))),
+      promoType,
+      promoDescription: str(it?.promoDescription),
+    }
+  })
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const rawAlts: unknown[] = Array.isArray((webData as any).alternatives) ? (webData as any).alternatives : []
@@ -335,6 +438,18 @@ ALWAYS return valid JSON. Numbers as number, not string.`
   // one. We can't trust any specific branch address without location.
   const safeAddress = (lat != null && lng != null) ? str(webData.bestStoreAddress) : null
 
+  // Cite-or-degrade: validate sources are real URLs. We don't HEAD-
+  // request them (too slow / flaky) but at least drop strings that
+  // aren't even http(s). Without web search the array is forcibly
+  // empty so the iOS badge can show "ESTYMATA" honestly.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const rawSources: unknown[] = Array.isArray((webData as any).sources) ? (webData as any).sources : []
+  const cleanSources = usedLiveSearch
+    ? rawSources
+        .filter((s): s is string => typeof s === 'string' && /^https?:\/\//i.test(s))
+        .slice(0, 5)
+    : []
+
   const data: OptimizeResultPayload = {
     bestStore,
     bestStoreAddress: safeAddress,
@@ -345,6 +460,8 @@ ALWAYS return valid JSON. Numbers as number, not string.`
     tip: str(webData.tip),
     bestStoreItems: cleanItems,
     alternatives: cleanAlts,
+    dataSource: usedLiveSearch ? 'live_web_search' : 'estimate',
+    sources: cleanSources,
   }
 
   return { data, source: usedSource }

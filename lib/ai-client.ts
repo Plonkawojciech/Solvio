@@ -61,6 +61,34 @@ export function getAIClient(): AIClient | null {
   return cached
 }
 
+let webSearchCached: AIClient | null = null
+
+/**
+ * Returns an OpenAI-direct client even when Azure env vars are set,
+ * because **Azure does NOT support the Responses API / web_search_preview
+ * tool**. Routes that depend on live web data (promotions, shopping list
+ * optimizer, audit, prices) must call this — the default `getAIClient()`
+ * prefers Azure for cost, but Azure can only do plain chat completions
+ * which means the model hallucinates "current week's promotions" from
+ * training data.
+ *
+ * Returns null if `OPENAI_API_KEY` is not configured. Callers should
+ * fall back to `getAIClient()` and accept lower data quality, or
+ * surface an error to the user explaining that promotions/audits need
+ * live data.
+ */
+export function getAIClientForWebSearch(): AIClient | null {
+  if (webSearchCached) return webSearchCached
+  if (!OPENAI_KEY) return null
+  const client = new OpenAI({ apiKey: OPENAI_KEY })
+  webSearchCached = { client, backend: 'openai', model: 'gpt-4o-mini' }
+  return webSearchCached
+}
+
 export function hasAI(): boolean {
   return getAIClient() !== null
+}
+
+export function hasWebSearchAI(): boolean {
+  return getAIClientForWebSearch() !== null
 }

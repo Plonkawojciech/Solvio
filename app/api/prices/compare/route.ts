@@ -3,7 +3,7 @@ import { auth } from '@/lib/auth-compat'
 import { db } from '@/lib/db'
 import { receipts, priceComparisons } from '@/lib/db/schema'
 import { eq, desc, gte, and } from 'drizzle-orm'
-import { getAIClient } from '@/lib/ai-client'
+import { getAIClient, getAIClientForWebSearch } from '@/lib/ai-client'
 import { rateLimit } from '@/lib/rate-limit'
 import { PRICE_COMPARE_STORES } from '@/lib/stores'
 import { z } from 'zod'
@@ -166,17 +166,22 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'AI service not configured' }, { status: 503 })
     }
 
-    // Web search only works with OpenAI direct (not Azure)
-    if (ai.backend === 'openai') {
+    // Web search via OpenAI Responses API. Force-OpenAI even when the
+    // default `getAIClient()` resolves to Azure — Azure does not
+    // support the Responses API, so without this guard we'd silently
+    // skip web search and fall back to model-estimate prices.
+    const webSearchAI = getAIClientForWebSearch()
+    if (webSearchAI) {
       try {
-        const webSearchCall = ai.client.responses.create({
-          model: ai.model,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const webSearchCall = (webSearchAI.client as any).responses.create({
+          model: webSearchAI.model,
           tools: [{ type: 'web_search_preview' }],
           instructions: systemPrompt,
           input: userPrompt,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } as any)
-        const webSearchTimeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), 10000))
+        const webSearchTimeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), 30000))
         const response = await Promise.race([webSearchCall, webSearchTimeout])
         if (response) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -250,6 +255,9 @@ export async function POST(req: NextRequest) {
       tip: result.tip || '',
       productsAnalyzed: topProducts.length,
       isEstimated,
+      // Mirror of `dataSource` on other endpoints — drives the iOS
+      // "ŻYWE / ESTYMATA" badge consistently.
+      dataSource: isEstimated ? 'estimate' : 'live_web_search',
     }
 
     // Persist into store_intel for cross-fleet & cold-start instant

@@ -350,6 +350,10 @@ struct OkazjeHubView: View {
                             .font(AppFont.caption)
                             .foregroundColor(Theme.mutedForeground)
                     }
+                    // ŻYWE / ESTYMATA badge — tells the user whether the
+                    // backend used live web search (real leaflet data)
+                    // or fell back to a model estimate (Azure-only).
+                    dataSourceBadge(for: r.dataSource)
                 }
                 Spacer()
                 NBIconBadge(systemImage: "checkmark.seal.fill", tint: Theme.success, size: 36)
@@ -391,20 +395,39 @@ struct OkazjeHubView: View {
                 NBDivider()
                 VStack(spacing: 0) {
                     ForEach(Array(r.bestStoreItems.enumerated()), id: \.offset) { idx, line in
-                        HStack {
-                            Text(line.name)
-                                .font(AppFont.body)
-                                .foregroundColor(Theme.foreground)
-                                .lineLimit(1)
-                            if let qty = line.qty, qty > 0 {
-                                Text(String(format: "× %g", qty))
-                                    .font(AppFont.mono(11))
-                                    .foregroundColor(Theme.mutedForeground)
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack {
+                                Text(line.name)
+                                    .font(AppFont.body)
+                                    .foregroundColor(Theme.foreground)
+                                    .lineLimit(1)
+                                if let qty = line.qty, qty > 0 {
+                                    Text(String(format: "× %g", qty))
+                                        .font(AppFont.mono(11))
+                                        .foregroundColor(Theme.mutedForeground)
+                                }
+                                Spacer()
+                                Text(Fmt.amount(line.total, currency: r.currency))
+                                    .font(AppFont.mono(13))
+                                    .foregroundColor(Theme.foreground)
                             }
-                            Spacer()
-                            Text(Fmt.amount(line.total, currency: r.currency))
-                                .font(AppFont.mono(13))
-                                .foregroundColor(Theme.foreground)
+                            // Promo chip (1+1, -30%, app_only…) — visible
+                            // only when AI flagged the line as non-regular.
+                            if let chip = promoChip(for: line.promoType) {
+                                HStack(spacing: 4) {
+                                    NBTag(
+                                        text: chip,
+                                        background: Theme.success.opacity(0.18),
+                                        foreground: Theme.success
+                                    )
+                                    if let desc = line.promoDescription, !desc.isEmpty {
+                                        Text(desc)
+                                            .font(AppFont.caption)
+                                            .foregroundColor(Theme.mutedForeground)
+                                            .lineLimit(1)
+                                    }
+                                }
+                            }
                         }
                         .padding(.vertical, 6)
                         if idx < r.bestStoreItems.count - 1 {
@@ -452,6 +475,36 @@ struct OkazjeHubView: View {
                     RoundedRectangle(cornerRadius: Theme.Radius.md)
                         .stroke(Theme.warning, lineWidth: Theme.Border.widthThin)
                 )
+            }
+
+            // Sources — links to the leaflet pages the AI cited.
+            // Tapping opens Safari. Only visible when the run actually
+            // used live web search; "estimate" runs have an empty
+            // sources array so this section is hidden.
+            if let sources = r.sources, !sources.isEmpty {
+                NBDivider()
+                Text(locale.t("shoppingList.sourcesTitle"))
+                    .font(AppFont.mono(10))
+                    .tracking(1)
+                    .foregroundColor(Theme.mutedForeground)
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(Array(sources.prefix(5).enumerated()), id: \.offset) { _, urlStr in
+                        if let url = URL(string: urlStr) {
+                            Link(destination: url) {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "newspaper")
+                                        .font(.system(size: 10, weight: .semibold))
+                                        .foregroundColor(Theme.foreground)
+                                    Text(prettifyHost(urlStr))
+                                        .font(AppFont.mono(11))
+                                        .foregroundColor(Theme.foreground)
+                                        .underline()
+                                        .lineLimit(1)
+                                }
+                            }
+                        }
+                    }
+                }
             }
 
             // Freshness footer — show the timestamp the prices were
@@ -514,6 +567,53 @@ struct OkazjeHubView: View {
         case "stale": return Theme.warning
         default:      return Theme.foreground
         }
+    }
+
+    /// Badge: ŻYWE (zielone) gdy backend miał web search, ESTYMATA
+    /// (warning) gdy fallback bez web. Pokazujemy nawet gdy
+    /// `dataSource` jest nil (starszy backend) — wtedy badge się chowa.
+    @ViewBuilder
+    private func dataSourceBadge(for value: String?) -> some View {
+        switch value {
+        case "live_web_search":
+            NBTag(
+                text: locale.t("shoppingList.badgeLive"),
+                background: Theme.success.opacity(0.15),
+                foreground: Theme.success
+            )
+        case "estimate":
+            NBTag(
+                text: locale.t("shoppingList.badgeEstimate"),
+                background: Theme.warning.opacity(0.15),
+                foreground: Theme.warning
+            )
+        default:
+            EmptyView()
+        }
+    }
+
+    /// Convert backend promo-type string to a short user-facing chip
+    /// label. Returns nil for "regular" (chip is hidden in that case).
+    private func promoChip(for type: String?) -> String? {
+        guard let raw = type?.lowercased(), raw != "regular" else { return nil }
+        switch raw {
+        case "1+1":              return "1+1"
+        case "2za1":             return "2 ZA 1"
+        case "3za2":             return "3 ZA 2"
+        case "percent":          return locale.t("shoppingList.promoPercent")
+        case "buy_x_get_y":      return locale.t("shoppingList.promoMultibuy")
+        case "app_only":         return locale.t("shoppingList.promoApp")
+        case "multipack_price":  return locale.t("shoppingList.promoMultipack")
+        default:                 return locale.t("shoppingList.promoGeneric")
+        }
+    }
+
+    /// Strip a URL down to its host (or first path segment) for use as
+    /// a friendly inline link label — full URLs are unreadable in a
+    /// narrow card.
+    private func prettifyHost(_ urlStr: String) -> String {
+        guard let url = URL(string: urlStr), let host = url.host else { return urlStr }
+        return host.replacingOccurrences(of: "www.", with: "")
     }
 
     // MARK: - Launcher tiles

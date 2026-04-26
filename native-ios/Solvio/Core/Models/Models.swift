@@ -998,13 +998,25 @@ struct PromoOffer: Decodable, Identifiable, Hashable {
     let category: String?
     let matchesPurchases: Bool?
     /// Optional URL to the chain's official weekly leaflet (e.g.
-    /// `https://www.lidl.pl/c/gazetka-promocyjna/...`). Backend backfills
-    /// this from a static map when the AI didn't return one.
+    /// `https://www.lidl.pl/c/gazetka-promocyjna/...`). Backend now
+    /// requires this from the AI's web_search result — promotions
+    /// without a verifiable leafletUrl are dropped server-side.
     let leafletUrl: String?
     /// Optional direct deep-link to the specific product/promo page if
     /// the AI was confident enough to provide one. Often null — leaflet
     /// URL is the safer fallback.
     let dealUrl: String?
+    /// "regular" | "1+1" | "2za1" | "3za2" | "percent" | "buy_x_get_y"
+    /// | "app_only" | "multipack_price" — drives a badge on the
+    /// promo card. Optional for backwards-compat with older backend.
+    let promoType: String?
+    /// Human-readable promo description, e.g. "kup 3, zapłać za 2".
+    let promoDescription: String?
+    /// URL the AI cited as the source for this specific promotion
+    /// (the leaflet page where it found the price). Required by the
+    /// new backend — entries without it are dropped before reaching
+    /// iOS.
+    let sourceUrl: String?
 }
 
 struct WeeklySummary: Decodable, Hashable {
@@ -1023,6 +1035,14 @@ struct PromotionsResponse: Decodable {
     let personalizedDeals: [PromoOffer]
     let totalPotentialSavings: Double?
     let weeklySummary: WeeklySummary?
+    /// "live_web_search" or "estimate" — drives the iOS badge.
+    let dataSource: String?
+    /// Aggregated leaflet URLs across all returned promotions.
+    let sources: [String]?
+    /// Server cache freshness — same fields as ShoppingOptimizeResult.
+    let fetchedAt: String?
+    let freshUntil: String?
+    let cacheState: String?
 }
 
 // MARK: - Shopping list optimizer (Okazje hub)
@@ -1050,6 +1070,15 @@ struct ShoppingOptimizeResult: Decodable {
         let qty: Double?
         let unitPrice: Double?
         let total: Double
+        /// "regular" | "1+1" | "2za1" | "3za2" | "percent" | "buy_x_get_y"
+        /// | "app_only" | "multipack_price" — drives the iOS promo
+        /// badge ("PROMOCJA", "1+1", "-30%"). Backend whitelists the
+        /// value before sending so we can switch on it safely.
+        let promoType: String?
+        /// Human-readable promotion description, e.g.
+        /// "kup 2 — drugie 50% taniej". Optional; present only for
+        /// non-regular `promoType` values.
+        let promoDescription: String?
     }
     struct Alternative: Decodable {
         let store: String
@@ -1073,4 +1102,14 @@ struct ShoppingOptimizeResult: Decodable {
     let fetchedAt: String?
     let freshUntil: String?
     let cacheState: String?     // "fresh" | "stale" | "miss"
+    /// "live_web_search" — AI actually queried current chain pages.
+    /// "estimate"        — AI generated from training data only
+    ///                     (Azure-only backend, no OPENAI_API_KEY).
+    /// Drives the "ŻYWE / ESTYMATA" badge on the result card so the
+    /// user knows whether to trust the prices.
+    let dataSource: String?
+    /// URLs the AI cited as sources for the prices. Empty when
+    /// `dataSource == "estimate"`. iOS shows them as small links
+    /// under the result so the user can verify the leaflet.
+    let sources: [String]?
 }

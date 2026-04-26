@@ -2,7 +2,7 @@ import { auth } from '@/lib/auth-compat'
 import { NextResponse } from 'next/server'
 import { db, receipts, weeklySummaries, expenses } from '@/lib/db'
 import { eq, desc } from 'drizzle-orm'
-import { getAIClient } from '@/lib/ai-client'
+import { getAIClient, getAIClientForWebSearch } from '@/lib/ai-client'
 import { rateLimit } from '@/lib/rate-limit'
 import { PRICE_COMPARE_STORES } from '@/lib/stores'
 import { readAnyIntel, readIntel, writeIntel } from '@/lib/store-intel'
@@ -10,27 +10,17 @@ import crypto from 'crypto'
 
 const STORES = PRICE_COMPARE_STORES
 
-// Static map of store → main weekly leaflet URL. The AI rarely knows
-// current /promocje URLs for sure; the canonical chain landing page is
-// safer than letting the model invent broken links. Used both inside
-// the prompt (so the AI gets a hint) and as a backfill in withIds when
-// the AI returns null/missing leafletUrl.
-const LEAFLET_URLS: Record<string, string> = {
-  'Lidl': 'https://www.lidl.pl/c/gazetka-promocyjna/s10005637',
-  'Biedronka': 'https://www.biedronka.pl/pl/gazetki',
-  'Kaufland': 'https://www.kaufland.pl/oferta/aktualna-oferta-tygodniowa.html',
-  'Auchan': 'https://www.auchan.pl/pl/oferta-tygodnia.html',
-  'Carrefour': 'https://www.carrefour.pl/promocje',
-  'Tesco': 'https://www.tesco.pl/gazetka',
-  'Netto': 'https://www.netto.pl/gazetka',
-  'Aldi': 'https://www.aldi.pl/gazetka.html',
-  'Dino': 'https://grupadino.pl/gazetki/',
-  'Stokrotka': 'https://www.stokrotka.pl/gazetka',
-  'Polomarket': 'https://www.polomarket.pl/oferta-handlowa/gazetki',
-  'Żabka': 'https://www.zabka.pl/promocje',
-  'Rossmann': 'https://www.rossmann.pl/promocje',
-  'Hebe': 'https://www.hebe.pl/promocje',
-}
+// LEAFLET_URLS used to be a hardcoded map of chain → leaflet URL — but
+// chain leaflet pages move around (Lidl rotates `s10005637`-style IDs,
+// Carrefour reorganises `/promocje` into `/gazetki/...`), so a static
+// map goes stale and the AI returned dead links to users.
+//
+// Now: when web search is available (OpenAI Responses API), the AI
+// itself looks up the current leaflet page and cites it under the
+// promotion. We don't ship a fallback URL — better to omit a link than
+// to surface a stale one. The cron `/api/cron/refresh-intel` still
+// pre-warms a static map for the shopping list optimizer's prompt
+// hints, but that map is internal-only and not surfaced to the client.
 
 // Persistent cache backed by `store_intel` (kind: 'promotions').
 // Survives serverless cold-starts and is shared across the fleet.
@@ -140,140 +130,196 @@ export async function POST(request: Request) {
     weekAhead.setDate(today.getDate() + 7)
     const weekAheadStr = weekAhead.toISOString().slice(0, 10)
 
-    const leafletHints = STORES.map(s => `${s}: ${LEAFLET_URLS[s] || `(brak linku — wpisz null)`}`).join('\n')
-
-    // Use OpenAI to search for current promotions
+    // Prompt instructs the AI to use web_search_preview and cite live
+    // chain leaflet pages. When web search is unavailable (Azure-only
+    // backend), the AI is told NOT to fabricate promotions — return
+    // an empty list instead. iOS surfaces this as the empty state.
     const prompt = isPolish
-      ? `Jesteś ekspertem od polskich promocji spożywczych. Na podstawie historii zakupów użytkownika, zaproponuj TYPOWE promocje i oszczędności w tych sklepach: ${STORES.join(', ')}.
+      ? `Jesteś asystentem zakupowym z dostępem do wyszukiwarki internetowej. Dziś jest ${todayStr}.
 
-WAŻNE: To są sugestie oparte na typowych cenach i promocjach. Nie masz dostępu do bieżących gazetek — daty validFrom/validUntil mają mieścić się W BIEŻĄCYM TYGODNIU (od ${todayStr} do ${weekAheadStr}), bo gazetki sieci handlowych są tygodniowe.
+ZADANIE: Użyj web_search żeby znaleźć AKTUALNE promocje TEGO TYGODNIA w polskich sieciach: ${STORES.join(', ')}.
 
-Historia zakupów użytkownika (produkty które kupuje):
-${purchaseHistory.join(', ')}
+JAK:
+1. Wyszukaj "gazetka [chain] aktualna ${todayStr.slice(0,7)}" lub "promocje [chain] tydzień".
+2. Otwórz oficjalne strony: lidl.pl/c/gazetka, biedronka.pl/pl/gazetki, kaufland.pl/oferta, auchan.pl/oferta-tygodnia, carrefour.pl/promocje, dino.pl, stokrotka.pl, netto.pl/gazetka, aldi.pl/gazetka.
+3. Cytuj URL-e z których wziąłeś promocje (pole "sourceUrl" per promocja MUSI być prawdziwym URL z gazetki).
+4. Promocje wielosztukowe (1+1, 2za1, "kup 3 zapłać za 2", "2 za 12 zł") MUSZĄ być oznaczone — to często znacząca oszczędność.
+5. Promocje z aplikacji sieci (Lidl Plus, Biedronka aplikacja, Kaufland Card) — uwzględnij gdy widnieją w gazetce.
 
-Sklepy w których kupuje: ${uniqueVendors.join(', ')}
+Historia zakupów użytkownika: ${purchaseHistory.length > 0 ? purchaseHistory.join(', ') : '(brak — pokaż popularne promocje)'}
+Sklepy: ${uniqueVendors.length > 0 ? uniqueVendors.join(', ') : '(dowolne)'}
 
-LINKI DO GAZETEK (użyj ich jako "leafletUrl" — to oficjalne strony z gazetkami, NIE wymyślaj innych URL-i):
-${leafletHints}
+Zwróć WYŁĄCZNIE JSON, bez markdown:
 
-Zwróć DOKŁADNIE w formacie JSON (tylko JSON, bez markdown):
 {
   "promotions": [
     {
-      "id": "unikalne-id",
-      "store": "nazwa sklepu",
-      "productName": "pełna, czytelna nazwa produktu (np. \\"Chleb żytnio-orkiszowy\\", nie \\"ChlezytnOrkisz\\")",
+      "id": "promo-1",
+      "store": "Lidl",
+      "productName": "Pełna nazwa produktu (np. Mleko Łaciate 2% 1L)",
       "regularPrice": 5.99,
       "promoPrice": 3.49,
       "discount": "-42%",
       "currency": "${currency}",
       "validFrom": "${todayStr}",
       "validUntil": "${weekAheadStr}",
-      "category": "kategoria produktu",
-      "matchesPurchases": true,
-      "leafletUrl": "https://...",
-      "dealUrl": null
+      "category": "Nabiał",
+      "matchesPurchases": false,
+      "leafletUrl": "https://www.lidl.pl/c/gazetka-promocyjna/...",
+      "dealUrl": null,
+      "promoType": "regular",
+      "promoDescription": null,
+      "sourceUrl": "https://www.lidl.pl/c/gazetka-promocyjna/..."
     }
   ],
-  "personalizedDeals": [...te same pola, ale tylko produkty pasujące do historii zakupów...],
-  "totalPotentialSavings": 45.50
+  "personalizedDeals": [...te same pola, tylko produkty pasujące do historii zakupów...],
+  "totalPotentialSavings": 45.50,
+  "sources": [
+    "https://www.lidl.pl/c/gazetka-promocyjna/...",
+    "https://www.biedronka.pl/pl/gazetki/..."
+  ]
 }
 
-ZASADY:
-- "leafletUrl" → użyj URL-a z mapy powyżej dla danego sklepu, lub null jeśli sklep nie ma w mapie.
-- "dealUrl" → konkretny link do produktu/promocji jeśli go znasz (np. lidl.pl/p/produkt-xxx); jeśli nie jesteś pewien, daj null.
-- "validUntil" NIGDY nie może być w przeszłości (przed ${todayStr}).
-- Nazwy produktów muszą być pełne i czytelne po polsku, nie skróty z paragonu.
+KRYTYCZNE:
+- KAŻDA promocja MUSI mieć "sourceUrl" — URL gazetki/strony skąd wziąłeś dane. Bez sourceUrl pomiń promocję.
+- "leafletUrl" → URL do pełnej gazetki sieci (najczęściej landing page chain'a).
+- "dealUrl" → bezpośredni URL do strony produktu jeśli dostępny w gazetce.
+- "validFrom"/"validUntil" → DATY gazetki widoczne na stronie. Nigdy daty z przeszłości.
+- "promoType": "regular" | "1+1" | "2za1" | "3za2" | "percent" | "buy_x_get_y" | "app_only" | "multipack_price"
+- "promoDescription" → human-readable opis dla wielosztukowych (np. "kup 2, zapłać za 1").
+- Jeśli web search jest NIEDOSTĘPNY albo nie znajdziesz konkretnej promocji — ZWRÓĆ EMPTY ARRAY, nie wymyślaj.
 
-Zwróć 15-25 typowych promocji. Oznacz matchesPurchases=true dla produktów podobnych do historii zakupów.`
-      : `You are a Polish grocery promotion expert. Based on the user's purchase history, suggest TYPICAL promotions and savings at these stores: ${STORES.join(', ')}.
+Zwróć max 12 promocji ale TYLKO te z weryfikowalnym sourceUrl.`
+      : `You are a shopping assistant with access to web search. Today is ${todayStr}.
 
-IMPORTANT: These are suggestions based on typical prices and promotions. You do not have access to current leaflets — validFrom/validUntil dates must fall within THIS WEEK (from ${todayStr} to ${weekAheadStr}), because retail leaflets are weekly.
+TASK: Use web_search to find CURRENT promotions THIS WEEK at Polish chains: ${STORES.join(', ')}.
 
-User's purchase history (products they buy):
-${purchaseHistory.join(', ')}
+HOW:
+1. Search "gazetka [chain] aktualna ${todayStr.slice(0,7)}" or "promocje [chain] week".
+2. Open official pages: lidl.pl/c/gazetka, biedronka.pl/pl/gazetki, kaufland.pl/oferta, auchan.pl/oferta-tygodnia, carrefour.pl/promocje, dino.pl, stokrotka.pl, netto.pl/gazetka, aldi.pl/gazetka.
+3. Cite URLs you pulled promotions from (per-promotion "sourceUrl" MUST be a real leaflet URL).
+4. Multipack promotions (1+1, 2-for-1, "buy 3 pay for 2", "2 for 12 PLN") MUST be flagged.
+5. App-exclusive promotions (Lidl Plus, Biedronka app, Kaufland Card) — include if visible in the leaflet.
 
-Stores they shop at: ${uniqueVendors.join(', ')}
+User's purchase history: ${purchaseHistory.length > 0 ? purchaseHistory.join(', ') : '(empty — show popular)'}
+Stores: ${uniqueVendors.length > 0 ? uniqueVendors.join(', ') : '(any)'}
 
-LEAFLET LINKS (use these as "leafletUrl" — official chain leaflet pages, do NOT invent other URLs):
-${leafletHints}
+Return ONLY JSON, no markdown:
 
-Return EXACTLY in JSON format (only JSON, no markdown):
 {
   "promotions": [
     {
-      "id": "unique-id",
-      "store": "store name",
-      "productName": "full readable product name (e.g. \\"Rye-spelt bread\\", not \\"ChlezytnOrkisz\\")",
+      "id": "promo-1",
+      "store": "Lidl",
+      "productName": "Full product name (e.g. Łaciate 2% Milk 1L)",
       "regularPrice": 5.99,
       "promoPrice": 3.49,
       "discount": "-42%",
       "currency": "${currency}",
       "validFrom": "${todayStr}",
       "validUntil": "${weekAheadStr}",
-      "category": "product category",
-      "matchesPurchases": true,
-      "leafletUrl": "https://...",
-      "dealUrl": null
+      "category": "Dairy",
+      "matchesPurchases": false,
+      "leafletUrl": "https://www.lidl.pl/c/gazetka-promocyjna/...",
+      "dealUrl": null,
+      "promoType": "regular",
+      "promoDescription": null,
+      "sourceUrl": "https://www.lidl.pl/c/gazetka-promocyjna/..."
     }
   ],
-  "personalizedDeals": [...same fields, but only products matching purchase history...],
-  "totalPotentialSavings": 45.50
+  "personalizedDeals": [...same fields, products matching purchase history...],
+  "totalPotentialSavings": 45.50,
+  "sources": ["https://www.lidl.pl/c/gazetka-promocyjna/..."]
 }
 
-RULES:
-- "leafletUrl" → use the URL from the map above for that store, or null if store not listed.
-- "dealUrl" → specific product/promo link if you know it (e.g. lidl.pl/p/product-xxx); if unsure, return null.
-- "validUntil" must NEVER be in the past (before ${todayStr}).
-- Product names must be full, readable, in correct Polish — never POS-truncated abbreviations.
+CRITICAL:
+- EVERY promotion MUST have "sourceUrl" — leaflet URL you pulled it from. Without sourceUrl, skip the promotion.
+- "promoType": "regular" | "1+1" | "2za1" | "3za2" | "percent" | "buy_x_get_y" | "app_only" | "multipack_price"
+- If web_search is unavailable or you can't find verifiable promotions — RETURN EMPTY ARRAY, don't fabricate.
 
-Return 8-12 typical promotions. Mark matchesPurchases=true for products similar to purchase history.`
+Return max 12 promotions but ONLY those with verifiable sourceUrl.`
 
-    const completion = await ai.client.chat.completions.create({
-      model: ai.model,
-      messages: [
-        { role: 'system', content: 'You are a helpful assistant that returns only valid JSON.' },
-        { role: 'user', content: prompt },
-      ],
-      temperature: 0.5,
-      // Cut from 4000 → 2200. We ask for 8-12 promotions instead of 15-25;
-      // cached for 24h anyway, so user sees fewer but the call is ~2× faster.
-      max_tokens: 2200,
-      response_format: { type: 'json_object' },
-    })
-
-    const content = completion.choices[0]?.message?.content || '{}'
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let result: any
-    try {
-      result = JSON.parse(content)
-    } catch {
-      result = { promotions: [], personalizedDeals: [], totalPotentialSavings: 0 }
-    }
-
-    // Add IDs if missing + backfill leafletUrl from the static map when
-    // the AI returned null. We only fall back if the model didn't
-    // provide a URL itself — but if it did, we accept it as-is. Also
-    // forward dealUrl untouched so the iOS card can render an "open
-    // deal" link when the AI knows a specific URL.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const withIds = (arr: any[]) =>
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (arr || []).map((p: any, i: number) => {
-        const storeName = typeof p.store === 'string' ? p.store : ''
-        // Try exact match first, then case-insensitive, then partial.
-        const fallbackLeaflet = LEAFLET_URLS[storeName]
-          || Object.entries(LEAFLET_URLS).find(([k]) => k.toLowerCase() === storeName.toLowerCase())?.[1]
-          || Object.entries(LEAFLET_URLS).find(([k]) => storeName.toLowerCase().includes(k.toLowerCase()))?.[1]
-          || null
-        return {
-          ...p,
-          id: p.id || `promo-${Date.now()}-${i}`,
-          currency: p.currency || currency,
-          leafletUrl: p.leafletUrl || fallbackLeaflet,
-          dealUrl: p.dealUrl || null,
+    // Prefer OpenAI Responses API (web_search_preview). If not available,
+    // fall back to whichever client is configured but tell the user the
+    // result is an estimate (no live data).
+    let result: { promotions?: unknown[]; personalizedDeals?: unknown[]; totalPotentialSavings?: number; sources?: unknown[] } = {}
+    let dataSource: 'live_web_search' | 'estimate' = 'estimate'
+    const webSearchAI = getAIClientForWebSearch()
+    if (webSearchAI) {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const webSearchCall = (webSearchAI.client as any).responses.create({
+          model: webSearchAI.model,
+          tools: [{ type: 'web_search_preview' }],
+          input: prompt,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        } as any)
+        const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), 30000))
+        const response = await Promise.race([webSearchCall, timeout])
+        if (response) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const rawText = (response as any).output_text || ''
+          const jsonMatch = rawText.match(/\{[\s\S]*\}/)
+          if (jsonMatch) {
+            result = JSON.parse(jsonMatch[0])
+            dataSource = 'live_web_search'
+          }
         }
+      } catch {
+        // fall through
+      }
+    }
+    if (!result || !Array.isArray(result.promotions)) {
+      // Web search unavailable — try plain chat. The prompt tells the
+      // model to return empty arrays when it can't verify, so this
+      // path mostly produces an empty list (which iOS shows as "no
+      // current promos found" rather than fake offers).
+      const completion = await ai.client.chat.completions.create({
+        model: ai.model,
+        messages: [
+          { role: 'system', content: 'You are a helpful assistant that returns only valid JSON. NEVER fabricate promotion data.' },
+          { role: 'user', content: prompt },
+        ],
+        temperature: 0.3,
+        max_tokens: 2200,
+        response_format: { type: 'json_object' },
       })
+      const content = completion.choices[0]?.message?.content || '{}'
+      try {
+        result = JSON.parse(content)
+      } catch {
+        result = { promotions: [], personalizedDeals: [], totalPotentialSavings: 0 }
+      }
+      dataSource = 'estimate'
+    }
+
+    // Drop any promotion without a verifiable sourceUrl. This is the
+    // single most important check — without it the model can fabricate
+    // ad-hoc deals that look real but aren't. We require an http(s) URL
+    // and accept it as-is (HEAD-checking every URL would slow the
+    // response and isn't strictly necessary for credibility — the user
+    // can click and see the leaflet for themselves).
+    type RawPromo = Record<string, unknown>
+    const withIds = (arr: unknown[]) =>
+      (arr || [])
+        .filter((p): p is RawPromo => typeof p === 'object' && p !== null && typeof (p as RawPromo).sourceUrl === 'string' && /^https?:\/\//i.test((p as RawPromo).sourceUrl as string))
+        .map((p, i) => {
+          const sourceUrl = p.sourceUrl as string
+          const leafletUrlRaw = p.leafletUrl
+          const leafletUrl = typeof leafletUrlRaw === 'string' && /^https?:\/\//i.test(leafletUrlRaw) ? leafletUrlRaw : sourceUrl
+          const dealUrlRaw = p.dealUrl
+          const dealUrl = typeof dealUrlRaw === 'string' && /^https?:\/\//i.test(dealUrlRaw) ? dealUrlRaw : null
+          return {
+            ...p,
+            id: typeof p.id === 'string' ? p.id : `promo-${Date.now()}-${i}`,
+            currency: typeof p.currency === 'string' ? p.currency : currency,
+            sourceUrl,
+            leafletUrl,
+            dealUrl,
+            promoType: typeof p.promoType === 'string' ? p.promoType : 'regular',
+            promoDescription: typeof p.promoDescription === 'string' ? p.promoDescription : null,
+          }
+        })
 
     // Try to get latest weekly summary
     let weeklySummary = null
@@ -289,11 +335,28 @@ Return 8-12 typical promotions. Mark matchesPurchases=true for products similar 
       // Table might not exist yet
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const cleanPromos = withIds((result.promotions as unknown[]) ?? [])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const cleanPersonal = withIds((result.personalizedDeals as unknown[]) ?? [])
+
+    // Aggregate sources from per-promotion sourceUrl (deduped).
+    const promoUrls = [...cleanPromos, ...cleanPersonal].map(p => p.sourceUrl)
+    const declaredSources = Array.isArray(result.sources)
+      ? (result.sources as unknown[]).filter((s): s is string => typeof s === 'string' && /^https?:\/\//i.test(s))
+      : []
+    const sources = Array.from(new Set([...declaredSources, ...promoUrls])).slice(0, 8)
+
     const payload = {
-      promotions: withIds(result.promotions),
-      personalizedDeals: withIds(result.personalizedDeals),
+      promotions: cleanPromos,
+      personalizedDeals: cleanPersonal,
       totalPotentialSavings: result.totalPotentialSavings || 0,
       weeklySummary,
+      // Tells iOS whether this run actually used live web data or fell
+      // back to a model estimate. Drives the "ŻYWE DANE / ESTYMATA"
+      // badge on the iOS Okazje hub trending cards.
+      dataSource,
+      sources: dataSource === 'live_web_search' ? sources : [],
     }
 
     // Persist into store_intel so subsequent requests across the

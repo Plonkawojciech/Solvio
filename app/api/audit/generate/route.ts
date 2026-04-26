@@ -2,7 +2,7 @@ import { auth } from '@/lib/auth-compat'
 import { NextResponse } from 'next/server'
 import { db, expenses, receipts, categories } from '@/lib/db'
 import { eq, gte, and, desc } from 'drizzle-orm'
-import { getAIClient } from '@/lib/ai-client'
+import { getAIClient, getAIClientForWebSearch } from '@/lib/ai-client'
 import { rateLimit } from '@/lib/rate-limit'
 import { GROCERY_STORES } from '@/lib/stores'
 import { readAnyIntel, readIntel, writeIntel } from '@/lib/store-intel'
@@ -238,17 +238,24 @@ Respond ONLY in JSON format (no markdown, no backticks):
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let webData: any = null
+    let webSearchUsed = false
 
-    // Web search only available with OpenAI direct (Azure doesn't support Responses API)
-    if (ai.backend === 'openai') {
+    // Force-OpenAI for the web_search_preview path. The default
+    // `getAIClient()` prefers Azure (priority), but Azure does NOT
+    // support the Responses API — so any audit running on Azure was
+    // silently falling back to plain chat completions, which means
+    // "current promotions" were hallucinated from training data.
+    const webSearchAI = getAIClientForWebSearch()
+    if (webSearchAI) {
       try {
-        const webSearchCall = ai.client.responses.create({
-          model: ai.model,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const webSearchCall = (webSearchAI.client as any).responses.create({
+          model: webSearchAI.model,
           tools: [{ type: 'web_search_preview' }],
           input: searchPrompt,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } as any)
-        const webSearchTimeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), 15000))
+        const webSearchTimeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), 30000))
         const webResponse = await Promise.race([webSearchCall, webSearchTimeout])
         if (webResponse) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -256,6 +263,7 @@ Respond ONLY in JSON format (no markdown, no backticks):
           const jsonMatch = rawText.match(/\{[\s\S]*\}/)
           if (jsonMatch) {
             webData = JSON.parse(jsonMatch[0])
+            webSearchUsed = true
           }
         }
       } catch {
@@ -307,7 +315,9 @@ Respond ONLY in JSON format (no markdown, no backticks):
       personalMessage: webData.personalMessage || null,
       topTip: webData.topTip || null,
       aiSummary,
-      webSearchUsed: true,
+      webSearchUsed,
+      // iOS uses this to badge the audit as "ŻYWE" or "ESTYMATA".
+      dataSource: webSearchUsed ? 'live_web_search' : 'estimate',
     }
 
     // Persist into store_intel — cross-fleet & cold-start safe.
