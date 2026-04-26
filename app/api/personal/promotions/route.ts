@@ -5,6 +5,8 @@ import { eq, desc } from 'drizzle-orm'
 import { getAIClient } from '@/lib/ai-client'
 import { rateLimit } from '@/lib/rate-limit'
 import { PRICE_COMPARE_STORES } from '@/lib/stores'
+import { readAnyIntel, readIntel, writeIntel } from '@/lib/store-intel'
+import crypto from 'crypto'
 
 const STORES = PRICE_COMPARE_STORES
 
@@ -30,13 +32,13 @@ const LEAFLET_URLS: Record<string, string> = {
   'Hebe': 'https://www.hebe.pl/promocje',
 }
 
-// Module-level in-memory cache. Survives across warm requests on the
-// same Vercel function instance (~5min idle). Cold starts re-compute,
-// but that's still much better than always re-running a 15-30s AI call.
-// Keyed by `${userId}:${lang}:${currency}` so identical payloads dedupe.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const promoCache = new Map<string, { result: any; expiresAt: number }>()
-const PROMO_TTL_MS = 24 * 60 * 60 * 1000 // 24h — promotions are weekly anyway
+// Persistent cache backed by `store_intel` (kind: 'promotions').
+// Survives serverless cold-starts and is shared across the fleet.
+// Hard TTL: 24h (leaflets are weekly, but we want a fresh-ish feel);
+// revalidate-after: 6h (so a logged-in user once a day sees a quick
+// stale-served + bg-refresh experience).
+const PROMO_TTL_S = 24 * 60 * 60
+const PROMO_REVALIDATE_S = 6 * 60 * 60
 
 export async function POST(request: Request) {
   const { userId } = await auth()
@@ -58,19 +60,41 @@ export async function POST(request: Request) {
   const { lang = 'pl', currency = 'PLN', force = false } = body
   const isPolish = lang === 'pl'
 
-  // Serve cached payload if still warm. Saves 15-30s + an AI call.
-  const cacheKey = `${userId}:${lang}:${currency}`
-  if (!force) {
-    const cached = promoCache.get(cacheKey)
-    if (cached && cached.expiresAt > Date.now()) {
-      return NextResponse.json(cached.result, {
-        headers: { 'X-Cache': 'HIT', 'Cache-Control': 'private, max-age=300' },
+  // Cache key includes userId because the personalised section
+  // depends on the user's purchase history. Generic promotions could
+  // dedupe across users, but splitting that out is a follow-up — for
+  // now we accept some redundancy in exchange for a single response.
+  const intelKey = crypto.createHash('sha256')
+    .update(`${userId}:${lang}:${currency}`)
+    .digest('hex')
+    .slice(0, 48)
+
+  // Force refresh: skip the SWR helper and write a fresh row directly.
+  // Otherwise: return cached if fresh, return cached + bg-refresh if
+  // stale, fetch synchronously on miss.
+  if (force) {
+    // Drop the row so the next read is a hard miss.
+    // (writeIntel below will replace it with a fresh result.)
+  } else {
+    const cached = await readIntel<unknown>('promotions', intelKey).catch(() => null)
+    if (cached) {
+      return NextResponse.json({
+        ...(cached.data as object),
+        fetchedAt: cached.fetchedAt.toISOString(),
+        freshUntil: cached.expiresAt.toISOString(),
+        cacheState: cached.state,
+      }, {
+        headers: {
+          'X-Cache': cached.state.toUpperCase(),
+          'X-Fetched-At': cached.fetchedAt.toISOString(),
+          'Cache-Control': 'private, max-age=300',
+        },
       })
     }
   }
 
-  // Rate-limit only when we *would* hit the AI (cache miss). Cached
-  // responses cost us nothing, so they shouldn't burn the user's quota.
+  // Cache miss (or force) — rate-limit before the AI call. Cached hits
+  // never reach this gate so they don't burn the user's quota.
   const rl = rateLimit(`ai:promotions:${userId}`, { maxRequests: 10, windowMs: 60 * 60 * 1000 })
   if (!rl.allowed) {
     return NextResponse.json(
@@ -272,21 +296,34 @@ Return 8-12 typical promotions. Mark matchesPurchases=true for products similar 
       weeklySummary,
     }
 
-    // Cache the freshly-computed payload so the next 24h of requests skip
-    // the AI call entirely. Tied to userId+lang+currency so changing any
-    // of those still triggers a recompute.
-    promoCache.set(cacheKey, { result: payload, expiresAt: Date.now() + PROMO_TTL_MS })
+    // Persist into store_intel so subsequent requests across the
+    // fleet (not just this Vercel instance) get instant hits.
+    await writeIntel('promotions', intelKey, payload, PROMO_TTL_S, {
+      revalidateAfterSeconds: PROMO_REVALIDATE_S,
+    }).catch((e) => console.error('[promotions cache write]', e))
 
-    return NextResponse.json(payload, {
+    const now = new Date()
+    return NextResponse.json({
+      ...payload,
+      fetchedAt: now.toISOString(),
+      freshUntil: new Date(now.getTime() + PROMO_TTL_S * 1000).toISOString(),
+      cacheState: 'miss',
+    }, {
       headers: { 'X-Cache': 'MISS', 'Cache-Control': 'private, max-age=300' },
     })
   } catch (err) {
     console.error('[promotions POST]', err)
-    // If the AI call failed but we have a stale cached payload, serve it
-    // rather than a 500. Better stale data than a blocked screen.
-    const stale = promoCache.get(cacheKey)
-    if (stale) {
-      return NextResponse.json(stale.result, {
+    // If the AI call failed but we have an *expired* cached payload,
+    // surface it as a stale fallback. Better old data than a blocked
+    // screen. `readAnyIntel` ignores expiry, so even rows past
+    // `expires_at` are returned here.
+    const expired = await readAnyIntel<unknown>('promotions', intelKey).catch(() => null)
+    if (expired) {
+      return NextResponse.json({
+        ...(expired.data as object),
+        fetchedAt: expired.fetchedAt.toISOString(),
+        cacheState: 'stale',
+      }, {
         headers: { 'X-Cache': 'STALE', 'Cache-Control': 'private, max-age=60' },
       })
     }

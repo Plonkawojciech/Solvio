@@ -7,6 +7,8 @@ import { getAIClient } from '@/lib/ai-client'
 import { rateLimit } from '@/lib/rate-limit'
 import { PRICE_COMPARE_STORES } from '@/lib/stores'
 import { z } from 'zod'
+import { readAnyIntel, readIntel, writeIntel } from '@/lib/store-intel'
+import crypto from 'crypto'
 
 const PriceCompareSchema = z.object({
   lang: z.enum(['pl', 'en']).optional().default('en'),
@@ -14,14 +16,13 @@ const PriceCompareSchema = z.object({
   force: z.boolean().optional().default(false),
 })
 
-// Module-level in-memory cache. Mirror of /api/personal/promotions:
-// the savings hub now auto-loads this endpoint on tab entry, so without
-// caching every visit would burn 10-15s + an AI call. Prices change
-// slowly (weekly leaflets), so a 24h TTL is fine.
-// Keyed by `${userId}:${lang}:${currency}` so identical payloads dedupe.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const priceCache = new Map<string, { result: any; expiresAt: number }>()
-const PRICE_TTL_MS = 24 * 60 * 60 * 1000
+// Persistent cache via `store_intel` (kind: 'prices'). The savings hub
+// auto-loads this on tab entry, so without caching every visit would
+// burn 10-15s + an AI call. Prices change slowly (weekly leaflets) so
+// 24h is the hard ceiling; we revalidate after 6h so a returning user
+// sees fresh data within a reasonable window.
+const PRICES_TTL_S = 24 * 60 * 60
+const PRICES_REVALIDATE_S = 6 * 60 * 60
 
 export async function POST(req: NextRequest) {
   const { userId } = await auth()
@@ -32,21 +33,33 @@ export async function POST(req: NextRequest) {
   const { lang, currency, force } = parsedReq.success ? parsedReq.data : { lang: 'en' as const, currency: 'PLN', force: false }
   const isPolish = lang === 'pl'
 
-  // Serve cached payload if still warm. Saves 10-15s + an AI call.
-  // Auto-load on tab entry means this runs every time the user opens
-  // Savings — without cache that's a 10-15s spinner per tap.
-  const cacheKey = `${userId}:${lang}:${currency}`
+  // Cache key is per-user because the comparison is built from the
+  // user's own receipts. Hashed because lang+currency+userId would
+  // exceed varchar(256) on long userIds in some auth backends.
+  const intelKey = crypto.createHash('sha256')
+    .update(`${userId}:${lang}:${currency}`)
+    .digest('hex')
+    .slice(0, 48)
+
   if (!force) {
-    const cached = priceCache.get(cacheKey)
-    if (cached && cached.expiresAt > Date.now()) {
-      return NextResponse.json(cached.result, {
-        headers: { 'X-Cache': 'HIT', 'Cache-Control': 'private, max-age=300' },
+    const cached = await readIntel<unknown>('prices', intelKey).catch(() => null)
+    if (cached) {
+      return NextResponse.json({
+        ...(cached.data as object),
+        fetchedAt: cached.fetchedAt.toISOString(),
+        freshUntil: cached.expiresAt.toISOString(),
+        cacheState: cached.state,
+      }, {
+        headers: {
+          'X-Cache': cached.state.toUpperCase(),
+          'X-Fetched-At': cached.fetchedAt.toISOString(),
+          'Cache-Control': 'private, max-age=300',
+        },
       })
     }
   }
 
-  // Rate-limit only when we *would* hit the AI (cache miss).
-  // 20 requests / hour / userId.
+  // Rate-limit only on cache miss. 20 requests / hour / userId.
   const rl = rateLimit(`ai:prices:${userId}`, { maxRequests: 20, windowMs: 60 * 60 * 1000 })
   if (!rl.allowed) {
     return NextResponse.json(
@@ -239,20 +252,31 @@ export async function POST(req: NextRequest) {
       isEstimated,
     }
 
-    // Cache for 24h so the next tab entry is instant. Tied to
-    // userId+lang+currency; changing any of those triggers a recompute.
-    priceCache.set(cacheKey, { result: payload, expiresAt: Date.now() + PRICE_TTL_MS })
+    // Persist into store_intel for cross-fleet & cold-start instant
+    // hits on subsequent requests.
+    await writeIntel('prices', intelKey, payload, PRICES_TTL_S, {
+      revalidateAfterSeconds: PRICES_REVALIDATE_S,
+    }).catch((e) => console.error('[prices cache write]', e))
 
-    return NextResponse.json(payload, {
+    const now = new Date()
+    return NextResponse.json({
+      ...payload,
+      fetchedAt: now.toISOString(),
+      freshUntil: new Date(now.getTime() + PRICES_TTL_S * 1000).toISOString(),
+      cacheState: 'miss',
+    }, {
       headers: { 'X-Cache': 'MISS', 'Cache-Control': 'private, max-age=300' },
     })
   } catch (err) {
     console.error('[prices/compare POST]', err)
-    // If AI failed but we have a stale cache, serve it instead of 500.
-    // Better to show stale prices than block the screen.
-    const stale = priceCache.get(cacheKey)
-    if (stale) {
-      return NextResponse.json(stale.result, {
+    // AI failed — fall back to expired cache if any. Stale beats blank.
+    const expired = await readAnyIntel<unknown>('prices', intelKey).catch(() => null)
+    if (expired) {
+      return NextResponse.json({
+        ...(expired.data as object),
+        fetchedAt: expired.fetchedAt.toISOString(),
+        cacheState: 'stale',
+      }, {
         headers: { 'X-Cache': 'STALE', 'Cache-Control': 'private, max-age=60' },
       })
     }

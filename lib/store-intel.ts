@@ -238,6 +238,20 @@ function refreshInBackground<T>(
 }
 
 /**
+ * Read any cached row regardless of expiry. Returns null only when no
+ * row exists at all. Useful as a "we lost the AI, show *something*"
+ * fallback when an upstream call fails — better stale than blank.
+ */
+export async function readAnyIntel<T>(kind: IntelKind, key: string): Promise<{ data: T; fetchedAt: Date; expiresAt: Date } | null> {
+  const rows = await db.select().from(storeIntel).where(
+    and(eq(storeIntel.kind, kind), eq(storeIntel.key, key))
+  ).limit(1)
+  const row = rows[0]
+  if (!row) return null
+  return { data: row.data as T, fetchedAt: row.fetchedAt, expiresAt: row.expiresAt }
+}
+
+/**
  * Garbage-collect rows past their `expiresAt` ceiling. Run from a
  * scheduled (cron) endpoint; safe to call any time. Returns the
  * number of rows deleted.

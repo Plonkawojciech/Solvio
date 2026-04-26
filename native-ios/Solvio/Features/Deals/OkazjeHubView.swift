@@ -228,6 +228,24 @@ struct OkazjeHubView: View {
             .buttonStyle(NBPrimaryButtonStyle())
             .disabled(shoppingVM.isLoading || !shoppingVM.canSubmit)
 
+            // While the AI thinks, show a stage-cycling progress card so
+            // the user can tell the request is still alive (a bare button
+            // spinner during a 12-15s call feels broken). Stage labels
+            // are cosmetic — they cycle on a timer, not tied to backend
+            // progress (the route doesn't report it).
+            if shoppingVM.isLoading {
+                NBProgressCard(
+                    title: locale.t("shoppingList.progressTitle"),
+                    stages: [
+                        locale.t("shoppingList.stageLeaflets"),
+                        locale.t("shoppingList.stagePrices"),
+                        locale.t("shoppingList.stageCompare"),
+                        locale.t("shoppingList.stageFinalize"),
+                    ],
+                    estimatedSeconds: 14
+                )
+            }
+
             if let err = shoppingVM.error {
                 NBErrorCard(message: err) {
                     Task { await shoppingVM.optimize() }

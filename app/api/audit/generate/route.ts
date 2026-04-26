@@ -5,6 +5,8 @@ import { eq, gte, and, desc } from 'drizzle-orm'
 import { getAIClient } from '@/lib/ai-client'
 import { rateLimit } from '@/lib/rate-limit'
 import { GROCERY_STORES } from '@/lib/stores'
+import { readAnyIntel, readIntel, writeIntel } from '@/lib/store-intel'
+import crypto from 'crypto'
 
 interface ReceiptItem {
   name: string
@@ -24,14 +26,11 @@ interface ProductEntry {
   dates: string[]
 }
 
-// Module-level in-memory cache. Mirror of /api/personal/promotions and
-// /api/prices/compare: the Savings hub auto-loads audit on tab entry,
-// so caching prevents a 15-25s spinner on every visit. 6h TTL — audit
-// summarises last 30 days and changes slowly.
-// Keyed by `${userId}:${lang}:${currency}` so identical payloads dedupe.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const auditCache = new Map<string, { result: any; expiresAt: number }>()
-const AUDIT_TTL_MS = 6 * 60 * 60 * 1000
+// Persistent cache via `store_intel` (kind: 'audit'). Audit summarises
+// the last 30 days, so it changes slowly — 6h hard TTL with revalidate
+// at 1h gives users instant visits + a fresh-ish view after they idle.
+const AUDIT_TTL_S = 6 * 60 * 60
+const AUDIT_REVALIDATE_S = 60 * 60
 
 export async function POST(request: Request) {
   const { userId } = await auth()
@@ -40,19 +39,32 @@ export async function POST(request: Request) {
   const { lang = 'en', currency = 'PLN', force = false } = await request.json().catch(() => ({}))
   const isPolish = lang === 'pl'
 
-  // Serve cached payload if still warm.
-  const cacheKey = `${userId}:${lang}:${currency}`
+  // Cache key includes userId because the audit is computed from the
+  // user's own receipts/expenses. No cross-user dedupe possible.
+  const intelKey = crypto.createHash('sha256')
+    .update(`${userId}:${lang}:${currency}`)
+    .digest('hex')
+    .slice(0, 48)
+
   if (!force) {
-    const cached = auditCache.get(cacheKey)
-    if (cached && cached.expiresAt > Date.now()) {
-      return NextResponse.json(cached.result, {
-        headers: { 'X-Cache': 'HIT', 'Cache-Control': 'private, max-age=300' },
+    const cached = await readIntel<unknown>('audit', intelKey).catch(() => null)
+    if (cached) {
+      return NextResponse.json({
+        ...(cached.data as object),
+        fetchedAt: cached.fetchedAt.toISOString(),
+        freshUntil: cached.expiresAt.toISOString(),
+        cacheState: cached.state,
+      }, {
+        headers: {
+          'X-Cache': cached.state.toUpperCase(),
+          'X-Fetched-At': cached.fetchedAt.toISOString(),
+          'Cache-Control': 'private, max-age=300',
+        },
       })
     }
   }
 
-  // Rate-limit only when we *would* hit the AI (cache miss).
-  // 5 requests / hour / userId.
+  // Rate-limit only on cache miss. 5 requests / hour / userId.
   const rl = rateLimit(`ai:audit:${userId}`, { maxRequests: 5, windowMs: 60 * 60 * 1000 })
   if (!rl.allowed) {
     return NextResponse.json(
@@ -298,18 +310,30 @@ Respond ONLY in JSON format (no markdown, no backticks):
       webSearchUsed: true,
     }
 
-    // Cache for 6h so subsequent tab entries are instant.
-    auditCache.set(cacheKey, { result: payload, expiresAt: Date.now() + AUDIT_TTL_MS })
+    // Persist into store_intel — cross-fleet & cold-start safe.
+    await writeIntel('audit', intelKey, payload, AUDIT_TTL_S, {
+      revalidateAfterSeconds: AUDIT_REVALIDATE_S,
+    }).catch((e) => console.error('[audit cache write]', e))
 
-    return NextResponse.json(payload, {
+    const now = new Date()
+    return NextResponse.json({
+      ...payload,
+      fetchedAt: now.toISOString(),
+      freshUntil: new Date(now.getTime() + AUDIT_TTL_S * 1000).toISOString(),
+      cacheState: 'miss',
+    }, {
       headers: { 'X-Cache': 'MISS', 'Cache-Control': 'private, max-age=300' },
     })
   } catch (err) {
-    // If AI failed but we have a stale cached audit, return that
+    // If AI failed but we have an expired cached audit, return that
     // instead of forcing the user to wait. Stale beats blank.
-    const stale = auditCache.get(cacheKey)
-    if (stale) {
-      return NextResponse.json(stale.result, {
+    const expired = await readAnyIntel<unknown>('audit', intelKey).catch(() => null)
+    if (expired) {
+      return NextResponse.json({
+        ...(expired.data as object),
+        fetchedAt: expired.fetchedAt.toISOString(),
+        cacheState: 'stale',
+      }, {
         headers: { 'X-Cache': 'STALE', 'Cache-Control': 'private, max-age=60' },
       })
     }
