@@ -574,3 +574,15 @@ enum MaintenanceRepo {
         try await ApiClient.shared.get("/api/v1/recategorize-receipts")
     }
 }
+
+// MARK: - Shopping list optimizer
+
+/// `/api/shopping/optimize` — given a shopping list and an optional
+/// location, returns the best single store to buy everything from
+/// plus a per-item price breakdown. Powered by Azure OpenAI / OpenAI
+/// with web search for live store prices.
+enum ShoppingRepo {
+    static func optimize(_ body: ShoppingOptimizeRequest) async throws -> ShoppingOptimizeResult {
+        try await ApiClient.shared.post("/api/shopping/optimize", body: body)
+    }
+}

@@ -53,8 +53,16 @@ struct MainTabView: View {
         .sheet(isPresented: $router.showingMoreSheet, onDismiss: {
             if let route = router.pendingMoreRoute {
                 router.pendingMoreRoute = nil
-                router.selectedTab = .savings
-                router.savingsStack.append(AppRoute.more(route))
+                let target = router.tabForMoreRoute(route)
+                router.selectedTab = target
+                let routePath = AppRoute.more(route)
+                switch target {
+                case .deals:    router.dealsStack.append(routePath)
+                case .savings:  router.savingsStack.append(routePath)
+                case .dashboard: router.dashboardStack.append(routePath)
+                case .expenses: router.expensesStack.append(routePath)
+                case .groups:   router.groupsStack.append(routePath)
+                }
             }
         }) {
             MoreSheet()
@@ -156,6 +164,11 @@ struct MainTabView: View {
         case .expenses:
             NavigationStack(path: $router.expensesStack) {
                 ExpensesListView()
+                    .routeDestinations()
+            }
+        case .deals:
+            NavigationStack(path: $router.dealsStack) {
+                OkazjeHubView()
                     .routeDestinations()
             }
         case .groups:
@@ -309,9 +322,12 @@ private struct HeaderIconButton: View {
     }
 }
 
-/// Bottom tab bar — exact PWA layout: 5 slots (Dashboard, Expenses, FAB,
-/// Groups, Savings). The FAB is a centered, elevated black tile that
-/// opens the scan sheet (or quick-split when on Groups).
+/// Bottom tab bar — 6 slots: 5 real tabs flanking a centered FAB.
+///   Dashboard | Expenses | **FAB(camera)** | Deals | Groups | Savings
+///
+/// The FAB is a centered, elevated black tile that opens the scan sheet
+/// (or quick-split when on Groups). Tab labels use the smaller tracked
+/// mono font so 5 tab labels fit comfortably on a 6.1" screen.
 struct NBTabBar: View {
     @EnvironmentObject private var router: AppRouter
     @EnvironmentObject private var locale: AppLocale
@@ -321,10 +337,11 @@ struct NBTabBar: View {
             tabSlot(.dashboard, systemImage: "house.fill", label: locale.t("nav.dashboard"))
             tabSlot(.expenses, systemImage: "dollarsign.circle.fill", label: locale.t("nav.expenses"))
             fabSlot
+            tabSlot(.deals, systemImage: "tag.fill", label: locale.t("nav.deals"))
             tabSlot(.groups, systemImage: "person.3.fill", label: locale.t("nav.groups"))
             tabSlot(.savings, systemImage: "chart.line.uptrend.xyaxis", label: locale.t("nav.savings"))
         }
-        .padding(.horizontal, Theme.Spacing.xs)
+        .padding(.horizontal, 2)
         .frame(height: 56)
         .background(Theme.background)
         .overlay(
@@ -376,12 +393,16 @@ struct NBTabBar: View {
         } label: {
             VStack(spacing: 2) {
                 Image(systemName: systemImage)
-                    .font(.system(size: 18, weight: isActive ? .bold : .semibold))
+                    .font(.system(size: 17, weight: isActive ? .bold : .semibold))
+                // Smaller font + tighter tracking so 5 labels fit
+                // alongside the centered FAB on a 6.1" phone without
+                // truncation.
                 Text(label)
-                    .font(isActive ? AppFont.monoBold(10) : AppFont.mono(10))
-                    .tracking(1)
+                    .font(isActive ? AppFont.monoBold(9) : AppFont.mono(9))
+                    .tracking(0.5)
                     .textCase(.uppercase)
                     .lineLimit(1)
+                    .minimumScaleFactor(0.85)
             }
             .foregroundColor(isActive ? Theme.foreground : Theme.mutedForeground)
             .frame(maxWidth: .infinity)
@@ -409,20 +430,15 @@ private struct MoreSheet: View {
     @EnvironmentObject private var locale: AppLocale
     @Environment(\.dismiss) private var dismiss
 
+    /// Drawer is intentionally minimal now — just Settings.
+    /// Everything that used to live here is reachable from the bottom
+    /// nav (Deals tab covers product/store search, audit, advisor,
+    /// trending promos; Savings tab covers planner/goals; Receipts
+    /// surface from Expenses → expense detail). Sign-out lives below
+    /// the list as a destructive button so it has the affordance
+    /// users expect.
     private var items: [(MoreRoute, String, String)] {
         [
-            (.receipts, "doc.text.magnifyingglass", locale.t("nav.receipts")),
-            (.goals, "target", locale.t("nav.goals")),
-            (.challenges, "trophy.fill", locale.t("nav.challenges")),
-            (.loyalty, "creditcard.fill", locale.t("nav.loyalty")),
-            (.prices, "tag.fill", locale.t("nav.prices")),
-            (.audit, "magnifyingglass.circle.fill", locale.t("nav.audit")),
-            (.analysis, "brain.head.profile", locale.t("nav.analysis")),
-            (.reports, "doc.richtext", locale.t("nav.reports")),
-            (.categories, "folder.fill", locale.t("nav.categories")),
-            (.shoppingAdvisor, "cart.badge.questionmark", locale.t("nav.shoppingAdvisor")),
-            (.nearbyStores, "mappin.and.ellipse", locale.t("nav.nearbyStores")),
-            (.productSearch, "magnifyingglass", locale.t("nav.productSearch")),
             (.settings, "gearshape.fill", locale.t("nav.settings")),
         ]
     }

@@ -1,23 +1,16 @@
 import SwiftUI
 
-/// Planner & deals hub — the last bottom-tab. Was previously a roll-up of
-/// goals / budget / challenges / loyalty / deals; Wojtek explicitly asked
-/// to drop the goal-tracking parts and refocus this tab on **planning +
-/// shopping intelligence**:
+/// **Savings / Planner** — month budget planner. Was previously a 4-tab
+/// roll-up (Planner / Products / Stores / Deals); the shopping-
+/// intelligence tabs have moved to the new bottom-nav **Deals** tab
+/// (`OkazjeHubView`). What remains here is the budget-focused half:
+/// month budget plan (income / budget / savings target + alerts +
+/// top-spend categories) plus an edit sheet.
 ///
-///   1. **Planner** — month budget plan (income / budget / savings target
-///      + alerts + top-spend categories) — useful at-a-glance, edit sheet
-///      when the user wants to adjust.
-///   2. **Products** — AI price comparison (`/api/prices/compare`) inlined
-///      from `PricesView`, since this is now the primary surface for it.
-///   3. **Stores** — AI shopping audit (`/api/audit/generate`) inlined
-///      from `AuditView` — best stores, top products, current promotions.
-///   4. **Deals** — personalised deals from `/api/personal/promotions`,
-///      kept 1:1 with the previous version.
-///
-/// Goals / challenges / loyalty cards are still accessible via the More
-/// drawer (`MoreRoute.goals` / `.challenges` / `.loyalty`) — they were not
-/// removed from the app, just unhooked from this hub.
+/// The other three tabs' code (`productsTab`, `storesTab`, `dealsTab`)
+/// is left in place as dead code — gutting them mid-session is risky
+/// because their VM state is interwoven with the planner. They simply
+/// stop being rendered. A follow-up pass can prune the VM cleanly.
 struct SavingsHubView: View {
     @EnvironmentObject private var router: AppRouter
     @EnvironmentObject private var toast: ToastCenter
@@ -32,16 +25,10 @@ struct SavingsHubView: View {
                 header
                 topKpiStrip
                 aiTipBanner
-                tabPicker
-
-                SwiftUI.Group {
-                    switch vm.activeTab {
-                    case .planner: plannerTab
-                    case .products: productsTab
-                    case .stores: storesTab
-                    case .deals: dealsTab
-                    }
-                }
+                // Tab picker is intentionally hidden — Products / Stores
+                // / Deals moved to the new bottom-nav `Deals` tab. The
+                // planner is the only thing this hub renders now.
+                plannerTab
 
                 Spacer(minLength: Theme.Spacing.xl)
             }

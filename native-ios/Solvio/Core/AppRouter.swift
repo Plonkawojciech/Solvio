@@ -1,12 +1,18 @@
 import SwiftUI
 
-/// Top-level tab destinations — mirrors PWA `mobile-bottom-nav.tsx`
-/// (5 slots: Dashboard, Expenses, FAB(center), Groups, Savings).
-/// The FAB is not a tab — it opens `ScanReceiptSheet`. All other
-/// features live in the hamburger-drawer sheet (see `MoreView`).
+/// Top-level tab destinations. Layout in `NBTabBar`:
+///   Dashboard | Expenses | **FAB(camera)** | Deals | Groups | Savings
+///
+/// The FAB is not a tab — it opens `ScanReceiptSheet`. The 5 real tabs
+/// flank it (2 left, 3 right). Everything else (cele, wyzwania, raporty,
+/// kategorie, …) used to live in the hamburger drawer; that drawer has
+/// since been slimmed down to just Settings + Logout, and the
+/// shopping-intelligence features (product/store search, audit, advisor,
+/// trending promos) are consolidated into the new **Deals** tab.
 enum AppTab: Hashable {
     case dashboard
     case expenses
+    case deals
     case groups
     case savings
 }
@@ -56,6 +62,7 @@ final class AppRouter: ObservableObject {
 
     @Published var dashboardStack = NavigationPath()
     @Published var expensesStack = NavigationPath()
+    @Published var dealsStack = NavigationPath()
     @Published var groupsStack = NavigationPath()
     @Published var savingsStack = NavigationPath()
 
@@ -73,6 +80,7 @@ final class AppRouter: ObservableObject {
         switch selectedTab {
         case .dashboard: dashboardStack.append(route)
         case .expenses: expensesStack.append(route)
+        case .deals: dealsStack.append(route)
         case .groups: groupsStack.append(route)
         case .savings: savingsStack.append(route)
         }
@@ -82,14 +90,30 @@ final class AppRouter: ObservableObject {
         switch selectedTab {
         case .dashboard: dashboardStack = NavigationPath()
         case .expenses: expensesStack = NavigationPath()
+        case .deals: dealsStack = NavigationPath()
         case .groups: groupsStack = NavigationPath()
         case .savings: savingsStack = NavigationPath()
         }
     }
 
-    /// Opens the hamburger drawer and selects the given sub-route.
+    /// Opens the hamburger drawer and selects the given sub-route. The
+    /// drawer is now slim (Settings + Logout) — but the routing helper
+    /// stays for any deep-link / push-notification flows that still
+    /// reference legacy `MoreRoute` cases.
     func pushFromMore(_ route: MoreRoute) {
         showingMoreSheet = false
         pendingMoreRoute = route
+    }
+
+    /// Stack target for legacy `MoreRoute` deep links — most of the
+    /// shopping-intelligence routes now live under the Deals tab; the
+    /// Settings drawer item still lands on Savings.
+    func tabForMoreRoute(_ route: MoreRoute) -> AppTab {
+        switch route {
+        case .prices, .audit, .shoppingAdvisor, .nearbyStores, .productSearch:
+            return .deals
+        default:
+            return .savings
+        }
     }
 }

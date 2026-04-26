@@ -1024,3 +1024,45 @@ struct PromotionsResponse: Decodable {
     let totalPotentialSavings: Double?
     let weeklySummary: WeeklySummary?
 }
+
+// MARK: - Shopping list optimizer (Okazje hub)
+//
+// Mirrors the request/response contract of `/api/shopping/optimize`.
+// Given a list of items and an optional location, the backend asks
+// the AI provider (with web search) to figure out which single store
+// would be cheapest overall, plus a per-item breakdown.
+
+struct ShoppingOptimizeRequest: Encodable {
+    struct Item: Encodable {
+        let name: String
+        let quantity: Double
+    }
+    let items: [Item]
+    let lang: String
+    let currency: String
+    let lat: Double?
+    let lng: Double?
+}
+
+struct ShoppingOptimizeResult: Decodable {
+    struct LineItem: Decodable {
+        let name: String
+        let qty: Double?
+        let unitPrice: Double?
+        let total: Double
+    }
+    struct Alternative: Decodable {
+        let store: String
+        let total: Double
+        let address: String?
+    }
+    let bestStore: String
+    let bestStoreAddress: String?
+    let bestTotal: Double
+    let currency: String
+    let savings: Double?
+    let summary: String?
+    let tip: String?
+    let bestStoreItems: [LineItem]
+    let alternatives: [Alternative]
+}
