@@ -373,3 +373,150 @@ private extension Data {
         if let data = s.data(using: .utf8) { append(data) }
     }
 }
+
+// MARK: - FX Rates
+//
+// Lightweight FX-rate provider used by the in-app currency converter
+// (expense detail / receipt detail). Source is NBP — Polish National Bank
+// — public API at api.nbp.pl. The endpoint is free, no auth, returns
+// daily mid-rates against PLN. We cache results in UserDefaults for 6 h
+// so cold opens are instant after the first fetch.
+//
+// Static fallbacks (Q1 2026 ballpark) are used if the device is offline
+// AND no cache is present — the UI labels them "static" so the user
+// knows the numbers are approximate. Fetch happens lazily on first
+// `ensureFresh()` call from any consumer view.
+
+/// `[ISO4217: PLN_per_unit]` — i.e. how many PLN one unit of the foreign
+/// currency is worth. PLN is always 1.0.
+///
+/// Conversion `from -> to`:
+///   pln       = amount * rates[from]
+///   converted = pln    / rates[to]
+@MainActor
+final class FXRates: ObservableObject {
+    /// Single global instance — rates rarely change and caching across
+    /// every view that needs them avoids redundant fetches.
+    static let shared = FXRates()
+
+    @Published private(set) var rates: [String: Double] = FXRates.staticFallback
+    @Published private(set) var fetchedAt: Date?
+    @Published private(set) var isFetching = false
+
+    /// Fallback values used when there's no cache and no network. Updated
+    /// roughly to Q1 2026 levels so they're plausible for first-launch
+    /// users. The UI badges these as "static" so misinterpretation is
+    /// limited.
+    private static let staticFallback: [String: Double] = [
+        "PLN": 1.0,
+        "EUR": 4.30,
+        "USD": 4.05,
+        "GBP": 5.10,
+        "CHF": 4.55,
+        "CZK": 0.18,
+    ]
+
+    private static let cacheKey = "solvio.fxRates.cache.v1"
+    private static let cacheTTL: TimeInterval = 6 * 60 * 60   // 6 hours
+
+    private init() {
+        loadFromCache()
+    }
+
+    /// Convert `amount` from `from` ISO code to `to` ISO code. Returns nil
+    /// if either side is unknown (caller decides whether to display a
+    /// dash or fall back to source amount).
+    func convert(_ amount: Double, from: String, to: String) -> Double? {
+        let f = from.uppercased(), t = to.uppercased()
+        if f == t { return amount }
+        guard let frate = rates[f], let trate = rates[t], trate > 0 else { return nil }
+        let pln = amount * frate
+        return pln / trate
+    }
+
+    /// Trigger a background refresh unless we already have fresh data.
+    /// Fire-and-forget — UI watches `fetchedAt` to know when new numbers
+    /// landed.
+    func ensureFresh() {
+        if let fetchedAt, Date().timeIntervalSince(fetchedAt) < Self.cacheTTL { return }
+        Task { await refresh() }
+    }
+
+    /// Manual refresh — bound to the UI's reload button. Fetches all
+    /// supported codes in parallel and commits as a single atomic update.
+    func refresh() async {
+        if isFetching { return }
+        isFetching = true
+        defer { isFetching = false }
+
+        let codes = ["EUR", "USD", "GBP", "CHF", "CZK"]
+        var fresh: [String: Double] = ["PLN": 1.0]
+
+        await withTaskGroup(of: (String, Double?).self) { group in
+            for code in codes {
+                group.addTask { (code, await Self.fetchOne(code: code)) }
+            }
+            for await (code, rate) in group {
+                if let rate, rate > 0 { fresh[code] = rate }
+            }
+        }
+
+        // Commit only if we got at least one new rate. Merge with the
+        // existing values for codes we couldn't refresh — a flaky
+        // partial fetch shouldn't blow away the previous cache.
+        if fresh.count > 1 {
+            for (k, v) in self.rates where fresh[k] == nil {
+                fresh[k] = v
+            }
+            self.rates = fresh
+            self.fetchedAt = Date()
+            saveToCache()
+        }
+    }
+
+    /// One round-trip to NBP for a single ISO code. NBP endpoint shape:
+    ///   GET https://api.nbp.pl/api/exchangerates/rates/a/{code}/?format=json
+    /// We use table A (mid-market rates), 4 s timeout, plain JSON.
+    private static func fetchOne(code: String) async -> Double? {
+        guard let url = URL(string: "https://api.nbp.pl/api/exchangerates/rates/a/\(code.lowercased())/?format=json") else { return nil }
+        var req = URLRequest(url: url)
+        req.timeoutInterval = 4
+        do {
+            let (data, response) = try await URLSession.shared.data(for: req)
+            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else { return nil }
+            struct NBP: Decodable {
+                struct Rate: Decodable { let mid: Double }
+                let rates: [Rate]
+            }
+            let decoded = try JSONDecoder().decode(NBP.self, from: data)
+            return decoded.rates.first?.mid
+        } catch {
+            return nil
+        }
+    }
+
+    private func loadFromCache() {
+        guard let data = UserDefaults.standard.data(forKey: Self.cacheKey),
+              let entry = try? JSONDecoder().decode(CacheEntry.self, from: data) else { return }
+        // Always load the cached rates even if expired — better than
+        // static fallback. Just don't surface `fetchedAt` so the UI
+        // knows it's stale and triggers a refresh.
+        self.rates = entry.rates
+        if Date().timeIntervalSince(entry.fetchedAt) < Self.cacheTTL {
+            self.fetchedAt = entry.fetchedAt
+        }
+    }
+
+    private func saveToCache() {
+        guard let fetchedAt else { return }
+        let entry = CacheEntry(rates: rates, fetchedAt: fetchedAt)
+        if let data = try? JSONEncoder().encode(entry) {
+            UserDefaults.standard.set(data, forKey: Self.cacheKey)
+        }
+    }
+
+    private struct CacheEntry: Codable {
+        let rates: [String: Double]
+        let fetchedAt: Date
+    }
+}

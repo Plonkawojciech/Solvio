@@ -507,3 +507,204 @@ struct NBDivider: View {
             .opacity(0.1)
     }
 }
+
+// MARK: - Virtual receipt tile
+//
+// Compact "scan/copy/open" tile for the public receipt URL. Shows a
+// QR code on the left, action buttons on the right. Used on
+// `ExpenseDetailView` (when the expense has a linked receipt) and
+// optionally on other receipt-aware screens. The eyebrow/title come
+// from the caller's locale so this stays L10n-agnostic.
+
+struct VirtualReceiptTile: View {
+    let url: String
+    let eyebrow: String
+    let title: String
+    let openLabel: String
+    let copyLabel: String
+    let scanHint: String
+    let onCopied: () -> Void
+
+    var body: some View {
+        let qrImage = BarcodeImage.make(from: url, type: "qr")
+        return VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+            NBSectionHeader(eyebrow: eyebrow, title: title)
+            HStack(alignment: .top, spacing: Theme.Spacing.md) {
+                if let qr = qrImage {
+                    Image(uiImage: qr)
+                        .interpolation(.none)
+                        .resizable()
+                        .frame(width: 96, height: 96)
+                        .background(Theme.card)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                                .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
+                        )
+                }
+                VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+                    Text(scanHint)
+                        .font(AppFont.caption)
+                        .foregroundColor(Theme.mutedForeground)
+                        .fixedSize(horizontal: false, vertical: true)
+                    HStack(spacing: 6) {
+                        Button {
+                            if let parsed = URL(string: url) {
+                                UIApplication.shared.open(parsed)
+                            }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "safari")
+                                    .font(.system(size: 11, weight: .semibold))
+                                Text(openLabel)
+                                    .font(AppFont.mono(11))
+                                    .tracking(0.5)
+                                    .textCase(.uppercase)
+                            }
+                            .foregroundColor(Theme.background)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 7)
+                            .background(Theme.foreground)
+                            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+                        }
+                        .buttonStyle(.plain)
+
+                        Button {
+                            UIPasteboard.general.string = url
+                            onCopied()
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "doc.on.doc")
+                                    .font(.system(size: 11, weight: .semibold))
+                                Text(copyLabel)
+                                    .font(AppFont.mono(11))
+                                    .tracking(0.5)
+                                    .textCase(.uppercase)
+                            }
+                            .foregroundColor(Theme.foreground)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 7)
+                            .background(Theme.muted)
+                            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                                    .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    Text(url)
+                        .font(AppFont.mono(10))
+                        .foregroundColor(Theme.mutedForeground)
+                        .lineLimit(2)
+                        .truncationMode(.middle)
+                        .textSelection(.enabled)
+                }
+            }
+        }
+        .padding(Theme.Spacing.md)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .nbCard(radius: Theme.Radius.md, shadow: Theme.Shadow.sm)
+    }
+}
+
+// MARK: - Currency converter card
+//
+// Glanceable "this amount in PLN/EUR/USD" tile. Reads from the global
+// `FXRates.shared` and re-renders whenever its rates publish. The
+// source-currency row shows a small "źródło/source" badge so the user
+// knows which figure is the input. A refresh button forces a fresh
+// NBP fetch — useful if the rates feel old (e.g. weekend gap).
+
+struct CurrencyConverterCard: View {
+    let amount: Double
+    let sourceCurrency: String
+    var targets: [String] = ["PLN", "EUR", "USD"]
+    let eyebrow: String
+    let title: String
+    let asOfFmt: String                // e.g. "Kursy NBP, %@"
+    let staticFallback: String         // shown when no cache yet
+    let sourceBadge: String            // e.g. "źródło"
+
+    @StateObject private var fx = FXRates.shared
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+            HStack(alignment: .center) {
+                NBSectionHeader(eyebrow: eyebrow, title: title)
+                Spacer()
+                Button {
+                    Task { await fx.refresh() }
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(Theme.foreground)
+                        .rotationEffect(.degrees(fx.isFetching ? 360 : 0))
+                        .animation(
+                            fx.isFetching
+                                ? .linear(duration: 1).repeatForever(autoreverses: false)
+                                : .default,
+                            value: fx.isFetching
+                        )
+                }
+                .buttonStyle(.plain)
+                .disabled(fx.isFetching)
+            }
+
+            VStack(spacing: 0) {
+                ForEach(Array(targets.enumerated()), id: \.offset) { idx, code in
+                    let isSource = code.uppercased() == sourceCurrency.uppercased()
+                    let value: Double? = isSource ? amount : fx.convert(amount, from: sourceCurrency, to: code)
+                    HStack {
+                        Text(code)
+                            .font(AppFont.mono(13))
+                            .tracking(1)
+                            .foregroundColor(Theme.foreground)
+                        if isSource {
+                            Text(sourceBadge.uppercased())
+                                .font(AppFont.mono(9))
+                                .tracking(1)
+                                .foregroundColor(Theme.mutedForeground)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 2)
+                                .background(Theme.muted)
+                                .clipShape(RoundedRectangle(cornerRadius: 3))
+                        }
+                        Spacer()
+                        if let value {
+                            Text(Fmt.amount(value, currency: code))
+                                .font(AppFont.bodyMedium)
+                                .foregroundColor(isSource ? Theme.foreground : Theme.foreground.opacity(0.85))
+                        } else {
+                            Text("—")
+                                .font(AppFont.bodyMedium)
+                                .foregroundColor(Theme.mutedForeground)
+                        }
+                    }
+                    .padding(.vertical, 8)
+                    if idx < targets.count - 1 {
+                        Rectangle()
+                            .fill(Theme.foreground.opacity(0.08))
+                            .frame(height: 1)
+                    }
+                }
+            }
+
+            Text(footerText)
+                .font(AppFont.mono(10))
+                .foregroundColor(Theme.mutedForeground)
+        }
+        .padding(Theme.Spacing.md)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .nbCard(radius: Theme.Radius.md, shadow: Theme.Shadow.sm)
+        .onAppear { fx.ensureFresh() }
+    }
+
+    private var footerText: String {
+        if let fetched = fx.fetchedAt {
+            let df = DateFormatter()
+            df.dateFormat = "yyyy-MM-dd HH:mm"
+            return String(format: asOfFmt, df.string(from: fetched))
+        }
+        return staticFallback
+    }
+}

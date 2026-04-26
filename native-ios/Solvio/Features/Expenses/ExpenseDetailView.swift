@@ -61,6 +61,16 @@ struct ExpenseDetailView: View {
                     if let notes = e.notes, !notes.isEmpty { notesCard(notes) }
                     if let tags = e.tags, !tags.isEmpty { tagsCard(tags) }
                     if e.receiptId != nil { itemsCard(e) }
+                    // Virtual-receipt + currency converter — only when
+                    // there's a backing receipt to link to. The QR is
+                    // basically a hand-off ramp ("scan this on your
+                    // laptop") and the converter is for travelers /
+                    // multi-currency users who keep one expense in PLN
+                    // but want a glance at EUR/USD value.
+                    if let rid = e.receiptId {
+                        virtualReceiptTile(receiptId: rid)
+                    }
+                    converterTile(e)
                     actionsCard
                 }
                 Spacer(minLength: Theme.Spacing.xl)
@@ -306,6 +316,57 @@ struct ExpenseDetailView: View {
             }
         }
         .padding(.vertical, 8)
+    }
+
+    // MARK: - Virtual receipt + converter tiles
+
+    /// Public-receipt URL — same shape as `ReceiptDetailView.publicUrl`.
+    private func receiptUrl(for receiptId: String) -> String {
+        AppConfig.apiBaseURL
+            .appendingPathComponent("receipt")
+            .appendingPathComponent(receiptId)
+            .absoluteString
+    }
+
+    /// Compact QR + open + copy tile for the linked receipt. Lets the
+    /// user pop the e-receipt open on their laptop without navigating
+    /// out of the expense detail flow.
+    private func virtualReceiptTile(receiptId: String) -> some View {
+        let url = receiptUrl(for: receiptId)
+        return VirtualReceiptTile(
+            url: url,
+            eyebrow: locale.t("receiptDetail.eReceiptEyebrow"),
+            title: locale.t("receiptDetail.eReceiptTitle"),
+            openLabel: locale.t("receiptDetail.openInBrowser"),
+            copyLabel: locale.t("receiptDetail.copyLink"),
+            scanHint: locale.t("receiptDetail.scanHint"),
+            onCopied: { toast.success(locale.t("receiptDetail.linkCopied")) }
+        )
+    }
+
+    /// PLN/EUR/USD glance card for the expense amount. The expense
+    /// already carries its own `currency` field; the converter just
+    /// flips it into the other two so the user doesn't have to alt-tab
+    /// to xe.com.
+    private func converterTile(_ e: Expense) -> some View {
+        let source = e.currency ?? defaultCurrency
+        // Targets always include the source so the row shows up first
+        // labelled as "źródło/source" — and we never display "—" for
+        // the actual expense amount.
+        let baseTargets = ["PLN", "EUR", "USD"]
+        let targets = baseTargets.contains(source.uppercased())
+            ? baseTargets
+            : [source.uppercased()] + baseTargets
+        return CurrencyConverterCard(
+            amount: e.amount.double,
+            sourceCurrency: source,
+            targets: targets,
+            eyebrow: locale.t("converter.eyebrow"),
+            title: locale.t("converter.title"),
+            asOfFmt: locale.t("converter.asOfFmt"),
+            staticFallback: locale.t("converter.staticFallback"),
+            sourceBadge: locale.t("converter.source")
+        )
     }
 
     private var actionsCard: some View {

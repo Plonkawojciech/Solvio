@@ -41,6 +41,11 @@ struct ReceiptDetailView: View {
                     imageCard(r)
                     itemsList(r)
                     qrCard
+                    // Only show the converter when we actually have a
+                    // total — virtual receipts can be saved without one.
+                    if let total = r.total?.double, total > 0 {
+                        converterTile(total: total, currency: r.currency ?? "PLN")
+                    }
                     deleteButton
                 }
                 Spacer(minLength: Theme.Spacing.xl)
@@ -321,6 +326,26 @@ struct ReceiptDetailView: View {
         .padding(Theme.Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
         .nbCard(radius: Theme.Radius.md, shadow: Theme.Shadow.sm)
+    }
+
+    // MARK: - Converter
+
+    /// PLN/EUR/USD glance card for the receipt total — same component
+    /// the expense detail uses, just driven by `r.total` here.
+    private func converterTile(total: Double, currency: String) -> some View {
+        let source = currency.uppercased()
+        let base = ["PLN", "EUR", "USD"]
+        let targets = base.contains(source) ? base : [source] + base
+        return CurrencyConverterCard(
+            amount: total,
+            sourceCurrency: currency,
+            targets: targets,
+            eyebrow: locale.t("converter.eyebrow"),
+            title: locale.t("converter.title"),
+            asOfFmt: locale.t("converter.asOfFmt"),
+            staticFallback: locale.t("converter.staticFallback"),
+            sourceBadge: locale.t("converter.source")
+        )
     }
 
     // MARK: - Delete

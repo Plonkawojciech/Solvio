@@ -586,6 +586,13 @@ enum L10n {
         "receiptDetail.eReceiptTitle": "E-paragon online",
         "receiptDetail.eReceiptHint": "Otwórz, kopiuj lub udostępnij link do e-paragonu.",
 
+        // Currency converter (PLN/EUR/USD glance card)
+        "converter.eyebrow": "PRZELICZNIK",
+        "converter.title": "Kwota w innych walutach",
+        "converter.source": "źródło",
+        "converter.asOfFmt": "Kursy NBP · %@",
+        "converter.staticFallback": "Kursy przybliżone — odśwież, gdy będziesz online",
+
         // Virtual receipt
         "virtualReceipt.title": "Paragon wirtualny",
         "virtualReceipt.eyebrow": "WIRTUALNY",
@@ -1764,6 +1771,13 @@ enum L10n {
         "receiptDetail.eReceiptEyebrow": "E-RECEIPT",
         "receiptDetail.eReceiptTitle": "Online e-receipt",
         "receiptDetail.eReceiptHint": "Open, copy, or share the e-receipt link.",
+
+        // Currency converter (PLN/EUR/USD glance card)
+        "converter.eyebrow": "CONVERTER",
+        "converter.title": "Amount in other currencies",
+        "converter.source": "source",
+        "converter.asOfFmt": "NBP rates · %@",
+        "converter.staticFallback": "Approximate rates — refresh when online",
 
         // Virtual receipt
         "virtualReceipt.title": "Virtual receipt",
