@@ -180,16 +180,17 @@ Zwróć WYŁĄCZNIE JSON, bez markdown:
   ]
 }
 
-KRYTYCZNE:
-- KAŻDA promocja MUSI mieć "sourceUrl" — URL gazetki/strony skąd wziąłeś dane. Bez sourceUrl pomiń promocję.
-- "leafletUrl" → URL do pełnej gazetki sieci (najczęściej landing page chain'a).
-- "dealUrl" → bezpośredni URL do strony produktu jeśli dostępny w gazetce.
-- "validFrom"/"validUntil" → DATY gazetki widoczne na stronie. Nigdy daty z przeszłości.
+KRYTYCZNE — JAK WYPEŁNIAĆ POLA:
+- "sourceUrl" → URL gazetki / strony, na której WIDZIAŁEŚ ten produkt. JEŚLI weszłaś na np. Biedronka gazetkę i widzisz w niej promocje — użyj URL-a gazetki dla KAŻDEJ promocji z tej gazetki. To jest WERYFIKOWALNE; nie pomijaj promocji tylko dlatego, że nie ma osobnego deep-linka. URL gazetki = wystarczające źródło.
+- "leafletUrl" → ten sam URL gazetki sieci, do którego user może kliknąć po więcej.
+- "dealUrl" → bezpośredni link do produktu jeśli istnieje, inaczej null.
+- "validFrom"/"validUntil" → daty gazetki widoczne na stronie (np. "od 5 maja do 11 maja"). Format YYYY-MM-DD.
 - "promoType": "regular" | "1+1" | "2za1" | "3za2" | "percent" | "buy_x_get_y" | "app_only" | "multipack_price"
-- "promoDescription" → human-readable opis dla wielosztukowych (np. "kup 2, zapłać za 1").
-- Jeśli web search jest NIEDOSTĘPNY albo nie znajdziesz konkretnej promocji — ZWRÓĆ EMPTY ARRAY, nie wymyślaj.
+- "promoDescription" → human-readable opis dla wielosztukowych (np. "kup 2, zapłać za 1") lub null dla regular.
 
-Zwróć max 12 promocji ale TYLKO te z weryfikowalnym sourceUrl.`
+OCZEKIWANY WYNIK: Pełna lista 8-12 promocji z różnych sieci. Jeśli znajdziesz gazetki Lidl/Biedronka/Kaufland/itp — wymień NAJLEPSZE oferty z każdej (po 2-3 najmocniejsze deals per sieć). Nie zwracaj emptów gdy gazetki są dostępne — opisz to co widzisz.
+
+JEDYNY POWÓD na empty array: web_search całkowicie zawiódł i nie masz żadnej gazetki. W praktyce zwracaj minimum 6 promocji.`
       : `You are a shopping assistant with access to web search. Today is ${todayStr}.
 
 TASK: Use web_search to find CURRENT promotions THIS WEEK at Polish chains: ${STORES.join(', ')}.
@@ -232,12 +233,17 @@ Return ONLY JSON, no markdown:
   "sources": ["https://www.lidl.pl/c/gazetka-promocyjna/..."]
 }
 
-CRITICAL:
-- EVERY promotion MUST have "sourceUrl" — leaflet URL you pulled it from. Without sourceUrl, skip the promotion.
+CRITICAL — HOW TO FILL FIELDS:
+- "sourceUrl" → URL of the leaflet/page WHERE YOU SAW the product. If you opened, say, the Biedronka leaflet and saw promos — use the leaflet URL for EVERY promo from that leaflet. That URL is verifiable; don't skip promos just because there's no per-product deep-link.
+- "leafletUrl" → same leaflet URL the user can click for more.
+- "dealUrl" → direct product URL if available, else null.
+- "validFrom"/"validUntil" → leaflet dates as YYYY-MM-DD.
 - "promoType": "regular" | "1+1" | "2za1" | "3za2" | "percent" | "buy_x_get_y" | "app_only" | "multipack_price"
-- If web_search is unavailable or you can't find verifiable promotions — RETURN EMPTY ARRAY, don't fabricate.
+- "promoDescription" → human-readable for multi-buys (e.g. "buy 2, pay for 1") or null for regular.
 
-Return max 12 promotions but ONLY those with verifiable sourceUrl.`
+EXPECTED OUTPUT: Full list of 8–12 promotions across chains. If you find leaflets from Lidl/Biedronka/Kaufland — list 2–3 strongest deals per chain. DON'T return empty when leaflets ARE available — describe what you see.
+
+ONLY reason for empty array: web_search completely failed and you have no leaflet at all. In practice return ≥ 6 promotions.`
 
     // Prefer OpenAI Responses API (web_search_preview). If not available,
     // fall back to whichever client is configured but tell the user the
