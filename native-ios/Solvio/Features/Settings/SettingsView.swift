@@ -275,10 +275,15 @@ struct SettingsView: View {
                 get: { appTheme.mode.rawValue },
                 set: { appTheme.mode = AppTheme.Mode(rawValue: $0) ?? .system }
             ), options: [
-                (value: "system", label: locale.t("settings.themeSystem")),
-                (value: "light",  label: locale.t("settings.themeLight")),
-                (value: "dark",   label: locale.t("settings.themeDark"))
+                (value: "system",  label: locale.t("settings.themeSystem")),
+                (value: "light",   label: locale.t("settings.themeLight")),
+                (value: "dark",    label: locale.t("settings.themeDark")),
+                (value: "evening", label: locale.t("settings.themeEvening"))
             ])
+
+            Text(locale.t("settings.themeEveningDesc"))
+                .font(AppFont.caption)
+                .foregroundColor(Theme.mutedForeground)
         }
         .padding(Theme.Spacing.md)
         .nbCard(radius: Theme.Radius.md, shadow: Theme.Shadow.sm)
@@ -327,7 +332,7 @@ struct SettingsView: View {
                                     .background(vm.currency == code ? Theme.foreground : Theme.card)
                                     .overlay(
                                         RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                                            .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
+                                            .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
                                     )
                                     .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                             }
@@ -768,7 +773,7 @@ private struct CategoryEditorSheet: View {
             .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
             .overlay(
                 RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                    .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
+                    .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
             )
         }
         .buttonStyle(.plain)
@@ -851,7 +856,7 @@ private struct BudgetEditorSheet: View {
                                                 .background(categoryId == c.id ? Theme.foreground : Theme.card)
                                                 .overlay(
                                                     RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                                                        .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
+                                                        .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
                                                 )
                                                 .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                                         }

@@ -88,7 +88,7 @@ struct CategoriesManagerView: View {
                     .frame(width: 56, height: 56)
                     .background(Theme.foreground)
                     .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
-                    .overlay(RoundedRectangle(cornerRadius: Theme.Radius.md).stroke(Theme.foreground, lineWidth: Theme.Border.width))
+                    .overlay(RoundedRectangle(cornerRadius: Theme.Radius.md).stroke(Theme.border, lineWidth: Theme.Border.width))
                     .nbShadow(Theme.Shadow.md)
             }
             .buttonStyle(.plain)

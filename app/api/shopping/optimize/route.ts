@@ -60,6 +60,31 @@ interface OptimizeResultPayload {
   /// Optional citation URLs from the web search (chain leaflet pages,
   /// product pages). iOS shows them as small links under the result.
   sources: string[]
+  /// Multi-store optimization. When the user is willing to visit 2-3
+  /// stores, AI splits the list into per-store partitions to capture
+  /// promotions across chains. `null` when single-store is already
+  /// optimal (savings vs single-store < 5%) so the UI doesn't push a
+  /// 2-store trip for trivial gains.
+  multiStoreStrategy: {
+    stores: Array<{
+      store: string
+      address: string | null
+      subtotal: number
+      items: Array<{
+        name: string
+        qty: number | null
+        unitPrice: number | null
+        total: number
+        promoType: string | null
+        promoDescription: string | null
+      }>
+    }>
+    grandTotal: number
+    /// Savings vs the single-store best total — only populated when > 0.
+    savingsVsSingle: number
+    /// Plain-language one-liner explaining the multi-store split.
+    rationale: string | null
+  } | null
 }
 
 // Cache freshness windows. The optimize result is "live" for 30 minutes,
@@ -197,7 +222,9 @@ async function fetchFromAI(args: {
   const prompt = isPolish
     ? `Jesteś asystentem zakupowym z dostępem do bieżących polskich gazetek promocyjnych. Dziś jest ${today}.
 
-ZADANIE: Użyj wyszukiwarki internetowej (web_search) żeby SPRAWDZIĆ AKTUALNE ceny i promocje TEGO TYGODNIA w sieciach: Lidl, Biedronka, Kaufland, Auchan, Carrefour, Netto, Dino, Stokrotka, Aldi, Żabka. Następnie wskaż w którym JEDNYM sklepie kupię całą listę najtaniej DZISIAJ.
+ZADANIE: Użyj wyszukiwarki internetowej (web_search) żeby SPRAWDZIĆ AKTUALNE ceny i promocje TEGO TYGODNIA w sieciach: Lidl, Biedronka, Kaufland, Auchan, Carrefour, Netto, Dino, Stokrotka, Aldi, Żabka. NASTĘPNIE wykonaj DWIE analizy:
+  (A) **Najlepszy JEDEN sklep** — w którym kupię całość najtaniej (jeśli ktoś nie chce robić rundki po 2 sklepach).
+  (B) **Optymalna strategia 2-3 sklepów** — gdy promocje na różne produkty są w różnych sieciach, podziel listę żeby zminimalizować łączny koszt. Pomiń tę strategię (multiStoreStrategy = null) gdy oszczędność < 5% vs (A) — nie ma sensu pchać klienta na 2 sklepy dla 3 zł.
 
 LISTA ZAKUPÓW:
 ${itemsLines}
@@ -254,6 +281,29 @@ Zwróć **wyłącznie** JSON, bez markdown. Schema:
     {"store": "Biedronka", "total": 130.00, "address": null},
     {"store": "Kaufland", "total": 135.50, "address": null}
   ],
+  "multiStoreStrategy": {
+    "stores": [
+      {
+        "store": "Lidl",
+        "address": null,
+        "subtotal": 45.50,
+        "items": [
+          {"name": "masło ekstra 200g", "qty": 2, "unitPrice": 4.99, "total": 9.98, "promoType": "2za1", "promoDescription": "drugie -50%"}
+        ]
+      },
+      {
+        "store": "Biedronka",
+        "address": null,
+        "subtotal": 32.10,
+        "items": [
+          {"name": "kawa Tchibo Family 250g", "qty": 1, "unitPrice": 14.99, "total": 14.99, "promoType": "percent", "promoDescription": "-30%"}
+        ]
+      }
+    ],
+    "grandTotal": 77.60,
+    "savingsVsSingle": 8.40,
+    "rationale": "Masło 1+1 w Lidlu, ale kawa Tchibo -30% tylko w Biedronce — split daje 8.40 zł oszczędności."
+  },
   "sources": [
     "https://www.lidl.pl/c/gazetka-promocyjna/...",
     "https://www.biedronka.pl/pl/gazetki/..."
@@ -262,10 +312,13 @@ Zwróć **wyłącznie** JSON, bez markdown. Schema:
 
 KRYTYCZNE:
 - "sources" MUSI zawierać URL-e stron z których faktycznie wziąłeś ceny. Pusta tablica jeśli nie miałeś dostępu do web_search.
+- "multiStoreStrategy" = null gdy single-store jest już optymalny (savings < 5%) lub gdy nie znajdziesz wiarygodnych cross-store deals. NIGDY nie zmyślaj split'u tylko po to, żeby coś było.
 - Liczby jako number, nie string. Zawsze valid JSON.`
     : `You are a shopping assistant with access to live Polish supermarket leaflet data. Today is ${today}.
 
-TASK: Use web search to look up CURRENT prices and THIS WEEK'S promotions across: Lidl, Biedronka, Kaufland, Auchan, Carrefour, Netto, Dino, Stokrotka, Aldi, Żabka. Then tell me which SINGLE store is cheapest for the whole list TODAY.
+TASK: Use web search to look up CURRENT prices and THIS WEEK'S promotions across: Lidl, Biedronka, Kaufland, Auchan, Carrefour, Netto, Dino, Stokrotka, Aldi, Żabka. Then provide TWO analyses:
+  (A) **Best SINGLE store** — where the whole list is cheapest if the user only wants one stop.
+  (B) **Optimal 2-3 store strategy** — when promotions for different products are at different chains, split the list to minimize total cost. Skip this (multiStoreStrategy = null) when savings < 5% vs (A) — not worth pushing the user to 2 stores for trivial gains.
 
 SHOPPING LIST:
 ${itemsLines}
@@ -313,11 +366,27 @@ Return **only** JSON, no markdown. Schema:
   "alternatives": [
     {"store": "Biedronka", "total": 130.00, "address": null}
   ],
+  "multiStoreStrategy": {
+    "stores": [
+      {
+        "store": "Lidl", "address": null, "subtotal": 45.50,
+        "items": [{"name": "butter 200g", "qty": 2, "unitPrice": 4.99, "total": 9.98, "promoType": "2za1", "promoDescription": "second 50% off"}]
+      },
+      {
+        "store": "Biedronka", "address": null, "subtotal": 32.10,
+        "items": [{"name": "Tchibo Family coffee 250g", "qty": 1, "unitPrice": 14.99, "total": 14.99, "promoType": "percent", "promoDescription": "-30%"}]
+      }
+    ],
+    "grandTotal": 77.60,
+    "savingsVsSingle": 8.40,
+    "rationale": "Butter 1+1 at Lidl, but Tchibo coffee -30% only at Biedronka — split saves 8.40 PLN."
+  },
   "sources": ["https://www.lidl.pl/c/gazetka-promocyjna/..."]
 }
 
 CRITICAL:
 - "sources" MUST contain URLs you actually pulled prices from. Empty array if web_search wasn't available.
+- "multiStoreStrategy" = null when single-store is already optimal (savings < 5%) or when you can't find credible cross-store deals. NEVER fabricate a split just for the sake of it.
 - Numbers as numbers, not strings. Always valid JSON.`
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -450,6 +519,65 @@ CRITICAL:
         .slice(0, 5)
     : []
 
+  // ---- Multi-store strategy parsing -------------------------------------
+  // Defensive — accept the field only when it has at least 2 stores AND
+  // savings > 0. Otherwise reject (keep multiStoreStrategy null) to avoid
+  // pushing the user to a 2-store trip for nothing.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const rawStrategy = (webData as any).multiStoreStrategy
+  let multiStoreStrategy: OptimizeResultPayload['multiStoreStrategy'] = null
+  if (rawStrategy && typeof rawStrategy === 'object') {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const rawStores: any[] = Array.isArray(rawStrategy.stores) ? rawStrategy.stores : []
+    const cleanStrategyStores = rawStores
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .map((s: any) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const sItems: any[] = Array.isArray(s?.items) ? s.items : []
+        const items = sItems.map((it) => {
+          const promoTypeRaw = typeof it?.promoType === 'string' ? it.promoType.trim().toLowerCase() : null
+          const promoType = promoTypeRaw && VALID_PROMO_TYPES.has(promoTypeRaw) ? promoTypeRaw : 'regular'
+          return {
+            name: typeof it?.name === 'string' ? it.name : 'item',
+            qty: it?.qty != null ? num(it.qty, 1) : (it?.quantity != null ? num(it.quantity, 1) : null),
+            unitPrice: it?.unitPrice != null ? num(it.unitPrice) : (it?.price != null ? num(it.price) : null),
+            total: num(it?.total ?? (num(it?.unitPrice ?? it?.price ?? 0) * num(it?.qty ?? it?.quantity ?? 1, 1))),
+            promoType,
+            promoDescription: str(it?.promoDescription),
+          }
+        })
+        const computedSubtotal = items.reduce((acc, it) => acc + num(it.total), 0)
+        return {
+          store: typeof s?.store === 'string' ? s.store : null,
+          address: (lat != null && lng != null) ? str(s?.address) : null,
+          subtotal: Math.round((num(s?.subtotal, computedSubtotal)) * 100) / 100,
+          items,
+        }
+      })
+      .filter((s): s is { store: string; address: string | null; subtotal: number; items: typeof cleanItems } =>
+        s.store != null && s.items.length > 0
+      )
+    const grandTotal = num(rawStrategy.grandTotal,
+      cleanStrategyStores.reduce((acc, s) => acc + s.subtotal, 0))
+    const savingsVsSingle = num(rawStrategy.savingsVsSingle,
+      Math.max(0, Math.round((bestTotal - grandTotal) * 100) / 100))
+    // Only surface the strategy when it (a) has 2+ stores, (b) actually
+    // beats single-store best by something meaningful (>= 3 PLN absolute
+    // OR >= 5% relative). Otherwise drop it.
+    const minAbsSavings = 3
+    const minRelSavings = bestTotal > 0 ? bestTotal * 0.05 : 0
+    if (cleanStrategyStores.length >= 2
+        && savingsVsSingle >= Math.min(minAbsSavings, minRelSavings)
+        && savingsVsSingle > 0) {
+      multiStoreStrategy = {
+        stores: cleanStrategyStores,
+        grandTotal: Math.round(grandTotal * 100) / 100,
+        savingsVsSingle: Math.round(savingsVsSingle * 100) / 100,
+        rationale: str(rawStrategy.rationale),
+      }
+    }
+  }
+
   const data: OptimizeResultPayload = {
     bestStore,
     bestStoreAddress: safeAddress,
@@ -462,6 +590,7 @@ CRITICAL:
     alternatives: cleanAlts,
     dataSource: usedLiveSearch ? 'live_web_search' : 'estimate',
     sources: cleanSources,
+    multiStoreStrategy,
   }
 
   return { data, source: usedSource }

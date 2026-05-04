@@ -48,7 +48,7 @@ struct GroupSettlementsView: View {
                 .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
                 .overlay(
                     RoundedRectangle(cornerRadius: Theme.Radius.md)
-                        .stroke(Theme.foreground, lineWidth: Theme.Border.width)
+                        .stroke(Theme.border, lineWidth: Theme.Border.width)
                 )
             VStack(alignment: .leading, spacing: 2) {
                 NBEyebrow(text: locale.t("groupSettlements.groupEyebrow"))
@@ -281,7 +281,7 @@ struct GroupSettlementsView: View {
                 .foregroundColor(.white)
         }
         .frame(width: 32, height: 32)
-        .overlay(Circle().stroke(Theme.foreground, lineWidth: Theme.Border.widthThin))
+        .overlay(Circle().stroke(Theme.border, lineWidth: Theme.Border.widthThin))
     }
 
     private func balanceString(_ amount: Double, currency: String) -> String {

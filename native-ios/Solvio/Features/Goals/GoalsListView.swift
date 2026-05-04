@@ -186,7 +186,7 @@ struct GoalsListView: View {
                     .frame(width: 56, height: 56)
                     .background(Theme.foreground)
                     .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
-                    .overlay(RoundedRectangle(cornerRadius: Theme.Radius.md).stroke(Theme.foreground, lineWidth: Theme.Border.width))
+                    .overlay(RoundedRectangle(cornerRadius: Theme.Radius.md).stroke(Theme.border, lineWidth: Theme.Border.width))
                     .nbShadow(Theme.Shadow.md)
             }
             .buttonStyle(.plain)
@@ -278,7 +278,7 @@ struct GoalsListView: View {
                         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                         .overlay(
                             RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                                .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
+                                .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
                         )
                     Text(locale.t("savings.aiTip"))
                         .font(AppFont.mono(10))
@@ -304,7 +304,7 @@ struct GoalsListView: View {
             .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
             .overlay(
                 RoundedRectangle(cornerRadius: Theme.Radius.md)
-                    .stroke(Theme.foreground.opacity(0.3), lineWidth: Theme.Border.widthThin)
+                    .stroke(Theme.border.opacity(0.3), lineWidth: Theme.Border.widthThin)
             )
         }
         .buttonStyle(.plain)
@@ -347,7 +347,7 @@ struct GoalsListView: View {
         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
         .overlay(
             RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                .stroke(Theme.foreground.opacity(0.3), lineWidth: Theme.Border.widthThin)
+                .stroke(Theme.border.opacity(0.3), lineWidth: Theme.Border.widthThin)
         )
     }
 
@@ -372,7 +372,7 @@ struct GoalsListView: View {
                 .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                 .overlay(
                     RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                        .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
+                        .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
                 )
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
@@ -479,7 +479,7 @@ struct GoalCreateSheet: View {
                                     .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                                     .overlay(
                                         RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                                            .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
+                                            .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
                                     )
                                 }
                                 .buttonStyle(.plain)

@@ -151,7 +151,7 @@ struct QuickSplitStandaloneSheet: View {
                 .fill(Color(hex: Self.colors[idx % Self.colors.count]) ?? Theme.muted)
                 .frame(width: 16, height: 16)
                 .overlay(
-                    Circle().stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
+                    Circle().stroke(Theme.border, lineWidth: Theme.Border.widthThin)
                 )
             TextField(locale.t("quickSplit.participantPh"), text: $participants[idx].name)
                 .font(AppFont.body)
@@ -161,7 +161,7 @@ struct QuickSplitStandaloneSheet: View {
                 .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                 .overlay(
                     RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                        .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
+                        .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
                 )
                 .disabled(participants[idx].isMe)
             if !participants[idx].isMe {
@@ -201,7 +201,7 @@ struct QuickSplitStandaloneSheet: View {
                             .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                             .overlay(
                                 RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                                    .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
+                                    .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
                             )
                         }
                         .buttonStyle(.plain)

@@ -233,7 +233,7 @@ struct GroupReceiptsView: View {
                             .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                             .overlay(
                                 RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                                    .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
+                                    .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
                             )
                         }
                     }

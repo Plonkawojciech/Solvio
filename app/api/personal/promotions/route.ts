@@ -293,22 +293,36 @@ Return max 12 promotions but ONLY those with verifiable sourceUrl.`
       dataSource = 'estimate'
     }
 
-    // Drop any promotion without a verifiable sourceUrl. This is the
-    // single most important check — without it the model can fabricate
-    // ad-hoc deals that look real but aren't. We require an http(s) URL
-    // and accept it as-is (HEAD-checking every URL would slow the
-    // response and isn't strictly necessary for credibility — the user
-    // can click and see the leaflet for themselves).
+    // Backfill sourceUrl from leafletUrl, dealUrl, OR the global
+    // `sources` array — many AI responses include the per-store
+    // leaflet URL only at the aggregate level rather than repeating
+    // it on every promotion. Drop only when NO URL at all is
+    // available (zero-credibility entries), so we surface real deals
+    // even when the AI is terse with per-row attribution.
     type RawPromo = Record<string, unknown>
+    const isHttpUrl = (v: unknown): v is string => typeof v === 'string' && /^https?:\/\//i.test(v)
+    const declaredSourcesPre: string[] = Array.isArray(result.sources)
+      ? (result.sources as unknown[]).filter(isHttpUrl)
+      : []
+    const fallbackSource = declaredSourcesPre[0] ?? null
+
     const withIds = (arr: unknown[]) =>
       (arr || [])
-        .filter((p): p is RawPromo => typeof p === 'object' && p !== null && typeof (p as RawPromo).sourceUrl === 'string' && /^https?:\/\//i.test((p as RawPromo).sourceUrl as string))
+        .filter((p): p is RawPromo => typeof p === 'object' && p !== null)
         .map((p, i) => {
-          const sourceUrl = p.sourceUrl as string
+          const sourceUrlRaw = p.sourceUrl
           const leafletUrlRaw = p.leafletUrl
-          const leafletUrl = typeof leafletUrlRaw === 'string' && /^https?:\/\//i.test(leafletUrlRaw) ? leafletUrlRaw : sourceUrl
           const dealUrlRaw = p.dealUrl
-          const dealUrl = typeof dealUrlRaw === 'string' && /^https?:\/\//i.test(dealUrlRaw) ? dealUrlRaw : null
+          const sourceUrl: string | null =
+            (isHttpUrl(sourceUrlRaw) ? sourceUrlRaw : null) ??
+            (isHttpUrl(leafletUrlRaw) ? leafletUrlRaw : null) ??
+            (isHttpUrl(dealUrlRaw) ? dealUrlRaw : null) ??
+            fallbackSource
+          // Skip only if NOTHING points anywhere — that's a fabricated
+          // entry with no possible verification path.
+          if (!sourceUrl) return null
+          const leafletUrl = isHttpUrl(leafletUrlRaw) ? leafletUrlRaw : sourceUrl
+          const dealUrl = isHttpUrl(dealUrlRaw) ? dealUrlRaw : null
           return {
             ...p,
             id: typeof p.id === 'string' ? p.id : `promo-${Date.now()}-${i}`,
@@ -320,6 +334,7 @@ Return max 12 promotions but ONLY those with verifiable sourceUrl.`
             promoDescription: typeof p.promoDescription === 'string' ? p.promoDescription : null,
           }
         })
+        .filter((p): p is NonNullable<typeof p> => p !== null)
 
     // Try to get latest weekly summary
     let weeklySummary = null

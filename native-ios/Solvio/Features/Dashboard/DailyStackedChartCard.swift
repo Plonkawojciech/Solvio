@@ -121,7 +121,7 @@ struct DailyStackedChartCard: View {
                         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                         .overlay(
                             RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                                .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
+                                .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
                         )
                 }
                 .buttonStyle(.plain)
@@ -189,7 +189,7 @@ struct DailyStackedChartCard: View {
                                 .frame(width: 10, height: 10)
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 3)
-                                        .stroke(Theme.foreground.opacity(0.6), lineWidth: Theme.Border.widthThin)
+                                        .stroke(Theme.border.opacity(0.6), lineWidth: Theme.Border.widthThin)
                                 )
                             Text(entry.name)
                                 .font(AppFont.mono(10))
@@ -203,7 +203,7 @@ struct DailyStackedChartCard: View {
                         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                         .overlay(
                             RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                                .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
+                                .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
                         )
                     }
                     .buttonStyle(.plain)
@@ -371,7 +371,7 @@ struct DayBreakdownSheet: View {
                             .frame(width: 12, height: 12)
                             .overlay(
                                 RoundedRectangle(cornerRadius: 3)
-                                    .stroke(Theme.foreground.opacity(0.6), lineWidth: Theme.Border.widthThin)
+                                    .stroke(Theme.border.opacity(0.6), lineWidth: Theme.Border.widthThin)
                             )
                         Text(slice.categoryName)
                             .font(AppFont.bodyMedium)

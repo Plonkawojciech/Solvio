@@ -32,6 +32,12 @@ struct SolvioApp: App {
     var body: some Scene {
         WindowGroup {
             RootView()
+                // Force a full view-tree rebuild whenever the theme mode
+                // changes. Light↔Dark already triggers a system trait
+                // change, but Dark↔Evening is colorScheme-equal (both
+                // .dark) so SwiftUI wouldn't re-resolve our Theme.* tokens
+                // without an identity bump.
+                .id(appTheme.mode)
                 .environmentObject(session)
                 .environmentObject(router)
                 .environmentObject(toast)

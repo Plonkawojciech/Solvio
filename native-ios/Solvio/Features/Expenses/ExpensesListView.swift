@@ -161,7 +161,7 @@ struct ExpensesListView: View {
                 .background(Theme.card)
                 .overlay(
                     RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                        .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
+                        .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
                 )
                 .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
 
@@ -213,7 +213,7 @@ struct ExpensesListView: View {
         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
         .overlay(
             RoundedRectangle(cornerRadius: Theme.Radius.md)
-                .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
+                .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
         )
     }
 
@@ -259,7 +259,7 @@ struct ExpensesListView: View {
                     Circle()
                         .fill(Theme.accent)
                         .frame(width: 6, height: 6)
-                        .overlay(Circle().stroke(Theme.foreground, lineWidth: Theme.Border.widthThin))
+                        .overlay(Circle().stroke(Theme.border, lineWidth: Theme.Border.widthThin))
                 }
                 Image(systemName: isActive ? "chevron.up" : "chevron.down")
                     .font(.system(size: 9, weight: .bold))
@@ -271,7 +271,7 @@ struct ExpensesListView: View {
             .background(isActive ? Theme.foreground : Theme.card)
             .overlay(
                 RoundedRectangle(cornerRadius: Theme.Radius.md)
-                    .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
+                    .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
             )
             .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
         }
@@ -351,7 +351,7 @@ struct ExpensesListView: View {
         .background(Theme.card)
         .overlay(
             RoundedRectangle(cornerRadius: Theme.Radius.md)
-                .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
+                .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
         )
         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
         .transition(.opacity.combined(with: .move(edge: .top)))
@@ -370,7 +370,7 @@ struct ExpensesListView: View {
         .background(Theme.card)
         .overlay(
             RoundedRectangle(cornerRadius: Theme.Radius.md)
-                .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
+                .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
         )
         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
         .transition(.opacity.combined(with: .move(edge: .top)))
@@ -503,7 +503,7 @@ struct ExpensesListView: View {
         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
         .overlay(
             RoundedRectangle(cornerRadius: Theme.Radius.md)
-                .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
+                .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
         )
     }
 
@@ -532,7 +532,7 @@ struct ExpensesListView: View {
             .background(active ? Theme.foreground : Theme.card)
             .overlay(
                 RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                    .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
+                    .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
             )
             .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
     }
@@ -913,7 +913,7 @@ struct ExpenseCreateSheet: View {
                             .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
                             .overlay(
                                 RoundedRectangle(cornerRadius: Theme.Radius.md)
-                                    .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
+                                    .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
                             )
                     }
                 }
@@ -974,7 +974,7 @@ struct ExpenseCreateSheet: View {
                                 .background(selectedCategoryId == c.id ? Theme.foreground : Theme.card)
                                 .overlay(
                                     RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                                        .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
+                                        .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
                                 )
                                 .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                         }

@@ -586,3 +586,17 @@ enum ShoppingRepo {
         try await ApiClient.shared.post("/api/shopping/optimize", body: body)
     }
 }
+
+// MARK: - Receipt analyzer
+
+/// `/api/personal/receipt-analyze` — given a `receiptId` the user already
+/// scanned, returns a per-line audit of the prices vs current chain
+/// leaflets. Used by Okazje's "Analyze a receipt" flow.
+enum ReceiptAnalyzeRepo {
+    static func analyze(receiptId: String, lang: String) async throws -> ReceiptAnalyzeResponse {
+        try await ApiClient.shared.post(
+            "/api/personal/receipt-analyze",
+            body: ReceiptAnalyzeRequest(receiptId: receiptId, lang: lang)
+        )
+    }
+}

@@ -12,7 +12,6 @@
 		0A0D18DE0786EFDFA0BA0E4F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 52D728249EFCE7D7C0337D94 /* Assets.xcassets */; };
 		0D739ACCF86CE4500D1AA177 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8727C6B896D2A937FEBF0FC /* Theme.swift */; };
 		11676B1135A110F68E098C92 /* GoalsListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC6D04CB361A10B6F393BB80 /* GoalsListView.swift */; };
-		D1EA15000010000000005CDE /* OkazjeHubView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1EA15000010000000005CDF /* OkazjeHubView.swift */; };
 		161749A0D446DCFA96FC8EC1 /* SolvioApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01EF34F7339AED6F0B3DD142 /* SolvioApp.swift */; };
 		172C21721BB0EB38FB037439 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A05E58B94F312BA721C737F /* DashboardView.swift */; };
 		233274E70355C77E36B98A6D /* AppLocale.swift in Sources */ = {isa = PBXBuildFile; fileRef = 522E348991F119E01E636E4D /* AppLocale.swift */; };
@@ -31,6 +30,7 @@
 		4749756ADEFAFEE6C2A8022E /* Formatters.swift in Sources */ = {isa = PBXBuildFile; fileRef = 226851A463B366A968CE6C3F /* Formatters.swift */; };
 		5ECEEC26C1178AF25409D1A5 /* NBComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = A582703EBAD4799BDC976AF0 /* NBComponents.swift */; };
 		66F012B9A540948937D34E7F /* GroupDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2966F14F7CB3867D2DFE1A3D /* GroupDetailView.swift */; };
+		76E9FF745FF09A28980C0D17 /* OkazjeHubView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8980F8F7E7B062AAB3411B0 /* OkazjeHubView.swift */; };
 		79CFE120CF26BFD497F202C4 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 027850E12E3403B5AFDB95B4 /* RootView.swift */; };
 		7A2C515B2E4669D2C802BD8B /* ToastCenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EAC82DB72FC502D7F96FAAE /* ToastCenter.swift */; };
 		7E68AA1AE7F89FBDDF7F2FDF /* GroupSettlementsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC0470D24BB455FF9AA1B5BB /* GroupSettlementsView.swift */; };
@@ -105,6 +105,7 @@
 		942D50E6D12D96BB506456DB /* AppRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppRouter.swift; sourceTree = "<group>"; };
 		978F13DE515AB79BBF895C08 /* QuickSplitStandaloneSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickSplitStandaloneSheet.swift; sourceTree = "<group>"; };
 		A582703EBAD4799BDC976AF0 /* NBComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NBComponents.swift; sourceTree = "<group>"; };
+		A8980F8F7E7B062AAB3411B0 /* OkazjeHubView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OkazjeHubView.swift; sourceTree = "<group>"; };
 		AC0470D24BB455FF9AA1B5BB /* GroupSettlementsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupSettlementsView.swift; sourceTree = "<group>"; };
 		B8727C6B896D2A937FEBF0FC /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		BADCF30C6EE9DE05E2B12928 /* AppConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfig.swift; sourceTree = "<group>"; };
@@ -113,7 +114,6 @@
 		DCB372E303126D02D67C6205 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		DDC3F0358A2CEC41460FBEB1 /* pl */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = pl; path = pl.lproj/Localizable.strings; sourceTree = "<group>"; };
 		EC6D04CB361A10B6F393BB80 /* GoalsListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoalsListView.swift; sourceTree = "<group>"; };
-		D1EA15000010000000005CDF /* OkazjeHubView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OkazjeHubView.swift; sourceTree = "<group>"; };
 		F85A91C707E84F48DCEF38D2 /* PricesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PricesView.swift; sourceTree = "<group>"; };
 		F97FF74B94CD0518150E1087 /* L10n.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = L10n.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -185,14 +185,6 @@
 				45A1D2015C56725BB81B9A5D /* SavingsHubView.swift */,
 			);
 			path = Savings;
-			sourceTree = "<group>";
-		};
-		D1EA15000010000000005CE0 /* Deals */ = {
-			isa = PBXGroup;
-			children = (
-				D1EA15000010000000005CDF /* OkazjeHubView.swift */,
-			);
-			path = Deals;
 			sourceTree = "<group>";
 		};
 		79140DD133864AF15EC193B5 /* Solvio */ = {
@@ -339,6 +331,14 @@
 			path = ShoppingAdvisor;
 			sourceTree = "<group>";
 		};
+		C7B6AD68797D2AF5C34AAB64 /* Deals */ = {
+			isa = PBXGroup;
+			children = (
+				A8980F8F7E7B062AAB3411B0 /* OkazjeHubView.swift */,
+			);
+			path = Deals;
+			sourceTree = "<group>";
+		};
 		CC2B35DDAD7EC4679E5650AA /* Loyalty */ = {
 			isa = PBXGroup;
 			children = (
@@ -390,7 +390,7 @@
 				F83A647C03D33CD3AFD1395A /* Categories */,
 				A021610899FE4122822DA044 /* Challenges */,
 				E3C412AB8C27B3ED995903D7 /* Dashboard */,
-				D1EA15000010000000005CE0 /* Deals */,
+				C7B6AD68797D2AF5C34AAB64 /* Deals */,
 				4480CFB76448173A6912FA9E /* Expenses */,
 				1D52E76A9998937120C3F974 /* Goals */,
 				892E4F0C3ECDC8446FB298F9 /* Groups */,
@@ -510,7 +510,6 @@
 				4749756ADEFAFEE6C2A8022E /* Formatters.swift in Sources */,
 				87397B3CB39CDB818AB2A150 /* GoalDetailView.swift in Sources */,
 				11676B1135A110F68E098C92 /* GoalsListView.swift in Sources */,
-				D1EA15000010000000005CDE /* OkazjeHubView.swift in Sources */,
 				66F012B9A540948937D34E7F /* GroupDetailView.swift in Sources */,
 				A223F312862524E33C0A0DA4 /* GroupReceiptsView.swift in Sources */,
 				7E68AA1AE7F89FBDDF7F2FDF /* GroupSettlementsView.swift in Sources */,
@@ -523,6 +522,7 @@
 				CD88D9BC7B018AD0FF2E6DDF /* Money.swift in Sources */,
 				5ECEEC26C1178AF25409D1A5 /* NBComponents.swift in Sources */,
 				FC524F477AA35A2F19C457F7 /* NearbyStoresView.swift in Sources */,
+				76E9FF745FF09A28980C0D17 /* OkazjeHubView.swift in Sources */,
 				3BB70F509DF9D0A6D7CF6EB6 /* PricesView.swift in Sources */,
 				EF3D467789ECB0678E483DD5 /* ProductSearchView.swift in Sources */,
 				2FCD322EA4ACF4943E70CA9C /* QuickSplitStandaloneSheet.swift in Sources */,

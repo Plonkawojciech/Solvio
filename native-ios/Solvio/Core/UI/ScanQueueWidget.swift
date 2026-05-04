@@ -71,7 +71,7 @@ struct ScanQueueWidget: View {
             .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
             .overlay(
                 RoundedRectangle(cornerRadius: Theme.Radius.md)
-                    .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
+                    .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
             )
             .nbShadow(Theme.Shadow.md)
         }
@@ -92,11 +92,11 @@ struct ScanQueueWidget: View {
     private var progressRing: some View {
         ZStack {
             Circle()
-                .stroke(Theme.foreground.opacity(0.2), lineWidth: 3)
+                .stroke(Theme.border.opacity(0.2), lineWidth: 3)
                 .frame(width: 22, height: 22)
             Circle()
                 .trim(from: 0, to: max(0.05, queue.progress))
-                .stroke(Theme.foreground, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                .stroke(Theme.border, style: StrokeStyle(lineWidth: 3, lineCap: .round))
                 .rotationEffect(.degrees(-90))
                 .frame(width: 22, height: 22)
                 .animation(.easeOut(duration: 0.25), value: queue.progress)
@@ -149,7 +149,7 @@ struct ScanQueueWidget: View {
                             .clipShape(RoundedRectangle(cornerRadius: 4))
                             .overlay(
                                 RoundedRectangle(cornerRadius: 4)
-                                    .stroke(Theme.foreground.opacity(0.4), lineWidth: Theme.Border.widthThin)
+                                    .stroke(Theme.border.opacity(0.4), lineWidth: Theme.Border.widthThin)
                             )
                     }
                     .buttonStyle(.plain)
@@ -170,7 +170,7 @@ struct ScanQueueWidget: View {
         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
         .overlay(
             RoundedRectangle(cornerRadius: Theme.Radius.md)
-                .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
+                .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
         )
         .nbShadow(Theme.Shadow.md)
         .padding(.bottom, 6)
@@ -186,7 +186,7 @@ struct ScanQueueWidget: View {
                 .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                 .overlay(
                     RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                        .stroke(Theme.foreground.opacity(0.4), lineWidth: Theme.Border.widthThin)
+                        .stroke(Theme.border.opacity(0.4), lineWidth: Theme.Border.widthThin)
                 )
 
             VStack(alignment: .leading, spacing: 2) {
@@ -217,7 +217,7 @@ struct ScanQueueWidget: View {
                         .clipShape(RoundedRectangle(cornerRadius: 6))
                         .overlay(
                             RoundedRectangle(cornerRadius: 6)
-                                .stroke(Theme.foreground.opacity(0.4), lineWidth: Theme.Border.widthThin)
+                                .stroke(Theme.border.opacity(0.4), lineWidth: Theme.Border.widthThin)
                         )
                 }
                 .buttonStyle(.plain)

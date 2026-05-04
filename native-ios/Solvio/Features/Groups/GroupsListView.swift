@@ -169,7 +169,7 @@ struct GroupsListView: View {
                 .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                 .overlay(
                     RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                        .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
+                        .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
                 )
             VStack(alignment: .leading, spacing: 2) {
                 Text(locale.t("groups.unsettledDebts"))
@@ -294,7 +294,7 @@ struct GroupsListView: View {
                     .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                     .overlay(
                         RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                            .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
+                            .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
                     )
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
@@ -328,7 +328,7 @@ struct GroupsListView: View {
                     .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                     .overlay(
                         RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                            .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
+                            .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
                     )
                 }
                 .buttonStyle(.plain)
@@ -456,7 +456,7 @@ struct GroupsListView: View {
         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
         .overlay(
             RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                .stroke(Theme.foreground.opacity(0.3), lineWidth: Theme.Border.widthThin)
+                .stroke(Theme.border.opacity(0.3), lineWidth: Theme.Border.widthThin)
         )
     }
 
@@ -548,7 +548,7 @@ struct GroupCreateSheet: View {
                             .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
                             .overlay(
                                 RoundedRectangle(cornerRadius: Theme.Radius.md)
-                                    .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
+                                    .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
                             )
                     }
                     membersSection
@@ -609,7 +609,7 @@ struct GroupCreateSheet: View {
                                 .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                                 .overlay(
                                     RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                                        .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
+                                        .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
                                 )
                         }
                         .buttonStyle(.plain)
@@ -640,7 +640,7 @@ struct GroupCreateSheet: View {
                         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                         .overlay(
                             RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                                .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
+                                .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
                         )
                 }
                 .buttonStyle(.plain)
@@ -651,7 +651,7 @@ struct GroupCreateSheet: View {
                         Circle()
                             .fill(Color(hex: m.color) ?? Theme.muted)
                             .frame(width: 20, height: 20)
-                            .overlay(Circle().stroke(Theme.foreground, lineWidth: Theme.Border.widthThin))
+                            .overlay(Circle().stroke(Theme.border, lineWidth: Theme.Border.widthThin))
                         TextField(locale.t("groups.memberName"), text: $m.name)
                             .font(AppFont.body)
                             .padding(.horizontal, Theme.Spacing.md)
@@ -660,7 +660,7 @@ struct GroupCreateSheet: View {
                             .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                             .overlay(
                                 RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                                    .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
+                                    .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
                             )
                         if members.count > 1 {
                             Button {
@@ -674,7 +674,7 @@ struct GroupCreateSheet: View {
                                     .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                                     .overlay(
                                         RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                                            .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
+                                            .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
                                     )
                             }
                             .buttonStyle(.plain)
@@ -691,7 +691,7 @@ struct GroupCreateSheet: View {
                         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                         .overlay(
                             RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                                .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
+                                .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
                         )
                     colorPicker(selection: $m.color)
                 }

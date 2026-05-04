@@ -138,7 +138,7 @@ struct NearbyStoresView: View {
                 .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                 .overlay(
                     RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                        .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
+                        .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
                 )
         }
         .buttonStyle(.plain)
@@ -196,7 +196,7 @@ struct NearbyStoresView: View {
                         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                         .overlay(
                             RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                                .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
+                                .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
                         )
                 }
             }
@@ -296,7 +296,7 @@ struct NearbyStoresView: View {
                             .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                             .overlay(
                                 RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                                    .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
+                                    .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
                             )
                     }
                     .buttonStyle(.plain)

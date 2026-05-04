@@ -11,51 +11,107 @@ import SwiftUI
 enum Theme {
 
     // MARK: - Colors
+    //
+    // Each token is a `static var` (not `let`) so it re-resolves on every
+    // access. Light + Dark come from the asset catalog (system trait does
+    // the swap). Evening returns a hand-picked bluish-warm palette via
+    // `ThemeStore.shared.activeMode == .evening`. See `AppTheme.swift`
+    // for the bridge that updates `ThemeStore` when the user picks a mode.
 
-    /// Page background — cream #f5f0eb (PWA `--background`).
-    static let background = Color("Background")
+    /// Page background — cream in light, near-black in dark, deep navy in evening.
+    static var background: Color { themed("Background", evening: ThemePalette.evening.background) }
 
-    /// Primary foreground / near-black #0f0f0f (PWA `--foreground`).
-    static let foreground = Color("Foreground")
+    /// Primary foreground — near-black in light, off-white in dark, blue-tinted ivory in evening.
+    static var foreground: Color { themed("Foreground", evening: ThemePalette.evening.foreground) }
 
     /// Subtle surface — `--muted` used for skeletons, code blocks.
-    static let muted = Color("Muted")
+    static var muted: Color { themed("Muted", evening: ThemePalette.evening.muted) }
 
     /// Muted text — `--muted-foreground` (labels, captions).
-    static let mutedForeground = Color("MutedForeground")
+    static var mutedForeground: Color { themed("MutedForeground", evening: ThemePalette.evening.mutedForeground) }
 
     /// Surface behind cards (slightly different from bg).
-    static let surface = Color("Surface")
+    static var surface: Color { themed("Surface", evening: ThemePalette.evening.surface) }
 
     /// Accent (category picker active state).
-    static let accent = Color("Accent")
+    static var accent: Color { themed("Accent", evening: ThemePalette.evening.accent) }
 
-    /// Secondary surface — PWA `--secondary: 30 14% 87%` (darker cream #ebe5dd).
-    /// Used for chip inactive states, hover backgrounds, muted bordered boxes.
-    static let secondary = Color("Accent") // same hue as accent in PWA
+    /// Secondary surface — same hue as accent in PWA / iOS.
+    static var secondary: Color { themed("Accent", evening: ThemePalette.evening.accent) }
 
-    /// Card surface — white in light, dark gray in dark. Alias to Surface.
-    static let card = Color("Surface")
+    /// Card surface — alias to Surface.
+    static var card: Color { themed("Surface", evening: ThemePalette.evening.surface) }
 
     /// Destructive red for errors / overspent.
-    static let destructive = Color("Destructive")
+    static var destructive: Color { themed("Destructive", evening: ThemePalette.evening.destructive) }
 
     /// Success emerald for settled states.
-    static let success = Color("Success")
+    static var success: Color { themed("Success", evening: ThemePalette.evening.success) }
 
     /// Warning amber for nearing-limit budgets.
-    static let warning = Color("Warning")
+    static var warning: Color { themed("Warning", evening: ThemePalette.evening.warning) }
 
     /// Info blue for informational banners.
-    static let info = Color("Info")
+    static var info: Color { themed("Info", evening: ThemePalette.evening.info) }
 
-    // Chart palette (6 shades — grayscale on light, reversed on dark).
-    static let chart1 = Color("Chart1")
-    static let chart2 = Color("Chart2")
-    static let chart3 = Color("Chart3")
-    static let chart4 = Color("Chart4")
-    static let chart5 = Color("Chart5")
-    static let chart6 = Color("Chart6")
+    // Chart palette (6 shades).
+    static var chart1: Color { themed("Chart1", evening: ThemePalette.evening.chart1) }
+    static var chart2: Color { themed("Chart2", evening: ThemePalette.evening.chart2) }
+    static var chart3: Color { themed("Chart3", evening: ThemePalette.evening.chart3) }
+    static var chart4: Color { themed("Chart4", evening: ThemePalette.evening.chart4) }
+    static var chart5: Color { themed("Chart5", evening: ThemePalette.evening.chart5) }
+    static var chart6: Color { themed("Chart6", evening: ThemePalette.evening.chart6) }
+
+    /// Border color for cards / buttons. In light mode this is the
+    /// neobrutalism black; in dark/evening it's a soft hairline so cards
+    /// don't get screaming-white outlines that look harsh.
+    static var border: Color {
+        switch ThemeStore.shared.activeMode {
+        case .light:
+            return Color("Foreground")
+        case .dark:
+            return Color(red: 1, green: 1, blue: 1).opacity(0.10)
+        case .evening:
+            return Color(red: 0.494, green: 0.541, blue: 0.706).opacity(0.22) // bluish hairline
+        case .system:
+            // Match the system trait — UIKit handles light/dark for us.
+            return Color(UIColor { trait in
+                trait.userInterfaceStyle == .dark
+                    ? UIColor(white: 1, alpha: 0.10)
+                    : UIColor(named: "Foreground") ?? .label
+            })
+        }
+    }
+
+    /// Hard-shadow tint. Light mode keeps the neobrutalism black;
+    /// dark/evening drop to a soft black tint so the offset shadow
+    /// reads as depth instead of a glowing white slab.
+    static var shadowColor: Color {
+        switch ThemeStore.shared.activeMode {
+        case .light:
+            return Color("Foreground")
+        case .dark:
+            return Color.black.opacity(0.55)
+        case .evening:
+            return Color(red: 0.024, green: 0.039, blue: 0.078).opacity(0.65) // very deep navy
+        case .system:
+            return Color(UIColor { trait in
+                trait.userInterfaceStyle == .dark
+                    ? UIColor.black.withAlphaComponent(0.55)
+                    : UIColor(named: "Foreground") ?? .label
+            })
+        }
+    }
+
+    /// Resolves a color: returns the evening override when ThemeStore is
+    /// in evening mode, otherwise the asset-catalog Color (which itself
+    /// flips light vs dark via the system trait). Not actor-isolated —
+    /// reads happen during view body computation (any thread Swift uses
+    /// for layout), writes only from `AppTheme.didSet` (MainActor). The
+    /// `Mode` enum is a value type so reads are race-free.
+    private static func themed(_ assetName: String, evening: Color) -> Color {
+        ThemeStore.shared.activeMode == .evening ? evening : Color(assetName)
+    }
 
     // MARK: - Shadow offsets (neobrutalism: solid, no blur)
 
@@ -144,29 +200,33 @@ enum AppFont {
     static var chip: Font { monoBold(10) }
 }
 
-/// Neobrutalism hard-shadow modifier. Solid offset, zero blur.
+/// Neobrutalism hard-shadow modifier. Solid offset, zero blur in light
+/// mode; in dark/evening the modifier softens the shadow to a low-alpha
+/// black so it reads as depth instead of a glowing white slab.
 struct NBShadow: ViewModifier {
     var offset: CGFloat = Theme.Shadow.md
-    var color: Color = Theme.foreground
+    var color: Color? = nil // nil → resolve at render time per active mode
 
     func body(content: Content) -> some View {
-        content.shadow(color: color, radius: 0, x: offset, y: offset)
+        content.shadow(color: color ?? Theme.shadowColor, radius: 0, x: offset, y: offset)
     }
 }
 
 extension View {
-    func nbShadow(_ offset: CGFloat = Theme.Shadow.md, color: Color = Theme.foreground) -> some View {
+    func nbShadow(_ offset: CGFloat = Theme.Shadow.md, color: Color? = nil) -> some View {
         modifier(NBShadow(offset: offset, color: color))
     }
 
-    /// Chunky bordered card — border-2 + hard shadow + rounded corners.
+    /// Chunky bordered card — soft hairline border + offset shadow +
+    /// rounded corners. Border + shadow tint adapt per theme so dark /
+    /// evening don't get harsh white outlines.
     func nbCard(radius: CGFloat = Theme.Radius.lg, shadow: CGFloat = Theme.Shadow.lg) -> some View {
         self
             .background(Theme.card)
             .clipShape(RoundedRectangle(cornerRadius: radius))
             .overlay(
                 RoundedRectangle(cornerRadius: radius)
-                    .stroke(Theme.foreground, lineWidth: Theme.Border.width)
+                    .stroke(Theme.border, lineWidth: Theme.Border.width)
             )
             .nbShadow(shadow)
     }
@@ -209,7 +269,7 @@ struct NBPrimaryButtonStyle: ButtonStyle {
             .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
             .overlay(
                 RoundedRectangle(cornerRadius: Theme.Radius.md)
-                    .stroke(Theme.foreground, lineWidth: Theme.Border.width)
+                    .stroke(Theme.border, lineWidth: Theme.Border.width)
             )
             .offset(x: configuration.isPressed ? 2 : 0, y: configuration.isPressed ? 2 : 0)
             .nbShadow(configuration.isPressed ? 0 : Theme.Shadow.md)
@@ -229,7 +289,7 @@ struct NBSecondaryButtonStyle: ButtonStyle {
             .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
             .overlay(
                 RoundedRectangle(cornerRadius: Theme.Radius.md)
-                    .stroke(Theme.foreground, lineWidth: Theme.Border.width)
+                    .stroke(Theme.border, lineWidth: Theme.Border.width)
             )
             .offset(x: configuration.isPressed ? 2 : 0, y: configuration.isPressed ? 2 : 0)
             .nbShadow(configuration.isPressed ? 0 : Theme.Shadow.md)
@@ -267,4 +327,63 @@ struct NBEyebrow: View {
             .tracking(2)
             .foregroundColor(color)
     }
+}
+
+// MARK: - Evening palette
+//
+// Solvio's bespoke "wieczorny" theme — a warm-bluish dark variant.
+// Idea: late-evening reading mode. Less harsh than `dark` (no near-pure
+// black background), warmer accent saturation, navy chrome instead of
+// neutral charcoal. Uses the .dark color scheme for SwiftUI internals
+// (status bar, picker chrome go dark) but swaps the Solvio color tokens
+// out via `ThemeStore`.
+
+struct ThemePalette {
+    let background: Color
+    let foreground: Color
+    let surface: Color
+    let muted: Color
+    let mutedForeground: Color
+    let accent: Color
+    let destructive: Color
+    let success: Color
+    let warning: Color
+    let info: Color
+    let chart1: Color
+    let chart2: Color
+    let chart3: Color
+    let chart4: Color
+    let chart5: Color
+    let chart6: Color
+
+    static let evening = ThemePalette(
+        // Deep midnight navy — distinctly bluer than dark mode but still
+        // dark enough to be comfortable in low light.
+        background:      Color(red: 0.059, green: 0.078, blue: 0.141),  // #0f1424
+        // Off-white with a faint blue tint so text doesn't look stark.
+        foreground:      Color(red: 0.902, green: 0.914, blue: 0.957),  // #e6e9f4
+        // Card surface — medium navy, lifts cleanly off the bg.
+        surface:         Color(red: 0.102, green: 0.129, blue: 0.220),  // #1a2138
+        // Slightly elevated muted surface.
+        muted:           Color(red: 0.149, green: 0.180, blue: 0.282),  // #262e48
+        // Muted text — bluish gray, plenty of contrast on the bg.
+        mutedForeground: Color(red: 0.604, green: 0.639, blue: 0.761),  // #9aa3c2
+        // Interactive accent surface — rich navy.
+        accent:          Color(red: 0.188, green: 0.227, blue: 0.353),  // #303a5a
+        // Destructive — warmer salmon-red, more visible against navy.
+        destructive:     Color(red: 1.000, green: 0.478, blue: 0.522),  // #ff7a85
+        // Success — warmer mint that pairs with the warm bluish bg.
+        success:         Color(red: 0.365, green: 0.851, blue: 0.690),  // #5dd9b0
+        // Warning — warm honey amber.
+        warning:         Color(red: 1.000, green: 0.776, blue: 0.420),  // #ffc66b
+        // Info — soft sky blue, complements the bg.
+        info:            Color(red: 0.494, green: 0.714, blue: 1.000),  // #7eb6ff
+        // Chart palette — refined evening blues + violets gradient.
+        chart1:          Color(red: 0.902, green: 0.914, blue: 0.957),  // near foreground
+        chart2:          Color(red: 0.494, green: 0.714, blue: 1.000),  // soft sky
+        chart3:          Color(red: 0.620, green: 0.510, blue: 0.961),  // periwinkle
+        chart4:          Color(red: 0.388, green: 0.443, blue: 0.722),  // muted indigo
+        chart5:          Color(red: 0.255, green: 0.310, blue: 0.510),  // deep navy
+        chart6:          Color(red: 0.169, green: 0.208, blue: 0.357)   // surface-deep
+    )
 }

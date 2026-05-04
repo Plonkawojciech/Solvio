@@ -39,6 +39,18 @@ struct MainTabView: View {
                 contentStack
                     .padding(.bottom, 64) // reserve for custom tab bar
                 VStack(spacing: 0) {
+                    // Floating "+" action button — sits in the bottom-trailing
+                    // corner above the tab bar. Stacks naturally above the
+                    // ScanQueueWidget when receipts are uploading so they
+                    // never overlap.
+                    HStack {
+                        Spacer()
+                        FloatingScanFab {
+                            router.showingScanSheet = true
+                        }
+                    }
+                    .padding(.trailing, Theme.Spacing.md)
+                    .padding(.bottom, Theme.Spacing.xs)
                     // Floating progress widget for active scans. Sits above
                     // the tab bar so it's visible no matter what tab the
                     // user is on. Hides itself when the queue is empty.
@@ -240,7 +252,7 @@ struct AppMobileHeader: View {
                     .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                     .overlay(
                         RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                            .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
+                            .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
                     )
             }
             Spacer()
@@ -253,7 +265,7 @@ struct AppMobileHeader: View {
                     .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                     .overlay(
                         RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                            .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
+                            .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
                     )
                     .nbShadow(Theme.Shadow.sm)
                 Text(locale.t("login.brand"))
@@ -287,17 +299,19 @@ struct AppMobileHeader: View {
 
     private var themeIcon: String {
         switch appTheme.mode {
-        case .system: return "circle.lefthalf.filled"
-        case .light:  return "sun.max.fill"
-        case .dark:   return "moon.fill"
+        case .system:  return "circle.lefthalf.filled"
+        case .light:   return "sun.max.fill"
+        case .dark:    return "moon.fill"
+        case .evening: return "moon.stars.fill"
         }
     }
 
     private func nextTheme(from current: AppTheme.Mode) -> AppTheme.Mode {
         switch current {
-        case .system: return .light
-        case .light:  return .dark
-        case .dark:   return .system
+        case .system:  return .light
+        case .light:   return .dark
+        case .dark:    return .evening
+        case .evening: return .system
         }
     }
 }
@@ -316,18 +330,55 @@ private struct HeaderIconButton: View {
                 .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                 .overlay(
                     RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                        .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
+                        .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
                 )
         }
     }
 }
 
-/// Bottom tab bar — 6 slots: 5 real tabs flanking a centered FAB.
-///   Dashboard | Expenses | **FAB(camera)** | Deals | Groups | Savings
+/// Floating "+" action button — hovers above the tab bar in the
+/// bottom-trailing corner. Replaces the previous centered camera FAB
+/// that was wedged into the tab bar with a y-offset (which broke the
+/// bar's geometry visually). Stays detached from the bar so the bar
+/// keeps clean 5-slot symmetry.
+struct FloatingScanFab: View {
+    let action: () -> Void
+    @State private var pressed = false
+
+    var body: some View {
+        Button(action: action) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 28)
+                    .fill(Theme.foreground)
+                    .frame(width: 56, height: 56)
+                Image(systemName: "plus")
+                    .font(.system(size: 24, weight: .bold))
+                    .foregroundColor(Theme.background)
+            }
+            .overlay(
+                RoundedRectangle(cornerRadius: 28)
+                    .stroke(Theme.border, lineWidth: Theme.Border.width)
+            )
+            .offset(x: pressed ? 2 : 0, y: pressed ? 2 : 0)
+            .nbShadow(pressed ? 0 : 4)
+            .animation(.easeOut(duration: 0.1), value: pressed)
+        }
+        .buttonStyle(.plain)
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { _ in pressed = true }
+                .onEnded { _ in pressed = false }
+        )
+        .accessibilityLabel(Text("Add"))
+    }
+}
+
+/// Bottom tab bar — 5 evenly distributed tabs.
+///   Dashboard | Expenses | Deals | Groups | Savings
 ///
-/// The FAB is a centered, elevated black tile that opens the scan sheet
-/// (or quick-split when on Groups). Tab labels use the smaller tracked
-/// mono font so 5 tab labels fit comfortably on a 6.1" screen.
+/// The Scan/Add FAB lives as a separate floating overlay (`FloatingScanFab`)
+/// in `MainTabView`'s ZStack so it visually "hangs" above the bar instead of
+/// breaking the bar's geometry with a y-offset notch.
 struct NBTabBar: View {
     @EnvironmentObject private var router: AppRouter
     @EnvironmentObject private var locale: AppLocale
@@ -336,7 +387,6 @@ struct NBTabBar: View {
         HStack(spacing: 0) {
             tabSlot(.dashboard, systemImage: "house.fill", label: locale.t("nav.dashboard"))
             tabSlot(.expenses, systemImage: "dollarsign.circle.fill", label: locale.t("nav.expenses"))
-            fabSlot
             tabSlot(.deals, systemImage: "tag.fill", label: locale.t("nav.deals"))
             tabSlot(.groups, systemImage: "person.3.fill", label: locale.t("nav.groups"))
             tabSlot(.savings, systemImage: "chart.line.uptrend.xyaxis", label: locale.t("nav.savings"))
@@ -352,36 +402,6 @@ struct NBTabBar: View {
         )
     }
 
-    private var fabSlot: some View {
-        Button {
-            if router.selectedTab == .groups {
-                // PWA swaps to Zap icon + quick-split; for now open scan.
-                router.showingScanSheet = true
-            } else {
-                router.showingScanSheet = true
-            }
-        } label: {
-            VStack(spacing: 0) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: Theme.Radius.md)
-                        .fill(Theme.foreground)
-                        .frame(width: 48, height: 48)
-                    Image(systemName: router.selectedTab == .groups ? "bolt.fill" : "camera.fill")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundColor(Theme.background)
-                }
-                .overlay(
-                    RoundedRectangle(cornerRadius: Theme.Radius.md)
-                        .stroke(Theme.foreground, lineWidth: Theme.Border.width)
-                )
-                .nbShadow(3)
-                .offset(y: -20)
-            }
-            .frame(maxWidth: .infinity)
-        }
-        .buttonStyle(.plain)
-    }
-
     private func tabSlot(_ tab: AppTab, systemImage: String, label: String) -> some View {
         let isActive = router.selectedTab == tab
         return Button {
@@ -393,16 +413,12 @@ struct NBTabBar: View {
         } label: {
             VStack(spacing: 2) {
                 Image(systemName: systemImage)
-                    .font(.system(size: 17, weight: isActive ? .bold : .semibold))
-                // Smaller font + tighter tracking so 5 labels fit
-                // alongside the centered FAB on a 6.1" phone without
-                // truncation.
+                    .font(.system(size: 18, weight: isActive ? .bold : .semibold))
                 Text(label)
-                    .font(isActive ? AppFont.monoBold(9) : AppFont.mono(9))
-                    .tracking(0.5)
+                    .font(isActive ? AppFont.monoBold(10) : AppFont.mono(10))
+                    .tracking(1)
                     .textCase(.uppercase)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.85)
             }
             .foregroundColor(isActive ? Theme.foreground : Theme.mutedForeground)
             .frame(maxWidth: .infinity)
@@ -467,7 +483,7 @@ private struct MoreSheet: View {
                                         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                                         .overlay(
                                             RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                                                .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
+                                                .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
                                         )
                                     Text(title)
                                         .font(AppFont.bodyMedium)
@@ -583,7 +599,7 @@ private struct ScanFabSheet: View {
                     .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                     .overlay(
                         RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                            .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
+                            .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
                     )
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
@@ -605,7 +621,7 @@ private struct ScanFabSheet: View {
             .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
             .overlay(
                 RoundedRectangle(cornerRadius: Theme.Radius.md)
-                    .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
+                    .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
             )
         }
         .buttonStyle(.plain)

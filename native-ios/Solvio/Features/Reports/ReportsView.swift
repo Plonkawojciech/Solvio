@@ -90,7 +90,7 @@ struct ReportsView: View {
         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
         .overlay(
             RoundedRectangle(cornerRadius: Theme.Radius.md)
-                .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
+                .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
         )
     }
 
@@ -153,7 +153,7 @@ struct ReportsView: View {
                 .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                 .overlay(
                     RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                        .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
+                        .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
                 )
             }
             .buttonStyle(.plain)
@@ -207,7 +207,7 @@ struct ReportsView: View {
         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
         .overlay(
             RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                .stroke(Theme.foreground.opacity(0.4), lineWidth: Theme.Border.widthThin)
+                .stroke(Theme.border.opacity(0.4), lineWidth: Theme.Border.widthThin)
         )
     }
 
@@ -227,7 +227,7 @@ struct ReportsView: View {
             .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
             .overlay(
                 RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                    .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
+                    .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
             )
         }
         .buttonStyle(.plain)

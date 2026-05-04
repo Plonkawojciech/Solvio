@@ -47,12 +47,5 @@
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
 	</array>
-	<!-- Portrait-only is intentional (iPhone-first UX). Setting
-	     UIRequiresFullScreen=true silences Xcode's "All interface
-	     orientations must be supported unless the app requires full
-	     screen" warning by declaring that we don't support iPad
-	     multitasking modes (Slide Over / Split View). -->
-	<key>UIRequiresFullScreen</key>
-	<true/>
 </dict>
 </plist>

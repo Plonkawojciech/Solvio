@@ -11,6 +11,12 @@ export async function GET(request: Request) {
   }
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+  // Read locale from Accept-Language so Polish users get Polish tips.
+  // iOS / Android both send `pl` or `en` in this header; web defaults
+  // to `pl` for the marketing site and `en` otherwise.
+  const acceptLang = (request.headers.get('accept-language') ?? '').toLowerCase()
+  const isPolish = acceptLang.startsWith('pl')
+
   try {
     const now = new Date()
     const currentMonth = now.toISOString().slice(0, 7)
@@ -96,13 +102,30 @@ export async function GET(request: Request) {
 
     score = Math.max(0, Math.min(100, score))
 
-    // Generate tips based on score components
+    // Generate tips based on score components — locale-aware so Polish
+    // users get Polish tips and English users get English tips.
+    const t = (pl: string, en: string) => (isPolish ? pl : en)
     const tips: string[] = []
-    if (!budget) tips.push(income > 0 ? '' : 'Set a monthly budget to track your spending')
-    if (activeGoals.length === 0) tips.push('Create a savings goal to stay motivated')
-    if (income > 0 && totalSpent > income * 0.85) tips.push('Your spending is high this month — look for areas to cut')
-    if (totalSaved > 0 && activeGoals.length > 0) tips.push(`You've saved ${totalSaved.toFixed(0)} towards your goals — keep going!`)
-    if (catBudgets.length === 0) tips.push('Set category budgets to control spending per area')
+    if (!budget) tips.push(income > 0 ? '' : t(
+      'Ustaw miesięczny budżet, aby śledzić wydatki',
+      'Set a monthly budget to track your spending',
+    ))
+    if (activeGoals.length === 0) tips.push(t(
+      'Załóż cel oszczędzania, żeby się zmotywować',
+      'Create a savings goal to stay motivated',
+    ))
+    if (income > 0 && totalSpent > income * 0.85) tips.push(t(
+      'Twoje wydatki w tym miesiącu są wysokie — poszukaj obszarów do cięcia',
+      'Your spending is high this month — look for areas to cut',
+    ))
+    if (totalSaved > 0 && activeGoals.length > 0) tips.push(t(
+      `Odłożyłeś ${totalSaved.toFixed(0)} na cele — tak trzymaj!`,
+      `You've saved ${totalSaved.toFixed(0)} towards your goals — keep going!`,
+    ))
+    if (catBudgets.length === 0) tips.push(t(
+      'Ustaw budżety per kategoria, aby lepiej kontrolować wydatki',
+      'Set category budgets to control spending per area',
+    ))
 
     const filteredTips = tips.filter(t => t.length > 0).slice(0, 3)
 

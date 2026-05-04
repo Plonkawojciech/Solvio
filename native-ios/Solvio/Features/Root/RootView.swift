@@ -30,7 +30,7 @@ private struct SplashView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 22))
                 .overlay(
                     RoundedRectangle(cornerRadius: 22)
-                        .stroke(Theme.foreground, lineWidth: Theme.Border.width)
+                        .stroke(Theme.border, lineWidth: Theme.Border.width)
                 )
                 .nbShadow(Theme.Shadow.lg)
             Text(locale.t("login.brand"))

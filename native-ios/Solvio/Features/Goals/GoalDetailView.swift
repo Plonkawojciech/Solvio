@@ -94,7 +94,7 @@ struct GoalDetailView: View {
                     .font(.system(size: 44))
                     .frame(width: 56, height: 56)
                     .background(Theme.muted)
-                    .overlay(RoundedRectangle(cornerRadius: Theme.Radius.md).stroke(Theme.foreground, lineWidth: Theme.Border.width))
+                    .overlay(RoundedRectangle(cornerRadius: Theme.Radius.md).stroke(Theme.border, lineWidth: Theme.Border.width))
                 VStack(alignment: .leading, spacing: 2) {
                     NBEyebrow(text: g.category?.uppercased() ?? locale.t("goalDetail.goalFallback"))
                     Text(g.name)

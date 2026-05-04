@@ -102,7 +102,7 @@ struct DashboardView: View {
                         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                         .overlay(
                             RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                                .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
+                                .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
                         )
                 }
             )
@@ -181,7 +181,7 @@ struct DashboardView: View {
         .padding(Theme.Spacing.sm)
         .overlay(
             RoundedRectangle(cornerRadius: Theme.Radius.md)
-                .stroke(Theme.foreground.opacity(0.6), lineWidth: Theme.Border.widthThin)
+                .stroke(Theme.border.opacity(0.6), lineWidth: Theme.Border.widthThin)
         )
     }
 
@@ -235,7 +235,7 @@ struct DashboardView: View {
                         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                         .overlay(
                             RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                                .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
+                                .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
                         )
                     }
                     .buttonStyle(.plain)
@@ -258,7 +258,7 @@ struct DashboardView: View {
                         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                         .overlay(
                             RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                                .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
+                                .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
                         )
                     }
                     .buttonStyle(.plain)
@@ -306,7 +306,7 @@ struct DashboardView: View {
         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
         .overlay(
             RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                .stroke(Theme.foreground.opacity(0.15), lineWidth: Theme.Border.widthThin)
+                .stroke(Theme.border.opacity(0.15), lineWidth: Theme.Border.widthThin)
         )
     }
 
@@ -444,7 +444,7 @@ struct DashboardView: View {
                     .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
                     .overlay(
                         RoundedRectangle(cornerRadius: Theme.Radius.md)
-                            .stroke(Theme.foreground, lineWidth: Theme.Border.width)
+                            .stroke(Theme.border, lineWidth: Theme.Border.width)
                     )
 
                     VStack(alignment: .leading, spacing: 6) {
@@ -569,7 +569,7 @@ struct DashboardView: View {
             .frame(height: 32)
             .overlay(
                 RoundedRectangle(cornerRadius: 4)
-                    .stroke(Theme.foreground.opacity(0.5), lineWidth: Theme.Border.widthThin)
+                    .stroke(Theme.border.opacity(0.5), lineWidth: Theme.Border.widthThin)
             )
             VStack(spacing: 4) {
                 ForEach(d.categorySpending) { cat in
@@ -717,7 +717,7 @@ struct DashboardView: View {
                 .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                 .overlay(
                     RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                        .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
+                        .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
                 )
             }
             .padding(Theme.Spacing.md)
@@ -746,7 +746,7 @@ struct NBProgressBar: View {
             }
             .overlay(
                 RoundedRectangle(cornerRadius: 3)
-                    .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
+                    .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
             )
         }
         .frame(height: 10)

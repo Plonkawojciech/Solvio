@@ -65,7 +65,7 @@ struct VirtualReceiptCreateView: View {
                         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
                         .overlay(
                             RoundedRectangle(cornerRadius: Theme.Radius.md)
-                                .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
+                                .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
                         )
                 }
 
@@ -177,7 +177,7 @@ struct VirtualReceiptCreateView: View {
             .background(Theme.card)
             .overlay(
                 RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                    .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
+                    .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
             )
     }
 

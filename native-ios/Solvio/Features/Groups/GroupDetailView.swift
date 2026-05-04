@@ -129,7 +129,7 @@ struct GroupDetailView: View {
                     .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
                     .overlay(
                         RoundedRectangle(cornerRadius: Theme.Radius.md)
-                            .stroke(Theme.foreground, lineWidth: Theme.Border.width)
+                            .stroke(Theme.border, lineWidth: Theme.Border.width)
                     )
                 VStack(alignment: .leading, spacing: 2) {
                     NBEyebrow(text: (g.mode ?? "group").uppercased())
@@ -241,7 +241,7 @@ struct GroupDetailView: View {
                     .foregroundColor(.white)
             }
             .frame(width: 46, height: 46)
-            .overlay(Circle().stroke(Theme.foreground, lineWidth: Theme.Border.width))
+            .overlay(Circle().stroke(Theme.border, lineWidth: Theme.Border.width))
             .nbShadow(Theme.Shadow.sm)
 
             Text(m.label)
@@ -278,7 +278,7 @@ struct GroupDetailView: View {
             .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.lg))
             .overlay(
                 RoundedRectangle(cornerRadius: Theme.Radius.lg)
-                    .stroke(Theme.foreground, lineWidth: Theme.Border.width)
+                    .stroke(Theme.border, lineWidth: Theme.Border.width)
             )
             .nbShadow(Theme.Shadow.md)
         }
@@ -501,7 +501,7 @@ struct QuickSplitSheet: View {
                             .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                             .overlay(
                                 RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                                    .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
+                                    .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
                             )
                         }
                         .buttonStyle(.plain)
@@ -563,7 +563,7 @@ struct QuickSplitSheet: View {
                         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                         .overlay(
                             RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                                .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
+                                .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
                         )
                     }
                     .buttonStyle(.plain)
@@ -600,7 +600,7 @@ struct QuickSplitSheet: View {
                                 .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                                 .overlay(
                                     RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                                        .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
+                                        .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
                                 )
                             Text(mode == .percentage ? "%" : currency.uppercased())
                                 .font(AppFont.caption)
@@ -793,7 +793,7 @@ struct GroupEditSheet: View {
                             .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
                             .overlay(
                                 RoundedRectangle(cornerRadius: Theme.Radius.md)
-                                    .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
+                                    .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
                             )
                     }
                 }

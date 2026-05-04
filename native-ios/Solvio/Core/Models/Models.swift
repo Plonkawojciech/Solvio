@@ -1112,4 +1112,71 @@ struct ShoppingOptimizeResult: Decodable {
     /// `dataSource == "estimate"`. iOS shows them as small links
     /// under the result so the user can verify the leaflet.
     let sources: [String]?
+    /// Optional multi-store split — present when buying across 2-3
+    /// chains beats the single-store best by ≥ 5% (or ≥ 3 PLN abs).
+    /// `nil` when single-store is already optimal.
+    let multiStoreStrategy: MultiStoreStrategy?
+}
+
+/// 2-3 store split returned by `/api/shopping/optimize` when crossing
+/// chains beats the single-store best total. Each `StorePartition`
+/// carries the items the user should grab at that chain plus the
+/// subtotal. The aggregate `grandTotal` + `savingsVsSingle` lets the
+/// iOS card show the upside vs the single-store recommendation.
+struct MultiStoreStrategy: Decodable {
+    struct StorePartition: Decodable {
+        let store: String
+        let address: String?
+        let subtotal: Double
+        let items: [ShoppingOptimizeResult.LineItem]
+    }
+    let stores: [StorePartition]
+    let grandTotal: Double
+    let savingsVsSingle: Double
+    let rationale: String?
+}
+
+// MARK: - Receipt analysis
+
+/// `POST /api/personal/receipt-analyze` body — just the receipt id +
+/// language tag. Backend pulls the receipt items from Postgres itself.
+struct ReceiptAnalyzeRequest: Encodable {
+    let receiptId: String
+    let lang: String
+}
+
+/// Per-line audit of an existing receipt — backend compares the paid
+/// price against current chain leaflets and reports where the user
+/// could have grabbed the same item cheaper.
+struct ReceiptAnalyzeResponse: Decodable {
+    struct AnalyzedItem: Decodable {
+        let name: String
+        let qty: Double?
+        let paidUnitPrice: Double?
+        let paidTotal: Double?
+        let bestUnitPrice: Double?
+        let bestStore: String?
+        let savings: Double
+        let promoType: String?
+        let promoDescription: String?
+        /// "fair" | "overpaid" | "underpaid" | "no_data" — drives the
+        /// row badge in the analysis card.
+        let verdict: String
+        let sourceUrl: String?
+    }
+    let receiptId: String
+    let vendor: String?
+    let date: String?
+    let paidTotal: Double
+    let bestPossibleTotal: Double
+    let potentialSavings: Double
+    let currency: String
+    let items: [AnalyzedItem]
+    let summary: String?
+    let tip: String?
+    let dataSource: String?
+    let sources: [String]?
+    let fetchedAt: String?
+    let freshUntil: String?
+    let cacheState: String?
 }

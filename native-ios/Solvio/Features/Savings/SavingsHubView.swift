@@ -288,7 +288,7 @@ struct SavingsHubView: View {
                         Circle()
                             .fill(onPaceColor)
                             .frame(width: 6, height: 6)
-                            .overlay(Circle().stroke(Theme.foreground, lineWidth: 0.5))
+                            .overlay(Circle().stroke(Theme.border, lineWidth: 0.5))
                         Text("\(Int(b.monthProgress * 100))% \(locale.t("savings.monthLabelFmt").replacingOccurrences(of: ": %@", with: "").lowercased())")
                             .font(AppFont.mono(11))
                             .foregroundColor(onPaceColor)
@@ -1417,7 +1417,7 @@ struct BudgetEditSheet: View {
             .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
             .overlay(
                 RoundedRectangle(cornerRadius: Theme.Radius.md)
-                    .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
+                    .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
             )
             Text(hint)
                 .font(AppFont.caption)
@@ -1494,7 +1494,7 @@ struct BudgetEditSheet: View {
             .background(Theme.card)
             .overlay(
                 RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                    .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
+                    .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
             )
             .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
             .opacity(income > 0 ? 1.0 : 0.5)
@@ -1554,7 +1554,7 @@ struct BudgetEditSheet: View {
         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
         .overlay(
             RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
+                .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
         )
     }
 
@@ -1563,7 +1563,7 @@ struct BudgetEditSheet: View {
             Circle()
                 .fill(color)
                 .frame(width: 8, height: 8)
-                .overlay(Circle().stroke(Theme.foreground, lineWidth: 0.5))
+                .overlay(Circle().stroke(Theme.border, lineWidth: 0.5))
             VStack(alignment: .leading, spacing: 0) {
                 Text(label.uppercased())
                     .font(AppFont.mono(9))

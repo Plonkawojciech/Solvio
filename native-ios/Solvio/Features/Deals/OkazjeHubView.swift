@@ -25,6 +25,7 @@ struct OkazjeHubView: View {
     @EnvironmentObject private var store: AppDataStore
 
     @StateObject private var shoppingVM = ShoppingListVM()
+    @StateObject private var analyzeVM = ReceiptAnalyzeVM()
 
     var body: some View {
         ScrollView {
@@ -32,6 +33,7 @@ struct OkazjeHubView: View {
                 header
                 trendySection
                 shoppingListSection
+                analyzeReceiptSection
                 launcherSection
                 Spacer(minLength: Theme.Spacing.xl)
             }
@@ -43,11 +45,280 @@ struct OkazjeHubView: View {
         .navigationBarTitleDisplayMode(.inline)
         .task {
             store.ensurePromotions()
+            store.ensureReceipts()
             shoppingVM.bind(locale: locale, store: store)
+            analyzeVM.bind(locale: locale)
         }
         .refreshable {
             await store.awaitPromotions(force: true)
+            await store.awaitReceipts(force: true)
         }
+    }
+
+    // MARK: - Analyze a receipt section
+
+    /// Lets the user pick one of their recently scanned receipts and run
+    /// it through `/api/personal/receipt-analyze`. AI grades each line
+    /// (paid vs current chain leaflet), surfaces overspend, and links to
+    /// the leaflet pages used for verification. Lives between the AI
+    /// shopping list and the launcher tiles so it's a natural "now I've
+    /// already shopped — was it a good price?" follow-up.
+    @ViewBuilder
+    private var analyzeReceiptSection: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+            NBSectionHeader(
+                eyebrow: locale.t("analyze.eyebrow"),
+                title: locale.t("analyze.title")
+            )
+            Text(locale.t("analyze.subtitle"))
+                .font(AppFont.caption)
+                .foregroundColor(Theme.mutedForeground)
+                .fixedSize(horizontal: false, vertical: true)
+
+            let recent = (store.receipts ?? []).prefix(5)
+            if recent.isEmpty {
+                NBEmptyState(
+                    systemImage: "doc.text",
+                    title: locale.t("analyze.emptyTitle"),
+                    subtitle: locale.t("analyze.emptySub"),
+                    action: nil
+                )
+            } else {
+                VStack(spacing: 6) {
+                    ForEach(Array(recent), id: \.id) { receipt in
+                        receiptRow(receipt)
+                    }
+                }
+            }
+
+            if analyzeVM.isLoading {
+                HStack(spacing: 8) {
+                    ProgressView().scaleEffect(0.85)
+                    Text(locale.t("analyze.running"))
+                        .font(AppFont.caption)
+                        .foregroundColor(Theme.mutedForeground)
+                }
+                .padding(.top, 4)
+            }
+            if let result = analyzeVM.result {
+                receiptAnalyzeCard(result)
+            }
+            if let err = analyzeVM.errorMessage {
+                NBErrorCard(message: err) {
+                    if let id = analyzeVM.lastReceiptId {
+                        analyzeVM.run(receiptId: id, lang: locale.language.rawValue)
+                    }
+                }
+            }
+        }
+    }
+
+    private func receiptRow(_ r: Receipt) -> some View {
+        Button {
+            analyzeVM.run(receiptId: r.id, lang: locale.language.rawValue)
+        } label: {
+            HStack(spacing: Theme.Spacing.sm) {
+                NBIconBadge(systemImage: "doc.text.magnifyingglass", size: 32)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(r.vendor ?? locale.t("analyze.unknownVendor"))
+                        .font(AppFont.bodyMedium)
+                        .foregroundColor(Theme.foreground)
+                        .lineLimit(1)
+                    HStack(spacing: 6) {
+                        if let d = r.date {
+                            Text(Fmt.date(d))
+                                .font(AppFont.mono(10))
+                                .foregroundColor(Theme.mutedForeground)
+                        }
+                        if let total = r.total?.double {
+                            Text("·")
+                                .font(AppFont.caption)
+                                .foregroundColor(Theme.mutedForeground)
+                            Text(Fmt.amount(total, currency: r.currency ?? "PLN"))
+                                .font(AppFont.mono(10))
+                                .foregroundColor(Theme.mutedForeground)
+                        }
+                    }
+                }
+                Spacer(minLength: 0)
+                if analyzeVM.isLoading && analyzeVM.lastReceiptId == r.id {
+                    ProgressView().scaleEffect(0.7)
+                } else {
+                    Image(systemName: "arrow.right.circle.fill")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundColor(Theme.foreground)
+                }
+            }
+            .padding(Theme.Spacing.sm)
+            .background(Theme.card)
+            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.Radius.md)
+                    .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private func receiptAnalyzeCard(_ a: ReceiptAnalyzeResponse) -> some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 2) {
+                    NBEyebrow(text: locale.t("analyze.resultEyebrow"))
+                    Text(a.vendor ?? locale.t("analyze.unknownVendor"))
+                        .font(AppFont.cardTitle)
+                        .foregroundColor(Theme.foreground)
+                    if let d = a.date { Text(Fmt.date(d)).font(AppFont.caption).foregroundColor(Theme.mutedForeground) }
+                    dataSourceBadge(for: a.dataSource)
+                }
+                Spacer()
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text(locale.t("analyze.savingsLabel"))
+                        .font(AppFont.mono(10))
+                        .tracking(1)
+                        .foregroundColor(Theme.mutedForeground)
+                    Text(Fmt.amount(a.potentialSavings, currency: a.currency))
+                        .font(AppFont.amount)
+                        .foregroundColor(a.potentialSavings > 0 ? Theme.warning : Theme.success)
+                }
+            }
+
+            HStack(spacing: Theme.Spacing.md) {
+                analyzeStat(
+                    label: locale.t("analyze.paid"),
+                    value: Fmt.amount(a.paidTotal, currency: a.currency),
+                    color: Theme.foreground
+                )
+                analyzeStat(
+                    label: locale.t("analyze.bestPossible"),
+                    value: Fmt.amount(a.bestPossibleTotal, currency: a.currency),
+                    color: Theme.success
+                )
+            }
+
+            if let summary = a.summary, !summary.isEmpty {
+                Text(summary)
+                    .font(AppFont.body)
+                    .foregroundColor(Theme.foreground)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if !a.items.isEmpty {
+                NBDivider()
+                VStack(spacing: 0) {
+                    ForEach(Array(a.items.enumerated()), id: \.offset) { idx, item in
+                        analyzeItemRow(item, currency: a.currency)
+                        if idx < a.items.count - 1 {
+                            Rectangle()
+                                .fill(Theme.foreground.opacity(0.06))
+                                .frame(height: 1)
+                        }
+                    }
+                }
+            }
+
+            if let tip = a.tip, !tip.isEmpty {
+                HStack(alignment: .top, spacing: Theme.Spacing.sm) {
+                    NBIconBadge(systemImage: "lightbulb.fill", tint: Theme.warning)
+                    Text(tip)
+                        .font(AppFont.caption)
+                        .foregroundColor(Theme.foreground)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                }
+                .padding(Theme.Spacing.sm)
+                .background(Theme.warning.opacity(0.08))
+                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+            }
+
+            if let sources = a.sources, !sources.isEmpty {
+                NBDivider()
+                Text(locale.t("shoppingList.sourcesTitle"))
+                    .font(AppFont.mono(10))
+                    .tracking(1)
+                    .foregroundColor(Theme.mutedForeground)
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(Array(sources.prefix(5).enumerated()), id: \.offset) { _, urlStr in
+                        if let url = URL(string: urlStr) {
+                            Link(destination: url) {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "newspaper")
+                                        .font(.system(size: 10, weight: .semibold))
+                                        .foregroundColor(Theme.foreground)
+                                    Text(prettifyHost(urlStr))
+                                        .font(AppFont.mono(11))
+                                        .foregroundColor(Theme.foreground)
+                                        .underline()
+                                        .lineLimit(1)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .padding(Theme.Spacing.md)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .nbCard(radius: Theme.Radius.md, shadow: Theme.Shadow.sm)
+    }
+
+    private func analyzeStat(label: String, value: String, color: Color) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label)
+                .font(AppFont.mono(10))
+                .tracking(1)
+                .foregroundColor(Theme.mutedForeground)
+            Text(value)
+                .font(AppFont.amount)
+                .foregroundColor(color)
+        }
+    }
+
+    private func analyzeItemRow(_ item: ReceiptAnalyzeResponse.AnalyzedItem, currency: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(item.name)
+                    .font(AppFont.body)
+                    .foregroundColor(Theme.foreground)
+                    .lineLimit(1)
+                if let qty = item.qty, qty > 0 {
+                    Text(String(format: "× %g", qty))
+                        .font(AppFont.mono(11))
+                        .foregroundColor(Theme.mutedForeground)
+                }
+                Spacer()
+                if let paid = item.paidTotal {
+                    Text(Fmt.amount(paid, currency: currency))
+                        .font(AppFont.mono(12))
+                        .foregroundColor(Theme.foreground)
+                }
+            }
+            HStack(spacing: 6) {
+                verdictTag(item.verdict)
+                if item.savings > 0, let store = item.bestStore {
+                    Text(String(format: locale.t("analyze.cheaperAtFmt"),
+                                Fmt.amount(item.savings, currency: currency),
+                                store))
+                        .font(AppFont.caption)
+                        .foregroundColor(Theme.success)
+                        .lineLimit(2)
+                }
+            }
+        }
+        .padding(.vertical, 6)
+    }
+
+    private func verdictTag(_ v: String) -> some View {
+        let (label, color): (String, Color) = {
+            switch v {
+            case "overpaid":   return (locale.t("analyze.overpaid"), Theme.destructive)
+            case "fair":       return (locale.t("analyze.fair"), Theme.success)
+            case "underpaid":  return (locale.t("analyze.underpaid"), Theme.success)
+            default:           return (locale.t("analyze.noData"), Theme.mutedForeground)
+            }
+        }()
+        return NBTag(text: label, background: color.opacity(0.15), foreground: color)
     }
 
     // MARK: - Header
@@ -306,7 +577,7 @@ struct OkazjeHubView: View {
                 .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                 .overlay(
                     RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                        .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
+                        .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
                 )
             TextField(
                 locale.t("shoppingList.qtyPlaceholder"),
@@ -320,7 +591,7 @@ struct OkazjeHubView: View {
                 .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                 .overlay(
                     RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                        .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
+                        .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
                 )
             Button {
                 shoppingVM.remove(id: item.wrappedValue.id)
@@ -459,6 +730,14 @@ struct OkazjeHubView: View {
                 }
             }
 
+            // Multi-store strategy — surfaces only when the AI found a
+            // 2-3 store split that beats the single-store best by ≥ 5%
+            // (or ≥ 3 PLN abs). Hidden otherwise so the UI doesn't
+            // push 2-store trips for trivial gains.
+            if let strategy = r.multiStoreStrategy {
+                multiStoreSection(strategy, currency: r.currency)
+            }
+
             if let tip = r.tip, !tip.isEmpty {
                 HStack(alignment: .top, spacing: Theme.Spacing.sm) {
                     NBIconBadge(systemImage: "lightbulb.fill", tint: Theme.warning)
@@ -516,6 +795,132 @@ struct OkazjeHubView: View {
         .padding(Theme.Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
         .nbCard(radius: Theme.Radius.md, shadow: Theme.Shadow.sm)
+    }
+
+    /// Renders the optional multi-store split. Each store is its own
+    /// mini-card with subtotal + per-item lines, then a footer showing
+    /// the grand total + savings vs single-store best.
+    @ViewBuilder
+    private func multiStoreSection(_ strategy: MultiStoreStrategy, currency: String) -> some View {
+        NBDivider()
+        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+            HStack(spacing: 6) {
+                Image(systemName: "arrow.triangle.branch")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(Theme.success)
+                Text(locale.t("shoppingList.multiStoreEyebrow").uppercased())
+                    .font(AppFont.mono(10))
+                    .tracking(1)
+                    .foregroundColor(Theme.success)
+                Spacer()
+                Text("+\(Fmt.amount(strategy.savingsVsSingle, currency: currency))")
+                    .font(AppFont.monoBold(12))
+                    .foregroundColor(Theme.success)
+            }
+
+            if let rationale = strategy.rationale, !rationale.isEmpty {
+                Text(rationale)
+                    .font(AppFont.body)
+                    .foregroundColor(Theme.foreground)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            VStack(spacing: Theme.Spacing.xs) {
+                ForEach(Array(strategy.stores.enumerated()), id: \.offset) { _, partition in
+                    multiStorePartitionCard(partition, currency: currency)
+                }
+            }
+
+            HStack {
+                Text(locale.t("shoppingList.multiStoreGrandTotal"))
+                    .font(AppFont.mono(11))
+                    .tracking(0.5)
+                    .textCase(.uppercase)
+                    .foregroundColor(Theme.mutedForeground)
+                Spacer()
+                Text(Fmt.amount(strategy.grandTotal, currency: currency))
+                    .font(AppFont.amount)
+                    .foregroundColor(Theme.success)
+            }
+        }
+        .padding(Theme.Spacing.sm)
+        .background(Theme.success.opacity(0.06))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.md)
+                .stroke(Theme.success.opacity(0.5), lineWidth: Theme.Border.widthThin)
+        )
+    }
+
+    private func multiStorePartitionCard(
+        _ partition: MultiStoreStrategy.StorePartition,
+        currency: String
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(partition.store)
+                    .font(AppFont.cardTitle)
+                    .foregroundColor(Theme.foreground)
+                Spacer()
+                Text(Fmt.amount(partition.subtotal, currency: currency))
+                    .font(AppFont.monoBold(13))
+                    .foregroundColor(Theme.foreground)
+            }
+            if let address = partition.address, !address.isEmpty {
+                Text(address)
+                    .font(AppFont.caption)
+                    .foregroundColor(Theme.mutedForeground)
+            }
+            VStack(spacing: 0) {
+                ForEach(Array(partition.items.enumerated()), id: \.offset) { idx, line in
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack {
+                            Text(line.name)
+                                .font(AppFont.body)
+                                .foregroundColor(Theme.foreground)
+                                .lineLimit(1)
+                            if let qty = line.qty, qty > 0 {
+                                Text(String(format: "× %g", qty))
+                                    .font(AppFont.mono(11))
+                                    .foregroundColor(Theme.mutedForeground)
+                            }
+                            Spacer()
+                            Text(Fmt.amount(line.total, currency: currency))
+                                .font(AppFont.mono(12))
+                                .foregroundColor(Theme.foreground)
+                        }
+                        if let chip = promoChip(for: line.promoType) {
+                            HStack(spacing: 4) {
+                                NBTag(
+                                    text: chip,
+                                    background: Theme.success.opacity(0.18),
+                                    foreground: Theme.success
+                                )
+                                if let desc = line.promoDescription, !desc.isEmpty {
+                                    Text(desc)
+                                        .font(AppFont.caption)
+                                        .foregroundColor(Theme.mutedForeground)
+                                        .lineLimit(1)
+                                }
+                            }
+                        }
+                    }
+                    .padding(.vertical, 4)
+                    if idx < partition.items.count - 1 {
+                        Rectangle()
+                            .fill(Theme.foreground.opacity(0.06))
+                            .frame(height: 1)
+                    }
+                }
+            }
+        }
+        .padding(Theme.Spacing.sm)
+        .background(Theme.card)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
+        )
     }
 
     @ViewBuilder
@@ -707,6 +1112,51 @@ struct ShoppingItemDraft: Identifiable, Equatable {
 }
 
 // MARK: - Shopping list view-model
+
+/// View-model for the receipt analyzer card. Holds the in-flight task,
+/// the latest result, and any error. Lives next to ShoppingListVM since
+/// it's tightly coupled to OkazjeHubView and not reused.
+@MainActor
+final class ReceiptAnalyzeVM: ObservableObject {
+    @Published var isLoading = false
+    @Published var result: ReceiptAnalyzeResponse?
+    @Published var errorMessage: String?
+    @Published private(set) var lastReceiptId: String?
+
+    private weak var locale: AppLocale?
+    private var task: Task<Void, Never>?
+
+    func bind(locale: AppLocale) {
+        self.locale = locale
+    }
+
+    func run(receiptId: String, lang: String) {
+        // Cancel any in-flight call so a quick re-tap doesn't pile up.
+        task?.cancel()
+        lastReceiptId = receiptId
+        errorMessage = nil
+        result = nil
+        isLoading = true
+        task = Task { [weak self] in
+            do {
+                let response = try await ReceiptAnalyzeRepo.analyze(receiptId: receiptId, lang: lang)
+                guard !Task.isCancelled else { return }
+                await MainActor.run {
+                    self?.result = response
+                    self?.isLoading = false
+                }
+            } catch ApiError.cancelled {
+                // ignore — superseded by another tap
+            } catch {
+                guard !Task.isCancelled else { return }
+                await MainActor.run {
+                    self?.errorMessage = error.localizedDescription
+                    self?.isLoading = false
+                }
+            }
+        }
+    }
+}
 
 /// View-model for the shopping-list AI section. Owns the editable list,
 /// drives the optimize() call, and surfaces results / errors. Lives in

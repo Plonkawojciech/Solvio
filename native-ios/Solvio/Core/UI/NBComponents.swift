@@ -65,7 +65,7 @@ struct NBTag: View {
             .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
             .overlay(
                 RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                    .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
+                    .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
             )
     }
 }
@@ -105,7 +105,7 @@ struct NBIconBadge: View {
             .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
             .overlay(
                 RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                    .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
+                    .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
             )
     }
 }
@@ -155,7 +155,7 @@ struct NBEmptyState: View {
                 .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
                 .overlay(
                     RoundedRectangle(cornerRadius: Theme.Radius.md)
-                        .stroke(Theme.foreground, lineWidth: Theme.Border.width)
+                        .stroke(Theme.border, lineWidth: Theme.Border.width)
                 )
             Text(title)
                 .font(AppFont.cardTitle)
@@ -464,7 +464,7 @@ struct NBSegmented<Option: Hashable>: View {
         .background(Theme.muted)
         .overlay(
             RoundedRectangle(cornerRadius: Theme.Radius.md)
-                .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
+                .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
         )
         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
     }
@@ -493,7 +493,7 @@ struct NBTextField: View {
                 .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
                 .overlay(
                     RoundedRectangle(cornerRadius: Theme.Radius.md)
-                        .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
+                        .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
                 )
         }
     }
@@ -538,7 +538,7 @@ struct VirtualReceiptTile: View {
                         .background(Theme.card)
                         .overlay(
                             RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                                .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
+                                .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
                         )
                 }
                 VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
@@ -587,7 +587,7 @@ struct VirtualReceiptTile: View {
                             .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                             .overlay(
                                 RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                                    .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
+                                    .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
                             )
                         }
                         .buttonStyle(.plain)

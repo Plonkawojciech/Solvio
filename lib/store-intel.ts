@@ -27,7 +27,7 @@ import { eq, and, lt, sql } from 'drizzle-orm'
  *   - Identical request past `expiresAt` → AI roundtrip (latency).
  */
 
-export type IntelKind = 'leaflet' | 'hours' | 'optimize' | 'prices' | 'promotions' | 'audit'
+export type IntelKind = 'leaflet' | 'hours' | 'optimize' | 'prices' | 'promotions' | 'audit' | 'analyze'
 
 export interface CachedEntry<T> {
   data: T

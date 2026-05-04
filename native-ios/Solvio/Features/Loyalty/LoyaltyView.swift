@@ -117,7 +117,7 @@ struct LoyaltyView: View {
                     .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
                     .overlay(
                         RoundedRectangle(cornerRadius: Theme.Radius.md)
-                            .stroke(Theme.foreground, lineWidth: Theme.Border.width)
+                            .stroke(Theme.border, lineWidth: Theme.Border.width)
                     )
                     .nbShadow(Theme.Shadow.md)
             }
@@ -267,7 +267,7 @@ struct LoyaltyCreateSheet: View {
                             .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
                             .overlay(
                                 RoundedRectangle(cornerRadius: Theme.Radius.md)
-                                    .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
+                                    .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
                             )
                     }
                 }
@@ -416,7 +416,7 @@ struct BarcodeSheet: View {
                     .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
                     .overlay(
                         RoundedRectangle(cornerRadius: Theme.Radius.md)
-                            .stroke(Theme.foreground, lineWidth: Theme.Border.width)
+                            .stroke(Theme.border, lineWidth: Theme.Border.width)
                     )
                     .nbShadow(Theme.Shadow.md)
             } else {
@@ -428,7 +428,7 @@ struct BarcodeSheet: View {
                     .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
                     .overlay(
                         RoundedRectangle(cornerRadius: Theme.Radius.md)
-                            .stroke(Theme.foreground, lineWidth: Theme.Border.width)
+                            .stroke(Theme.border, lineWidth: Theme.Border.width)
                     )
             }
         }

@@ -215,7 +215,7 @@ struct ReceiptsListView: View {
                     .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                     .overlay(
                         RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                            .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
+                            .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
                     )
                 Text(title)
                     .font(AppFont.cardTitle)
@@ -231,7 +231,7 @@ struct ReceiptsListView: View {
             .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.lg))
             .overlay(
                 RoundedRectangle(cornerRadius: Theme.Radius.lg)
-                    .stroke(Theme.foreground, lineWidth: Theme.Border.width)
+                    .stroke(Theme.border, lineWidth: Theme.Border.width)
             )
             .nbShadow(Theme.Shadow.md)
         }
@@ -359,7 +359,7 @@ struct ReceiptsListView: View {
             .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
             .overlay(
                 RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                    .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
+                    .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
             )
         } else {
             NBIconBadge(systemImage: "doc.text", size: 44)
@@ -532,7 +532,7 @@ struct OcrConfirmSheet: View {
             .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
             .overlay(
                 RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                    .stroke(Theme.foreground, lineWidth: Theme.Border.widthThin)
+                    .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
             )
         }
         .buttonStyle(.plain)
@@ -579,14 +579,14 @@ struct OcrConfirmSheet: View {
                     .frame(width: 70)
                     .padding(.horizontal, 8).padding(.vertical, 6)
                     .background(Theme.card)
-                    .overlay(RoundedRectangle(cornerRadius: Theme.Radius.sm).stroke(Theme.foreground, lineWidth: Theme.Border.widthThin))
+                    .overlay(RoundedRectangle(cornerRadius: Theme.Radius.sm).stroke(Theme.border, lineWidth: Theme.Border.widthThin))
                 Text("×").foregroundColor(Theme.mutedForeground)
                 TextField(locale.t("ocrConfirm.price"), text: item.priceText)
                     .keyboardType(.decimalPad)
                     .font(AppFont.caption)
                     .padding(.horizontal, 8).padding(.vertical, 6)
                     .background(Theme.card)
-                    .overlay(RoundedRectangle(cornerRadius: Theme.Radius.sm).stroke(Theme.foreground, lineWidth: Theme.Border.widthThin))
+                    .overlay(RoundedRectangle(cornerRadius: Theme.Radius.sm).stroke(Theme.border, lineWidth: Theme.Border.widthThin))
             }
             // Per-item category picker
             ScrollView(.horizontal, showsIndicators: false) {

@@ -28,7 +28,7 @@ struct LoginView: View {
                         .frame(width: 44, height: 44)
                         .overlay(
                             RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                                .stroke(Theme.foreground, lineWidth: Theme.Border.width)
+                                .stroke(Theme.border, lineWidth: Theme.Border.width)
                         )
                         .nbShadow(Theme.Shadow.sm)
 
