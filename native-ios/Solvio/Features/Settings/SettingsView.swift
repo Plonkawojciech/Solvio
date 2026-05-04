@@ -521,8 +521,15 @@ struct SettingsView: View {
                                     .foregroundColor(Theme.foreground)
                                 HStack(spacing: 4) {
                                     if let cat = vm.categoryFor(id: rule.categoryId) {
-                                        if let icon = cat.icon {
-                                            Image(systemName: icon).font(.caption2).foregroundColor(Theme.mutedForeground)
+                                        if let icon = cat.icon, !icon.isEmpty {
+                                            // Backend categories ship as emoji (`💊⚡🍕…`),
+                                            // not SF Symbol names — render via the smart
+                                            // CategoryIcon resolver.
+                                            if CategoryIcon.isEmoji(icon) {
+                                                Text(icon).font(.caption2)
+                                            } else {
+                                                Image(systemName: icon).font(.caption2).foregroundColor(Theme.mutedForeground)
+                                            }
                                         }
                                         Text(cat.name)
                                             .font(AppFont.caption)

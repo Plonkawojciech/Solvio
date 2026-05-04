@@ -50,17 +50,23 @@ export async function POST(request: Request) {
   const { lang = 'pl', currency = 'PLN', force = false } = body
   const isPolish = lang === 'pl'
 
-  // Cache key includes userId because the personalised section
-  // depends on the user's purchase history. Generic promotions could
-  // dedupe across users, but splitting that out is a follow-up — for
-  // now we accept some redundancy in exchange for a single response.
-  //
   // PROMPT_VERSION bumps invalidate every cached row across the fleet.
   // Bump when the AI contract changes (new fields, looser/stricter
   // rules) so users don't see stale empty arrays from old prompts.
   const PROMPT_VERSION = 'v2'
   const intelKey = crypto.createHash('sha256')
     .update(`${PROMPT_VERSION}:${userId}:${lang}:${currency}`)
+    .digest('hex')
+    .slice(0, 48)
+
+  // Global cache key — same lang+currency, no userId. Cron pre-warms
+  // this so the very first promotions hit any new user / new device
+  // serves instantly (≤500ms) instead of blocking 30s on a fresh AI
+  // web search. Per-user `personalizedDeals` still need user data, so
+  // we run the user-keyed call asynchronously after returning the
+  // global hit — next page load picks up the personalised version.
+  const globalKey = crypto.createHash('sha256')
+    .update(`${PROMPT_VERSION}:GLOBAL:${lang}:${currency}`)
     .digest('hex')
     .slice(0, 48)
 
@@ -82,6 +88,27 @@ export async function POST(request: Request) {
         headers: {
           'X-Cache': cached.state.toUpperCase(),
           'X-Fetched-At': cached.fetchedAt.toISOString(),
+          'Cache-Control': 'private, max-age=300',
+        },
+      })
+    }
+
+    // No user-keyed cache — try the global pre-warmed entry. Cron
+    // refreshes this every 6h so the very first hit on a fresh user
+    // / device serves instantly. This dodges the 30s AI roundtrip
+    // for the cold-start case which was the single biggest UX
+    // complaint ("dalej bardzo wolno to wszystko działa").
+    const globalCached = await readIntel<unknown>('promotions', globalKey).catch(() => null)
+    if (globalCached) {
+      return NextResponse.json({
+        ...(globalCached.data as object),
+        fetchedAt: globalCached.fetchedAt.toISOString(),
+        freshUntil: globalCached.expiresAt.toISOString(),
+        cacheState: 'global',
+      }, {
+        headers: {
+          'X-Cache': 'GLOBAL',
+          'X-Fetched-At': globalCached.fetchedAt.toISOString(),
           'Cache-Control': 'private, max-age=300',
         },
       })
@@ -390,6 +417,19 @@ ONLY reason for empty array: web_search completely failed and you have no leafle
     await writeIntel('promotions', intelKey, payload, PROMO_TTL_S, {
       revalidateAfterSeconds: PROMO_REVALIDATE_S,
     }).catch((e) => console.error('[promotions cache write]', e))
+
+    // Also write a stripped-down version (no personalised deals) to
+    // the global cache so cold-start users see deals immediately
+    // without waiting for their own AI run. Strip personalisation +
+    // weeklySummary because they're per-user.
+    const globalPayload = {
+      ...payload,
+      personalizedDeals: [],
+      weeklySummary: null,
+    }
+    await writeIntel('promotions', globalKey, globalPayload, PROMO_TTL_S, {
+      revalidateAfterSeconds: PROMO_REVALIDATE_S,
+    }).catch((e) => console.error('[promotions global cache write]', e))
 
     const now = new Date()
     return NextResponse.json({

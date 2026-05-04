@@ -4,6 +4,10 @@
     {
       "path": "/api/cron/refresh-intel",
       "schedule": "17 4 * * *"
+    },
+    {
+      "path": "/api/cron/refresh-promotions",
+      "schedule": "0 */6 * * *"
     }
   ]
 }
