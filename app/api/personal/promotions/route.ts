@@ -54,8 +54,13 @@ export async function POST(request: Request) {
   // depends on the user's purchase history. Generic promotions could
   // dedupe across users, but splitting that out is a follow-up — for
   // now we accept some redundancy in exchange for a single response.
+  //
+  // PROMPT_VERSION bumps invalidate every cached row across the fleet.
+  // Bump when the AI contract changes (new fields, looser/stricter
+  // rules) so users don't see stale empty arrays from old prompts.
+  const PROMPT_VERSION = 'v2'
   const intelKey = crypto.createHash('sha256')
-    .update(`${userId}:${lang}:${currency}`)
+    .update(`${PROMPT_VERSION}:${userId}:${lang}:${currency}`)
     .digest('hex')
     .slice(0, 48)
 
