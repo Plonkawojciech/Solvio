@@ -32,6 +32,7 @@ enum MoreRoute: Hashable {
     case shoppingAdvisor
     case nearbyStores
     case productSearch
+    case incomes
     case settings
 }
 

@@ -584,10 +584,19 @@ struct ExpensesListView: View {
                         ))
                         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                             Button(role: .destructive) {
-                                pendingDelete = e
+                                // Mail-style: full-swipe = immediate optimistic
+                                // remove + 5s Undo toast. Going through an alert
+                                // here left the row in a half-swiped state until
+                                // the user confirmed which read as a glitchy
+                                // bounce-back. Now SwiftUI animates the row out
+                                // smoothly the moment the swipe completes.
+                                let snapshot = [e]
+                                store.removeExpensesOptimistic(ids: [e.id])
+                                scheduleDeleteCommit(ids: [e.id], snapshot: snapshot)
                             } label: {
                                 Label(locale.t("common.delete"), systemImage: "trash")
                             }
+                            .tint(Theme.destructive)
                         }
                 }
             }
@@ -616,7 +625,10 @@ struct ExpensesListView: View {
                         .font(.system(size: 20))
                         .foregroundColor(isSelected ? Theme.foreground : Theme.mutedForeground)
                 } else {
-                    NBIconBadge(systemImage: iconName(for: e))
+                    // Show the chain logo when the vendor matches a known
+                    // retailer (Lidl/Biedronka/Kaufland…); otherwise fall
+                    // back to the SF Symbol resolved from category icon.
+                    VendorLogo(vendor: e.vendor, fallbackIcon: iconName(for: e))
                 }
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {

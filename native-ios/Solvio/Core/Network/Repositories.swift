@@ -498,6 +498,27 @@ enum ProductSearchRepo {
 
 // MARK: - Merchant rules
 
+// MARK: - Incomes (multiple income streams)
+
+/// Backed by `/api/personal/incomes`. List, create, update, delete —
+/// all keyed by the row's UUID so the UI can patch a row in place.
+enum IncomesRepo {
+    static func list() async throws -> [Income] {
+        let r: IncomesListResponse = try await ApiClient.shared.get("/api/personal/incomes")
+        return r.incomes
+    }
+    static func create(_ body: IncomeCreate) async throws -> Income {
+        let r: IncomeWrap = try await ApiClient.shared.post("/api/personal/incomes", body: body)
+        return r.income
+    }
+    static func update(_ body: IncomeUpdate) async throws {
+        try await ApiClient.shared.putVoid("/api/personal/incomes", body: body)
+    }
+    static func delete(id: String) async throws {
+        try await ApiClient.shared.deleteVoid("/api/personal/incomes", body: IncomeDeleteBody(id: id))
+    }
+}
+
 enum MerchantRulesRepo {
     private struct ListWrap: Decodable { let rules: [MerchantRule] }
     private struct DeleteBody: Encodable { let vendor: String }

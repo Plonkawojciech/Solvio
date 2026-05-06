@@ -217,6 +217,40 @@ struct SavingsHubView: View {
                 .foregroundColor(Theme.foreground)
             }
 
+            // Quick-link to the multi-income editor — Wojtek's request
+            // was to support several named income streams instead of
+            // a single `monthlyBudget.totalIncome` field.
+            Button {
+                router.push(.more(.incomes))
+            } label: {
+                HStack(spacing: Theme.Spacing.sm) {
+                    Image(systemName: "banknote")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundColor(Theme.foreground)
+                        .frame(width: 36, height: 36)
+                        .background(Theme.success.opacity(0.15))
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                                .stroke(Theme.success.opacity(0.5), lineWidth: Theme.Border.widthThin)
+                        )
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(locale.t("incomes.title"))
+                            .font(AppFont.bodyMedium)
+                            .foregroundColor(Theme.foreground)
+                        Text(locale.t("incomes.linkSub"))
+                            .font(AppFont.caption)
+                            .foregroundColor(Theme.mutedForeground)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .foregroundColor(Theme.mutedForeground)
+                }
+                .padding(Theme.Spacing.sm)
+                .nbCard(radius: Theme.Radius.md, shadow: Theme.Shadow.sm)
+            }
+            .buttonStyle(.plain)
+
             if vm.isBudgetLoading && vm.budget == nil {
                 NBSkeletonHero()
                 NBSkeletonList(rows: 3)

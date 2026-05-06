@@ -362,7 +362,10 @@ struct ReceiptsListView: View {
                     .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
             )
         } else {
-            NBIconBadge(systemImage: "doc.text", size: 44)
+            // No receipt photo on file (virtual receipts, processing).
+            // Branded vendor logo when the chain is recognised; otherwise
+            // generic doc icon.
+            VendorLogo(vendor: r.vendor, size: 44, fallbackIcon: "doc.text")
         }
     }
 

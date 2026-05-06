@@ -397,6 +397,30 @@ export const monthlyBudgets = pgTable('monthly_budgets', {
   index('idx_monthly_budgets_user_month').on(t.userId, t.month),
 ])
 
+/**
+ * Multiple income streams per user — Wojtek's request was to support
+ * "kilka dochodów z nazwami" (several incomes with names) instead of
+ * a single `monthlyBudget.totalIncome` field. Each row = one income
+ * source with a label ("Pensja", "Freelance", "Wynajem"…) and a
+ * recurring frequency. The savings hub aggregates them into a total
+ * monthly figure for the dashboard / health-score calculations.
+ */
+export const incomes = pgTable('incomes', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: text('user_id').notNull(),
+  name: varchar('name', { length: 120 }).notNull(),
+  amount: decimal('amount', { precision: 14, scale: 2 }).notNull(),
+  /// 'monthly' | 'weekly' | 'yearly' | 'oneoff'. Drives the
+  /// normalisation to a per-month figure in the AI / dashboard math.
+  period: varchar('period', { length: 12 }).default('monthly').notNull(),
+  emoji: varchar('emoji', { length: 10 }).default('💼'),
+  isActive: boolean('is_active').default(true).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  index('idx_incomes_user_id').on(t.userId),
+])
+
 export const financialChallenges = pgTable('financial_challenges', {
   id: uuid('id').primaryKey().defaultRandom(),
   userId: text('user_id').notNull(),

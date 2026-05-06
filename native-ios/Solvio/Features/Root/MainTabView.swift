@@ -227,6 +227,7 @@ private extension View {
                 case .shoppingAdvisor: ShoppingAdvisorView()
                 case .nearbyStores: NearbyStoresView()
                 case .productSearch: ProductSearchView()
+                case .incomes: IncomesView()
                 case .settings: SettingsView()
                 }
             }

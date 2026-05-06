@@ -10,6 +10,7 @@
 		02CB19FFD6DD28493027A267 /* AppDataStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DE1E9E2CA1F78B679AFA117 /* AppDataStore.swift */; };
 		06A68DBC8E409D3D5EB95617 /* L10n.swift in Sources */ = {isa = PBXBuildFile; fileRef = F97FF74B94CD0518150E1087 /* L10n.swift */; };
 		0A0D18DE0786EFDFA0BA0E4F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 52D728249EFCE7D7C0337D94 /* Assets.xcassets */; };
+		0A3930A160BB888427BBAF8B /* IncomesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50FB01B869383C41D7AE1838 /* IncomesView.swift */; };
 		0D739ACCF86CE4500D1AA177 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8727C6B896D2A937FEBF0FC /* Theme.swift */; };
 		11676B1135A110F68E098C92 /* GoalsListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC6D04CB361A10B6F393BB80 /* GoalsListView.swift */; };
 		161749A0D446DCFA96FC8EC1 /* SolvioApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01EF34F7339AED6F0B3DD142 /* SolvioApp.swift */; };
@@ -56,6 +57,7 @@
 		E39EDC02CF739209126B264F /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D1835BA3160285A014F04A5 /* LoginView.swift */; };
 		E42161C793ABA1780DDFE2AF /* ExpensesListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3494EB16FE8E3D7075771177 /* ExpensesListView.swift */; };
 		E5ACED9A769AE9839BEDFC1D /* ScanQueueWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8ED6EC478BCBD240EAA0050F /* ScanQueueWidget.swift */; };
+		E92C66E46B23655D5E286239 /* VendorLogo.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB114981ED6A4FF3085B2E61 /* VendorLogo.swift */; };
 		EF3D467789ECB0678E483DD5 /* ProductSearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C411B54CEA4BCBA197088095 /* ProductSearchView.swift */; };
 		F4AB577A72264E37A33DF40E /* CategoriesManagerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55C8C0A0B303780BB068D2A1 /* CategoriesManagerView.swift */; };
 		FC524F477AA35A2F19C457F7 /* NearbyStoresView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D71D0F9505AC728F0312EA02 /* NearbyStoresView.swift */; };
@@ -87,6 +89,7 @@
 		4E4C6D1C71673AB90A557152 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/Localizable.strings; sourceTree = "<group>"; };
 		4F08CDAEE362B1BF05C9F22A /* Repositories.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Repositories.swift; sourceTree = "<group>"; };
 		500BF274EE1CA029AE5F6057 /* Solvio.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Solvio.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		50FB01B869383C41D7AE1838 /* IncomesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IncomesView.swift; sourceTree = "<group>"; };
 		522E348991F119E01E636E4D /* AppLocale.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLocale.swift; sourceTree = "<group>"; };
 		52D728249EFCE7D7C0337D94 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		55C8C0A0B303780BB068D2A1 /* CategoriesManagerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CategoriesManagerView.swift; sourceTree = "<group>"; };
@@ -111,6 +114,7 @@
 		BADCF30C6EE9DE05E2B12928 /* AppConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfig.swift; sourceTree = "<group>"; };
 		C411B54CEA4BCBA197088095 /* ProductSearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProductSearchView.swift; sourceTree = "<group>"; };
 		D71D0F9505AC728F0312EA02 /* NearbyStoresView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NearbyStoresView.swift; sourceTree = "<group>"; };
+		DB114981ED6A4FF3085B2E61 /* VendorLogo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VendorLogo.swift; sourceTree = "<group>"; };
 		DCB372E303126D02D67C6205 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		DDC3F0358A2CEC41460FBEB1 /* pl */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = pl; path = pl.lproj/Localizable.strings; sourceTree = "<group>"; };
 		EC6D04CB361A10B6F393BB80 /* GoalsListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoalsListView.swift; sourceTree = "<group>"; };
@@ -182,6 +186,7 @@
 		673B0B7F341143ED81A41E00 /* Savings */ = {
 			isa = PBXGroup;
 			children = (
+				50FB01B869383C41D7AE1838 /* IncomesView.swift */,
 				45A1D2015C56725BB81B9A5D /* SavingsHubView.swift */,
 			);
 			path = Savings;
@@ -414,6 +419,7 @@
 				7A05D4C1B6156032FBA63316 /* BarcodeImage.swift */,
 				A582703EBAD4799BDC976AF0 /* NBComponents.swift */,
 				8ED6EC478BCBD240EAA0050F /* ScanQueueWidget.swift */,
+				DB114981ED6A4FF3085B2E61 /* VendorLogo.swift */,
 			);
 			path = UI;
 			sourceTree = "<group>";
@@ -514,6 +520,7 @@
 				A223F312862524E33C0A0DA4 /* GroupReceiptsView.swift in Sources */,
 				7E68AA1AE7F89FBDDF7F2FDF /* GroupSettlementsView.swift in Sources */,
 				9D12AF8701967902F6BEB36E /* GroupsListView.swift in Sources */,
+				0A3930A160BB888427BBAF8B /* IncomesView.swift in Sources */,
 				06A68DBC8E409D3D5EB95617 /* L10n.swift in Sources */,
 				E39EDC02CF739209126B264F /* LoginView.swift in Sources */,
 				235142DC0DBCEBC68B32A7DB /* LoyaltyView.swift in Sources */,
@@ -540,6 +547,7 @@
 				161749A0D446DCFA96FC8EC1 /* SolvioApp.swift in Sources */,
 				0D739ACCF86CE4500D1AA177 /* Theme.swift in Sources */,
 				7A2C515B2E4669D2C802BD8B /* ToastCenter.swift in Sources */,
+				E92C66E46B23655D5E286239 /* VendorLogo.swift in Sources */,
 				A73E6234AB2755FE2B623A50 /* VirtualReceiptCreateView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

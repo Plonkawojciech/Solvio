@@ -925,6 +925,56 @@ struct MerchantRule: Codable, Identifiable, Hashable {
     let count: Int?
 }
 
+// MARK: - Incomes (multiple income streams per user)
+
+/// One income source — `name` is user-supplied ("Pensja", "Freelance"…),
+/// `amount` is in user's currency, `period` ∈ {monthly, weekly, yearly,
+/// oneoff}. The savings hub normalises rows into a per-month aggregate.
+struct Income: Codable, Identifiable, Hashable {
+    let id: String
+    let userId: String?
+    let name: String
+    let amount: MoneyString
+    let period: String
+    let emoji: String?
+    let isActive: Bool?
+    let createdAt: String?
+    let updatedAt: String?
+
+    /// Returns this income normalized to a monthly figure based on `period`.
+    /// Mirrors the backend math used in dashboards / health-score
+    /// calculations so the iOS hero stat matches the AI's view of income.
+    var monthlyAmount: Double {
+        let raw = amount.double
+        switch period {
+        case "weekly":  return raw * 52.0 / 12.0
+        case "yearly":  return raw / 12.0
+        case "oneoff":  return 0  // one-off → not part of recurring income
+        default:        return raw    // "monthly"
+        }
+    }
+}
+
+struct IncomeCreate: Encodable {
+    let name: String
+    let amount: Double
+    let period: String?
+    let emoji: String?
+}
+
+struct IncomeUpdate: Encodable {
+    let id: String
+    let name: String?
+    let amount: Double?
+    let period: String?
+    let emoji: String?
+    let isActive: Bool?
+}
+
+struct IncomeDeleteBody: Encodable { let id: String }
+struct IncomesListResponse: Decodable { let incomes: [Income] }
+struct IncomeWrap: Decodable { let income: Income }
+
 // MARK: - Monthly budget + category breakdown
 
 /// Row from the `monthly_budgets` table. Strings because Drizzle
