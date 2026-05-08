@@ -3,6 +3,17 @@ import { auth } from '@/lib/auth-compat'
 import { db } from '@/lib/db'
 import { receipts, receiptItems, receiptItemAssignments, groups, groupMembers } from '@/lib/db/schema'
 import { eq, and, inArray } from 'drizzle-orm'
+import { z } from 'zod'
+
+// SECURITY (round 2 / A2): Zod-validate the receipt-link body. Previously we
+// accepted arbitrary `paidByMemberId` strings and read `receiptId` straight
+// into a DB UPDATE without any bounds. An attacker could swap `receiptId`
+// to a foreign user's UUID and have us read it back in the response (the
+// multi-tenant leak is fixed below by re-fetching with userId scope).
+const LinkReceiptSchema = z.object({
+  receiptId: z.string().uuid('receiptId must be a valid UUID'),
+  paidByMemberId: z.string().min(1).max(128).optional().nullable(),
+})
 
 export async function GET(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { userId } = await auth()
@@ -11,9 +22,20 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
   try {
     const { id } = await params
 
-    // Verify group access
-    const [group] = await db.select().from(groups).where(and(eq(groups.id, id), eq(groups.createdBy, userId)))
+    // SECURITY (round 2 / A2): allow group MEMBERS access, not just creator.
+    // Mirrors the access pattern in `/api/groups/[id]` GET. Trip-mode groups
+    // need every member to see the receipts the group has accumulated.
+    const [group] = await db.select().from(groups).where(eq(groups.id, id))
     if (!group) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
+    if (group.createdBy !== userId) {
+      const [membership] = await db
+        .select({ id: groupMembers.id })
+        .from(groupMembers)
+        .where(and(eq(groupMembers.groupId, id), eq(groupMembers.userId, userId)))
+        .limit(1)
+      if (!membership) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    }
 
     // Get all receipts for this group
     const groupReceipts = await db
@@ -98,15 +120,59 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   try {
     const { id } = await params
 
-    // Verify group access
-    const [group] = await db.select().from(groups).where(and(eq(groups.id, id), eq(groups.createdBy, userId)))
+    // SECURITY (round 2 / A2): allow group MEMBERS too, not just creator.
+    // Trip groups need every member to attach their own receipts.
+    const [group] = await db.select().from(groups).where(eq(groups.id, id))
     if (!group) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-    const body = await req.json()
-    const { receiptId, paidByMemberId } = body
+    if (group.createdBy !== userId) {
+      const [membership] = await db
+        .select({ id: groupMembers.id })
+        .from(groupMembers)
+        .where(and(eq(groupMembers.groupId, id), eq(groupMembers.userId, userId)))
+        .limit(1)
+      if (!membership) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    }
 
-    if (!receiptId) {
-      return NextResponse.json({ error: 'receiptId is required' }, { status: 400 })
+    const rawBody = await req.json().catch(() => null)
+    if (!rawBody) return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
+
+    const parsed = LinkReceiptSchema.safeParse(rawBody)
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: 'Invalid input', details: parsed.error.flatten().fieldErrors },
+        { status: 400 },
+      )
+    }
+    const { receiptId, paidByMemberId } = parsed.data
+
+    // SECURITY (round 2 / A2): verify the receipt belongs to the auth'd
+    // user BEFORE writing/reading it. The original code did a userId-
+    // scoped UPDATE (which would silently no-op on foreign IDs) but then
+    // an UNSCOPED `db.select(...)` and returned the response — leaking
+    // foreign receipt data. Now we ownership-check upfront.
+    const [ownedReceipt] = await db
+      .select({ id: receipts.id })
+      .from(receipts)
+      .where(and(eq(receipts.id, receiptId), eq(receipts.userId, userId)))
+      .limit(1)
+    if (!ownedReceipt) {
+      return NextResponse.json({ error: 'Receipt not found' }, { status: 404 })
+    }
+
+    // SECURITY (round 2 / A2): if paidByMemberId provided, verify the
+    // member belongs to THIS group. Otherwise an attacker could attribute
+    // the spend to a member of a foreign group as a kind of cross-tenant
+    // graffiti attack.
+    if (paidByMemberId) {
+      const [member] = await db
+        .select({ id: groupMembers.id })
+        .from(groupMembers)
+        .where(and(eq(groupMembers.id, paidByMemberId), eq(groupMembers.groupId, id)))
+        .limit(1)
+      if (!member) {
+        return NextResponse.json({ error: 'paidByMemberId not in group' }, { status: 400 })
+      }
     }
 
     // Update the receipt to link it to the group
@@ -118,8 +184,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       })
       .where(and(eq(receipts.id, receiptId), eq(receipts.userId, userId)))
 
-    // Get receipt with items
-    const [receipt] = await db.select().from(receipts).where(eq(receipts.id, receiptId))
+    // Re-read with userId scope so we never leak foreign receipts even if
+    // a future code change drops the upstream check.
+    const [receipt] = await db
+      .select()
+      .from(receipts)
+      .where(and(eq(receipts.id, receiptId), eq(receipts.userId, userId)))
+      .limit(1)
 
     // Create receipt_items from the jsonb items if they don't already exist
     const existingItems = await db

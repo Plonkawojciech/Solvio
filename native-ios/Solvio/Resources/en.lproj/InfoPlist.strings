@@ -1,0 +1,3 @@
+"NSCameraUsageDescription" = "Solvio needs camera access to scan receipts and invoices.";
+"NSPhotoLibraryUsageDescription" = "Solvio needs access to your photos to import receipts and invoices for analysis.";
+"NSPhotoLibraryAddUsageDescription" = "Solvio can save generated reports and e-receipts to your photo library.";

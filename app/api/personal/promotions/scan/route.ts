@@ -1,17 +1,26 @@
 import { auth } from '@/lib/auth-compat'
 import { NextResponse } from 'next/server'
 import { getAIClient } from '@/lib/ai-client'
-import { rateLimit } from '@/lib/rate-limit'
+import { rateLimitPersistent } from '@/lib/rate-limit'
 import { PRICE_COMPARE_STORES } from '@/lib/stores'
+import { z } from 'zod'
 
 const STORES = PRICE_COMPARE_STORES
+
+// SECURITY (round 2 / A2): bound the body. Stores array is capped so the
+// AI prompt size stays predictable.
+const ScanPromotionsSchema = z.object({
+  stores: z.array(z.string().max(50)).max(20).optional(),
+  lang: z.enum(['pl', 'en']).optional().default('pl'),
+  currency: z.string().length(3).optional().default('PLN'),
+})
 
 export async function POST(request: Request) {
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   // SECURITY FIX: Rate limiting for OpenAI-powered endpoint
-  const rl = rateLimit(`ai:promotions-scan:${userId}`, { maxRequests: 10, windowMs: 60 * 60 * 1000 })
+  const rl = await rateLimitPersistent(`ai:promotions-scan:${userId}`, { maxRequests: 10, windowMs: 60 * 60 * 1000 })
   if (!rl.allowed) {
     return NextResponse.json(
       { error: 'Rate limit exceeded. Try again later.' },
@@ -24,15 +33,17 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'AI service not configured' }, { status: 503 })
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let body: any
-  try {
-    body = await request.json()
-  } catch {
-    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
-  }
+  const rawBody = await request.json().catch(() => null)
+  if (!rawBody) return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
 
-  const { stores, lang = 'pl', currency = 'PLN' } = body
+  const parsed = ScanPromotionsSchema.safeParse(rawBody)
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: 'Invalid input', details: parsed.error.flatten().fieldErrors },
+      { status: 400 },
+    )
+  }
+  const { stores, lang, currency } = parsed.data
   const targetStores = stores && stores.length > 0 ? stores : STORES
   const isPolish = lang === 'pl'
 

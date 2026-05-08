@@ -25,8 +25,36 @@ final class SessionStore: ObservableObject {
     @Published private(set) var isRestoring: Bool = true
 
     private let storageKey = "solvio.session.user"
+    private var sessionExpiredObserver: NSObjectProtocol?
 
     var isAuthenticated: Bool { currentUser != nil }
+
+    init() {
+        // Auto-logout the moment any API call returns 401. Without this
+        // the user kept seeing "Session expired" toasts for every tab
+        // and the app sat broken until they manually pulled out of
+        // Settings → Sign out. Using NotificationCenter keeps ApiClient
+        // free of a SessionStore reference (no circular dependency).
+        sessionExpiredObserver = NotificationCenter.default.addObserver(
+            forName: .solvioSessionExpired,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self, self.currentUser != nil else { return }
+                #if DEBUG
+                print("[Session] 401 received — forcing logout")
+                #endif
+                await self.logout()
+            }
+        }
+    }
+
+    deinit {
+        if let token = sessionExpiredObserver {
+            NotificationCenter.default.removeObserver(token)
+        }
+    }
 
     func restore() async {
         defer { isRestoring = false }
@@ -51,6 +79,7 @@ final class SessionStore: ObservableObject {
                 let user = CurrentUser(email: email, userId: currentUser?.userId)
                 currentUser = user
                 saveCachedUser(user)
+                _ = try? await ApiClient.shared.refreshCsrfToken()
                 #if DEBUG
                 print("[Session] Verified: \(email)")
                 #endif
@@ -60,6 +89,7 @@ final class SessionStore: ObservableObject {
                 #endif
                 currentUser = nil
                 clearCachedUser()
+                ApiClient.shared.clearAuthState()
             }
         } catch ApiError.unauthorized {
             #if DEBUG
@@ -67,6 +97,7 @@ final class SessionStore: ObservableObject {
             #endif
             currentUser = nil
             clearCachedUser()
+            ApiClient.shared.clearAuthState()
         } catch {
             #if DEBUG
             print("[Session] Refresh failed (keeping cache): \(error)")
@@ -79,7 +110,7 @@ final class SessionStore: ObservableObject {
     func handleUnauthorized() {
         currentUser = nil
         clearCachedUser()
-        ApiClient.shared.clearCookies()
+        ApiClient.shared.clearAuthState()
     }
 
     /// Email-only login. `/api/auth/session` returns `{ok, userId}`;
@@ -99,6 +130,7 @@ final class SessionStore: ObservableObject {
         let user = CurrentUser(email: trimmed, userId: response.userId)
         currentUser = user
         saveCachedUser(user)
+        _ = try? await ApiClient.shared.refreshCsrfToken(force: true)
     }
 
     /// Demo login returns `{success, redirect}` — we then call `/me`
@@ -113,13 +145,14 @@ final class SessionStore: ObservableObject {
         let user = CurrentUser(email: email, userId: nil)
         currentUser = user
         saveCachedUser(user)
+        _ = try? await ApiClient.shared.refreshCsrfToken(force: true)
     }
 
     func logout() async {
         _ = try? await ApiClient.shared.deleteVoid("/api/auth/session")
         currentUser = nil
         clearCachedUser()
-        ApiClient.shared.clearCookies()
+        ApiClient.shared.clearAuthState()
     }
 
     // MARK: - Persistence

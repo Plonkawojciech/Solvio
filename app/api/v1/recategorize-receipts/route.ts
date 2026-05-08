@@ -17,7 +17,7 @@
 // because items already carrying a category_id are skipped on step 3.
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth-compat'
-import { rateLimit } from '@/lib/rate-limit'
+import { rateLimitPersistent } from '@/lib/rate-limit'
 import { db, receipts, expenses, categories } from '@/lib/db'
 import { eq, and } from 'drizzle-orm'
 import { getAIClient } from '@/lib/ai-client'
@@ -164,7 +164,7 @@ export async function POST(req: NextRequest) {
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   // Rate limit: 3 runs per hour per user (this is heavy — AI + DB writes)
-  const rl = rateLimit(`recat:${userId}`, { maxRequests: 3, windowMs: 60 * 60 * 1000 })
+  const rl = await rateLimitPersistent(`recat:${userId}`, { maxRequests: 3, windowMs: 60 * 60 * 1000 })
   if (!rl.allowed) {
     return NextResponse.json(
       { error: 'Rate limit exceeded. Try again later.' },

@@ -7,10 +7,14 @@ import SwiftUI
 struct PricesView: View {
     @EnvironmentObject private var toast: ToastCenter
     @EnvironmentObject private var locale: AppLocale
+    @EnvironmentObject private var store: AppDataStore
     @State private var isLoading = false
     @State private var result: PriceComparisonResponse?
     @State private var errorMessage: String?
-    @State private var currency: String = "PLN"
+    // Currency from the central store — was previously hardcoded "PLN"
+    // with an async `loadCurrency()` task that produced a race where
+    // Compare could fire in PLN while the user actually had EUR set.
+    private var currency: String { store.currency }
     /// Per-card detail expansion. Default = collapsed (compact summary row).
     /// Tapping a card adds its productName here; tap chevron again to remove.
     @State private var expanded: Set<String> = []
@@ -37,7 +41,11 @@ struct PricesView: View {
                     )
                 }
                 if let msg = errorMessage, result == nil {
-                    NBErrorCard(message: msg) { Task { await run() } }
+                    NBErrorCard(message: msg) {
+                        // Subtle retry tick — matches Analysis/Audit pattern.
+                        Haptics.impact(.light)
+                        Task { await run() }
+                    }
                 }
                 if let r = result {
                     if let topError = r.error, !topError.isEmpty {
@@ -59,15 +67,12 @@ struct PricesView: View {
         .background(Theme.background)
         .navigationTitle(locale.t("prices.navTitle"))
         .navigationBarTitleDisplayMode(.inline)
-        .task { await loadCurrency() }
-        .refreshable { await run() }
-    }
-
-    private func loadCurrency() async {
-        guard let bundle = try? await SettingsRepo.fetch(),
-              let code = bundle.settings?.currency,
-              !code.isEmpty else { return }
-        currency = code
+        .refreshable {
+            // Light + success pattern matches Dashboard.
+            Haptics.impact(.light)
+            await run()
+            if errorMessage == nil { Haptics.success() }
+        }
     }
 
     // MARK: - Header + CTA
@@ -86,15 +91,11 @@ struct PricesView: View {
                 .font(AppFont.body)
                 .foregroundColor(Theme.mutedForeground)
                 .fixedSize(horizontal: false, vertical: true)
-            VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
-                Text(locale.t("prices.currencyLabel")).font(AppFont.bodyMedium)
-                NBSegmented(selection: $currency, options: [
-                    (value: "PLN", label: "PLN"),
-                    (value: "EUR", label: "EUR"),
-                    (value: "USD", label: "USD")
-                ])
-            }
+            // Currency picker removed — duplicated Settings (single source of
+            // truth via `store.currency`).
             Button {
+                // Medium impact — matches Analysis/Audit primary CTA weight.
+                Haptics.impact(.medium)
                 Task { await run() }
             } label: {
                 HStack {
@@ -130,7 +131,7 @@ struct PricesView: View {
                 .lineLimit(1)
             HStack(spacing: Theme.Spacing.xs) {
                 if let analyzed = r.productsAnalyzed {
-                    NBTag(text: String(format: locale.t("prices.productsCountFmt"), analyzed))
+                    NBTag(text: String(format: locale.tPlural("prices.productsCountFmt", count: analyzed), analyzed))
                 }
                 if r.isEstimated == true {
                     NBTag(
@@ -192,7 +193,7 @@ struct PricesView: View {
             HStack(alignment: .center) {
                 NBSectionHeader(
                     eyebrow: locale.t("prices.productsSection"),
-                    title: String(format: locale.t("prices.comparisonsCountFmt"), items.count)
+                    title: String(format: locale.tPlural("prices.comparisonsCountFmt", count: items.count), items.count)
                 )
                 Spacer()
                 // Bulk toggle — collapse-all is the friendlier default after a
@@ -200,6 +201,10 @@ struct PricesView: View {
                 // is open. Otherwise offer expand-all so power users can dump
                 // the whole list at once.
                 Button {
+                    // Selection tick — bulk toggle is still a discrete pick,
+                    // not an action that commits work, so .selection() fits
+                    // better than .impact().
+                    Haptics.selection()
                     withAnimation(.easeInOut(duration: 0.18)) {
                         if allExpanded {
                             expanded.removeAll()
@@ -257,6 +262,9 @@ struct PricesView: View {
         .nbCard(radius: Theme.Radius.md, shadow: Theme.Shadow.sm)
         .contentShape(Rectangle())
         .onTapGesture {
+            // Selection tick on chevron/card tap — discrete reveal, not a
+            // committed action.
+            Haptics.selection()
             withAnimation(.easeInOut(duration: 0.18)) {
                 if isCardExpanded { expanded.remove(c.productName) }
                 else { expanded.insert(c.productName) }
@@ -362,6 +370,9 @@ struct PricesView: View {
 
         if !allPrices.isEmpty {
             Button {
+                // Selection tick on inner reveal — same family as the card
+                // chevron above it.
+                Haptics.selection()
                 withAnimation(.easeInOut(duration: 0.15)) {
                     if pricesOpen { pricesExpanded.remove(c.productName) }
                     else { pricesExpanded.insert(c.productName) }

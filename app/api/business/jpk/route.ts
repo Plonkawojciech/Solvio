@@ -4,17 +4,30 @@ import { db } from '@/lib/db'
 import { vatEntries, companies, companyMembers, userSettings } from '@/lib/db/schema'
 import { eq, and } from 'drizzle-orm'
 import { buildJpkV7M } from '@/lib/reports/jpk-builder'
+import { z } from 'zod'
+
+// SECURITY (round 2 / A2): bound the body. JPK exports embed company NIP
+// + period in the filename and downstream XML — Zod prevents injection.
+const JpkRequestSchema = z.object({
+  period: z.string().regex(/^\d{4}-\d{2}$/, 'period must be YYYY-MM'),
+}).strict()
 
 export async function POST(req: NextRequest) {
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   try {
-    const body = await req.json()
+    const rawBody = await req.json().catch(() => null)
+    if (!rawBody) return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
 
-    if (!body.period || !/^\d{4}-\d{2}$/.test(body.period)) {
-      return NextResponse.json({ error: 'period must be in YYYY-MM format' }, { status: 400 })
+    const parsed = JpkRequestSchema.safeParse(rawBody)
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: 'Invalid input', details: parsed.error.flatten().fieldErrors },
+        { status: 400 },
+      )
     }
+    const body = parsed.data
 
     // Verify business user
     const settings = await db.select().from(userSettings).where(eq(userSettings.userId, userId)).limit(1)

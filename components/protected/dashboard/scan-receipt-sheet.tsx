@@ -20,6 +20,7 @@ import {
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { t, getLanguage } from '@/lib/i18n';
+import { pluralizePL, pluralizeEN } from '@/lib/plural';
 
 import {
   Sheet,
@@ -605,17 +606,21 @@ export function ScanReceiptSheet({
         if (successCount === totalCount && successCount > 0) {
           toast.success(t('receipts.scanComplete'), {
             description: isPl
-              ? `Przetworzono ${successCount} paragon${successCount > 1 ? 'ów' : ''}.`
-              : `Processed ${successCount} receipt${successCount !== 1 ? 's' : ''}.`,
+              ? `Przetworzono ${pluralizePL({ count: successCount, one: 'paragon', few: 'paragony', many: 'paragonów' })}.`
+              : `Processed ${pluralizeEN({ count: successCount, one: 'receipt', other: 'receipts' })}.`,
           });
         } else if (successCount > 0) {
+          // Mixed-success path uses x/y format. The PL noun is locked to "many"
+          // form ("paragonów") because "x z y" naturally agrees with that case
+          // — the count `successCount` modifies the relation between two totals,
+          // not the noun itself. Same reasoning for the EN side.
           let desc = isPl
             ? `Przetworzono ${successCount}/${totalCount} paragonów.`
             : `Processed ${successCount}/${totalCount} receipts.`;
           if (duplicateCount > 0) {
             desc += isPl
-              ? ` ${duplicateCount} duplikat${duplicateCount > 1 ? 'ów' : ''} pominięto.`
-              : ` ${duplicateCount} duplicate${duplicateCount > 1 ? 's' : ''} skipped.`;
+              ? ` ${pluralizePL({ count: duplicateCount, one: 'duplikat', few: 'duplikaty', many: 'duplikatów' })} pominięto.`
+              : ` ${pluralizeEN({ count: duplicateCount, one: 'duplicate', other: 'duplicates' })} skipped.`;
           }
           toast.warning(t('receipts.partialSuccess'), { description: desc });
         } else {

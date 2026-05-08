@@ -32,6 +32,7 @@ struct ScanQueueWidget: View {
 
     private var chip: some View {
         Button {
+            Haptics.selection()
             expanded.toggle()
         } label: {
             HStack(spacing: Theme.Spacing.sm) {
@@ -136,6 +137,7 @@ struct ScanQueueWidget: View {
                 Spacer()
                 if queue.items.contains(where: \.status.isTerminal) {
                     Button {
+                        Haptics.impact(.light)
                         queue.clearCompleted()
                     } label: {
                         Text(locale.t("scanQueue.clearDone"))
@@ -207,6 +209,7 @@ struct ScanQueueWidget: View {
 
             if case .failed = item.status {
                 Button {
+                    Haptics.impact(.light)
                     queue.retry(id: item.id)
                 } label: {
                     Image(systemName: "arrow.clockwise")
@@ -230,6 +233,7 @@ struct ScanQueueWidget: View {
         .contentShape(Rectangle())
         .onTapGesture {
             if case .saved = item.status, let rid = item.receiptId {
+                Haptics.selection()
                 expanded = false
                 router.push(.receiptDetail(id: rid))
             }

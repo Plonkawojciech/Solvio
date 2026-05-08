@@ -4,6 +4,7 @@ import { auth } from '@/lib/auth-compat';
 import sharp from 'sharp';
 
 export const runtime = 'nodejs';
+const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
 // Funkcja do ładowania heic-convert (dynamiczny import)
 async function loadHeicConvert(): Promise<((options: { buffer: Buffer; format: 'PNG' | 'JPEG'; quality?: number }) => Promise<Buffer>) | null> {
@@ -61,6 +62,20 @@ export async function POST(req: NextRequest) {
 
     if (!file) {
       return new Response(JSON.stringify({ error: 'No file provided' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    if (file.size === 0) {
+      return new Response(JSON.stringify({ error: 'File is empty' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    if (file.size > MAX_FILE_SIZE) {
+      return new Response(JSON.stringify({ error: 'File too large (max 10MB)' }), {
         status: 400,
         headers: { 'Content-Type': 'application/json' },
       });

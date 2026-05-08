@@ -42,6 +42,15 @@ export async function GET(request: Request) {
 
   // List mode — consumed by native-ios ReceiptsListView.
   if (!id) {
+    // Pagination params — `limit` defaults to 50 (was 200) so the
+    // first paint is faster on accounts with hundreds of receipts.
+    // iOS can request more via `?limit=200&offset=200` for infinite-
+    // scroll; clamp to 200 to keep payloads bounded.
+    const limit = Math.min(
+      Math.max(parseInt(searchParams.get('limit') || '50', 10) || 50, 1),
+      200,
+    )
+    const offset = Math.max(parseInt(searchParams.get('offset') || '0', 10) || 0, 0)
     try {
       const rows = await db.select({
         id: receipts.id,
@@ -60,8 +69,15 @@ export async function GET(request: Request) {
       }).from(receipts)
         .where(eq(receipts.userId, userId))
         .orderBy(desc(receipts.createdAt))
-        .limit(200)
-      return NextResponse.json({ receipts: rows })
+        .limit(limit)
+        .offset(offset)
+      return NextResponse.json({ receipts: rows, limit, offset, hasMore: rows.length === limit }, {
+        headers: {
+          // Per-user list. Tiny SWR window so back-to-back navigations
+          // share the same response without holding stale data.
+          'Cache-Control': 'private, max-age=5, must-revalidate',
+        },
+      })
     } catch (err) {
       console.error('[receipts GET list]', err)
       return NextResponse.json({ error: 'Failed to fetch receipts' }, { status: 500 })

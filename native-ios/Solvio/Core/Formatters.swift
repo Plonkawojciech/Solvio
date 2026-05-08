@@ -79,6 +79,29 @@ enum Fmt {
         return amount(d, currency: currency)
     }
 
+    /// Plain integer with locale-aware thousands separator. Used for
+    /// quick-amount buttons where the trailing currency symbol would
+    /// crowd a 4-up grid (currency is implied from the goal context).
+    static func intGrouped(_ value: Int) -> String {
+        let f = NumberFormatter()
+        f.numberStyle = .decimal
+        f.maximumFractionDigits = 0
+        return f.string(from: NSNumber(value: value)) ?? String(value)
+    }
+
+    /// Quantity formatter for shopping/receipt rows. Uses locale-aware
+    /// decimal separator (`1,5` on PL, `1.5` on EN) and trims trailing
+    /// zeros for whole values (`2` instead of `2.00`). Replaces the
+    /// `String(format: "× %g", qty)` hack which always printed "1.5"
+    /// even on PL locale.
+    static func qty(_ value: Double) -> String {
+        let f = NumberFormatter()
+        f.numberStyle = .decimal
+        f.minimumFractionDigits = 0
+        f.maximumFractionDigits = 3
+        return f.string(from: NSNumber(value: value)) ?? String(value)
+    }
+
     // MARK: - Date
 
     static func parseISO(_ iso: String) -> Date? {

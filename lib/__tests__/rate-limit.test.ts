@@ -199,3 +199,86 @@ describe('rateLimit() — window reset', () => {
     expect(rateLimit(key, opts).allowed).toBe(false)
   })
 })
+
+describe('rateLimitPersistent() — database-backed path', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-05-08T12:00:00Z'))
+    vi.resetModules()
+    delete process.env.DATABASE_URL
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('allows requests when DB counter is below the limit', async () => {
+    const execute = vi.fn().mockResolvedValue({
+      rows: [{ count: 1, reset_at_epoch: Math.floor(Date.now() / 1000) + 60 }],
+    })
+
+    process.env.DATABASE_URL = 'postgres://example.test/solvio'
+
+    const { rateLimitPersistent } = await import('../rate-limit')
+    const result = await rateLimitPersistent(
+      'persist-ok',
+      { maxRequests: 5, windowMs: 60_000 },
+      { execute, disableGc: true },
+    )
+
+    expect(result.allowed).toBe(true)
+    expect(result.source).toBe('database')
+    expect(execute).toHaveBeenCalledTimes(1)
+  })
+
+  it('denies requests when DB counter exceeds the limit', async () => {
+    const execute = vi.fn().mockResolvedValue({
+      rows: [{ count: 6, reset_at_epoch: Math.floor(Date.now() / 1000) + 45 }],
+    })
+
+    process.env.DATABASE_URL = 'postgres://example.test/solvio'
+
+    const { rateLimitPersistent } = await import('../rate-limit')
+    const result = await rateLimitPersistent(
+      'persist-deny',
+      { maxRequests: 5, windowMs: 60_000 },
+      { execute, disableGc: true },
+    )
+
+    expect(result.allowed).toBe(false)
+    expect(result.source).toBe('database')
+    expect(result.retryAfter).toBeGreaterThan(0)
+  })
+
+  it('falls back to the in-memory limiter when DB access fails', async () => {
+    const execute = vi.fn().mockRejectedValue(new Error('relation "rate_limit_buckets" does not exist'))
+
+    process.env.DATABASE_URL = 'postgres://example.test/solvio'
+
+    const { rateLimitPersistent } = await import('../rate-limit')
+    const opts = { maxRequests: 1, windowMs: 60_000 }
+
+    const first = await rateLimitPersistent('persist-fallback', opts, { execute, disableGc: true })
+    const second = await rateLimitPersistent('persist-fallback', opts, { execute, disableGc: true })
+
+    expect(first.allowed).toBe(true)
+    expect(first.source).toBe('memory')
+    expect(second.allowed).toBe(false)
+    expect(second.source).toBe('memory')
+  })
+
+  it('does not touch the DB when DATABASE_URL is unset', async () => {
+    const execute = vi.fn()
+
+    const { rateLimitPersistent } = await import('../rate-limit')
+    const result = await rateLimitPersistent(
+      'persist-no-db-env',
+      { maxRequests: 1, windowMs: 60_000 },
+      { execute, disableGc: true },
+    )
+
+    expect(result.allowed).toBe(true)
+    expect(result.source).toBe('memory')
+    expect(execute).not.toHaveBeenCalled()
+  })
+})

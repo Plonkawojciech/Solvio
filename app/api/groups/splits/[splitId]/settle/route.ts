@@ -3,13 +3,33 @@ import { auth } from '@/lib/auth-compat'
 import { db } from '@/lib/db'
 import { expenseSplits, paymentRequests, groupMembers } from '@/lib/db/schema'
 import { eq, and } from 'drizzle-orm'
+import { recordAudit } from '@/lib/audit-log'
+import { z } from 'zod'
+
+// SECURITY FIX: Zod schema bounds memberId so an attacker cannot send a
+// payload that crashes JSON.parse / consumes excessive memory before we
+// reach the membership check.
+const SettleSplitSchema = z.object({
+  memberId: z.string().min(1).max(128),
+})
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ splitId: string }> }) {
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   try {
     const { splitId } = await params
-    const { memberId } = await req.json()
+    const rawBody = await req.json().catch(() => null)
+    if (!rawBody) {
+      return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
+    }
+    const parsed = SettleSplitSchema.safeParse(rawBody)
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: 'Invalid input', details: parsed.error.flatten().fieldErrors },
+        { status: 400 },
+      )
+    }
+    const { memberId } = parsed.data
     const [split] = await db.select().from(expenseSplits).where(eq(expenseSplits.id, splitId))
     if (!split) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
@@ -24,11 +44,30 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ sp
       s.memberId === memberId ? { ...s, settled: true, settledAt: new Date().toISOString() } : s
     )
 
-    // SECURITY FIX: Defense-in-depth — add groupId to UPDATE WHERE
-    await db.update(expenseSplits).set({ splits: updatedSplits }).where(and(eq(expenseSplits.id, splitId), eq(expenseSplits.groupId, split.groupId)))
-    await db.update(paymentRequests)
-      .set({ status: 'settled', settledAt: new Date() })
-      .where(and(eq(paymentRequests.splitId, splitId), eq(paymentRequests.toMemberId, memberId)))
+    // SECURITY FIX: Defense-in-depth — add groupId to UPDATE WHERE.
+    // Atomicity: the two UPDATEs are conceptually one mutation (mark the
+    // split settled AND flip the matching paymentRequests row). Two
+    // sequential awaits left a window where a transient Neon failure
+    // between them landed the system in an inconsistent state — split
+    // marked settled but the payment request still 'pending'. `db.batch`
+    // pipelines them into one HTTP RTT and rolls back together on error.
+    await db.batch([
+      db.update(expenseSplits)
+        .set({ splits: updatedSplits })
+        .where(and(eq(expenseSplits.id, splitId), eq(expenseSplits.groupId, split.groupId))),
+      db.update(paymentRequests)
+        .set({ status: 'settled', settledAt: new Date() })
+        .where(and(eq(paymentRequests.splitId, splitId), eq(paymentRequests.toMemberId, memberId))),
+    ])
+
+    // SECURITY (round 2 / A2): audit settle action.
+    void recordAudit({
+      userId,
+      action: 'split.settle',
+      entityType: 'expense_split',
+      entityId: splitId,
+      payload: { groupId: split.groupId, memberId },
+    })
 
     return NextResponse.json({ ok: true })
   } catch (err) {

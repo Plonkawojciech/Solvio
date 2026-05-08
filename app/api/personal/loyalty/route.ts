@@ -2,6 +2,26 @@ import { auth } from '@/lib/auth-compat'
 import { NextResponse } from 'next/server'
 import { db, loyaltyCards } from '@/lib/db'
 import { eq, and } from 'drizzle-orm'
+import { z } from 'zod'
+
+// SECURITY (round 2 / A2): bound POST/DELETE bodies. The previous version
+// accepted arbitrary `any` which let unbounded card numbers / store names
+// land in DB columns sized for short values.
+const ToggleCardSchema = z.object({
+  action: z.literal('toggle'),
+  id: z.string().uuid(),
+  isActive: z.boolean(),
+})
+
+const CreateCardSchema = z.object({
+  store: z.string().min(1).max(50),
+  cardNumber: z.string().max(100).optional().nullable(),
+  memberName: z.string().max(255).optional().nullable(),
+})
+
+const DeleteCardSchema = z.object({
+  id: z.string().uuid(),
+})
 
 export async function GET() {
   const { userId } = await auth()
@@ -24,29 +44,35 @@ export async function POST(request: Request) {
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let body: any
-  try {
-    body = await request.json()
-  } catch {
-    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
-  }
+  const rawBody = await request.json().catch(() => null)
+  if (!rawBody) return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
 
   try {
-    // Toggle action
-    if (body.action === 'toggle' && body.id) {
+    // Toggle action — discriminate by `action` field
+    if (typeof rawBody === 'object' && rawBody !== null && 'action' in rawBody) {
+      const parsed = ToggleCardSchema.safeParse(rawBody)
+      if (!parsed.success) {
+        return NextResponse.json(
+          { error: 'Invalid input', details: parsed.error.flatten().fieldErrors },
+          { status: 400 },
+        )
+      }
       await db
         .update(loyaltyCards)
-        .set({ isActive: body.isActive })
-        .where(and(eq(loyaltyCards.id, body.id), eq(loyaltyCards.userId, userId)))
+        .set({ isActive: parsed.data.isActive })
+        .where(and(eq(loyaltyCards.id, parsed.data.id), eq(loyaltyCards.userId, userId)))
       return NextResponse.json({ success: true })
     }
 
     // Add new card
-    const { store, cardNumber, memberName } = body
-    if (!store) {
-      return NextResponse.json({ error: 'Store is required' }, { status: 400 })
+    const parsed = CreateCardSchema.safeParse(rawBody)
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: 'Invalid input', details: parsed.error.flatten().fieldErrors },
+        { status: 400 },
+      )
     }
+    const { store, cardNumber, memberName } = parsed.data
 
     const [card] = await db
       .insert(loyaltyCards)
@@ -70,21 +96,21 @@ export async function DELETE(request: Request) {
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let body: any
-  try {
-    body = await request.json()
-  } catch {
-    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
-  }
+  const rawBody = await request.json().catch(() => null)
+  if (!rawBody) return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
 
-  const { id } = body
-  if (!id) return NextResponse.json({ error: 'Card ID required' }, { status: 400 })
+  const parsed = DeleteCardSchema.safeParse(rawBody)
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: 'Invalid input', details: parsed.error.flatten().fieldErrors },
+      { status: 400 },
+    )
+  }
 
   try {
     await db
       .delete(loyaltyCards)
-      .where(and(eq(loyaltyCards.id, id), eq(loyaltyCards.userId, userId)))
+      .where(and(eq(loyaltyCards.id, parsed.data.id), eq(loyaltyCards.userId, userId)))
 
     return NextResponse.json({ success: true })
   } catch (err) {

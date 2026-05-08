@@ -41,17 +41,30 @@ export function SavingsGoalCard({ goal, index, onAddFunds, onDelete, currency }:
   const color = goal.color || '#6366f1'
   const displayCurrency = goal.currency || currency
 
-  // Calculate daily savings needed
+  // Calculate daily savings needed + deadline status (today/tomorrow/overdue).
   let dailyNeeded: number | null = null
   let daysLeft: number | null = null
+  let deadlineStatus: 'overdue' | 'today' | 'tomorrow' | 'normal' = 'normal'
   if (goal.deadline && !goal.isCompleted) {
     const deadlineDate = new Date(goal.deadline)
     const today = new Date()
     const diffMs = deadlineDate.getTime() - today.getTime()
-    daysLeft = Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60 * 24)))
+    const rawDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24))
+    if (rawDays < 0) {
+      deadlineStatus = 'overdue'
+      daysLeft = rawDays
+    } else if (rawDays === 0) {
+      deadlineStatus = 'today'
+      daysLeft = 0
+    } else if (rawDays === 1) {
+      deadlineStatus = 'tomorrow'
+      daysLeft = 1
+    } else {
+      daysLeft = rawDays
+    }
     const remaining = target - current
-    if (daysLeft > 0 && remaining > 0) {
-      dailyNeeded = remaining / daysLeft
+    if (rawDays > 0 && remaining > 0) {
+      dailyNeeded = remaining / rawDays
     }
   }
 
@@ -114,14 +127,22 @@ export function SavingsGoalCard({ goal, index, onAddFunds, onDelete, currency }:
               </p>
 
               {/* Deadline */}
-              <div className="flex items-center gap-1 mt-1.5 text-xs text-muted-foreground">
+              <div className={`flex items-center gap-1 mt-1.5 text-xs ${
+                deadlineStatus === 'overdue' ? 'text-red-500 font-semibold' :
+                deadlineStatus === 'today' ? 'text-amber-600 dark:text-amber-400 font-semibold' :
+                'text-muted-foreground'
+              }`}>
                 <Calendar className="h-3 w-3" />
-                {daysLeft !== null ? (
-                  <span>
-                    {daysLeft} {t('goals.daysLeft')}
-                  </span>
-                ) : (
+                {daysLeft === null ? (
                   <span>{t('goals.noDeadline')}</span>
+                ) : deadlineStatus === 'overdue' ? (
+                  <span>{t('goals.overdue')}</span>
+                ) : deadlineStatus === 'today' ? (
+                  <span>{t('goals.today')}</span>
+                ) : deadlineStatus === 'tomorrow' ? (
+                  <span>{t('goals.tomorrow')}</span>
+                ) : (
+                  <span>{daysLeft} {t('goals.daysLeft')}</span>
                 )}
               </div>
             </div>

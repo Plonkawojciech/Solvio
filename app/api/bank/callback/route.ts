@@ -9,7 +9,7 @@ import { NextResponse } from 'next/server'
 import { auth } from '@/lib/auth-compat'
 import { db } from '@/lib/db'
 import { bankConnections, bankAccounts } from '@/lib/db/schema'
-import { eq, and } from 'drizzle-orm'
+import { eq, and, desc } from 'drizzle-orm'
 import { getNordigenClient, NordigenApiError } from '@/lib/nordigen/client'
 
 export async function GET() {
@@ -24,7 +24,18 @@ export async function GET() {
   try {
     // Find the pending connection for this user
     // Nordigen callback doesn't pass the requisition ID directly,
-    // so we match by the most recent pending connection
+    // so we match by trying every pending requisition until one resolves
+    // to a linked status (LN). Round-4 fix (A4 R3 deferred): the previous
+    // `.limit(5)` silently abandoned the 6th+ pending connections — a user
+    // who tapped "Connect" several times across providers would have older
+    // pending rows orphaned forever. Bumping to 50 is still bounded (the
+    // 10/hr per-user rate-limit from R1 caps cold-flow worst case at ~240
+    // pending rows/day, and the inner loop early-exits the moment one
+    // requisition reports `status === 'LN'`). For users below that bound
+    // (the realistic 99.9%), this guarantees the just-finished consent
+    // is the one we match against, not whatever happened to land in the
+    // last 5 rows. Older rows still need a separate cleanup cron — flagged
+    // for a future round.
     const pendingConnections = await db
       .select()
       .from(bankConnections)
@@ -32,7 +43,8 @@ export async function GET() {
         eq(bankConnections.userId, userId),
         eq(bankConnections.status, 'pending'),
       ))
-      .limit(5)
+      .orderBy(desc(bankConnections.createdAt))
+      .limit(50)
 
     if (pendingConnections.length === 0) {
       return NextResponse.redirect(new URL('/bank?error=no_pending_connection', appUrl))

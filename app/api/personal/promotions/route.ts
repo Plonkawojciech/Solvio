@@ -3,10 +3,19 @@ import { NextResponse } from 'next/server'
 import { db, receipts, weeklySummaries, expenses } from '@/lib/db'
 import { eq, desc } from 'drizzle-orm'
 import { getAIClient, getAIClientForWebSearch } from '@/lib/ai-client'
-import { rateLimit } from '@/lib/rate-limit'
+import { rateLimitPersistent } from '@/lib/rate-limit'
 import { PRICE_COMPARE_STORES } from '@/lib/stores'
 import { readAnyIntel, readIntel, writeIntel } from '@/lib/store-intel'
 import crypto from 'crypto'
+import { z } from 'zod'
+
+// SECURITY (round 2 / A2): bound the request. Lang/currency/force are the
+// only inputs the handler reads — strict mode rejects extras silently.
+const PromotionsRequestSchema = z.object({
+  lang: z.enum(['pl', 'en']).optional().default('pl'),
+  currency: z.string().length(3).optional().default('PLN'),
+  force: z.boolean().optional().default(false),
+})
 
 const STORES = PRICE_COMPARE_STORES
 
@@ -39,15 +48,17 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'AI service not configured' }, { status: 503 })
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let body: any
-  try {
-    body = await request.json()
-  } catch {
-    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
-  }
+  const rawBody = await request.json().catch(() => null)
+  if (!rawBody) return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
 
-  const { lang = 'pl', currency = 'PLN', force = false } = body
+  const parsedReq = PromotionsRequestSchema.safeParse(rawBody)
+  if (!parsedReq.success) {
+    return NextResponse.json(
+      { error: 'Invalid input', details: parsedReq.error.flatten().fieldErrors },
+      { status: 400 },
+    )
+  }
+  const { lang, currency, force } = parsedReq.data
   const isPolish = lang === 'pl'
 
   // PROMPT_VERSION bumps invalidate every cached row across the fleet.
@@ -117,7 +128,7 @@ export async function POST(request: Request) {
 
   // Cache miss (or force) — rate-limit before the AI call. Cached hits
   // never reach this gate so they don't burn the user's quota.
-  const rl = rateLimit(`ai:promotions:${userId}`, { maxRequests: 10, windowMs: 60 * 60 * 1000 })
+  const rl = await rateLimitPersistent(`ai:promotions:${userId}`, { maxRequests: 10, windowMs: 60 * 60 * 1000 })
   if (!rl.allowed) {
     return NextResponse.json(
       { error: 'Rate limit exceeded. Try again later.' },
@@ -388,9 +399,7 @@ ONLY reason for empty array: web_search completely failed and you have no leafle
       // Table might not exist yet
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const cleanPromos = withIds((result.promotions as unknown[]) ?? [])
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const cleanPersonal = withIds((result.personalizedDeals as unknown[]) ?? [])
 
     // Aggregate sources from per-promotion sourceUrl (deduped).

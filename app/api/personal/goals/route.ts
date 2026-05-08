@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server'
 import { db, savingsGoals, savingsDeposits } from '@/lib/db'
 import { eq, desc } from 'drizzle-orm'
 import { getAIClient } from '@/lib/ai-client'
-import { rateLimit } from '@/lib/rate-limit'
+import { rateLimitPersistent } from '@/lib/rate-limit'
 import { z } from 'zod'
 
 const CreateGoalSchema = z.object({
@@ -65,7 +65,7 @@ export async function POST(request: Request) {
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   // SECURITY FIX: Rate limiting for OpenAI-powered endpoint
-  const rl = rateLimit(`ai:goals:${userId}`, { maxRequests: 10, windowMs: 60 * 60 * 1000 })
+  const rl = await rateLimitPersistent(`ai:goals:${userId}`, { maxRequests: 10, windowMs: 60 * 60 * 1000 })
   if (!rl.allowed) {
     return NextResponse.json(
       { error: 'Rate limit exceeded. Try again later.' },

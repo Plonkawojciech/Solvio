@@ -46,6 +46,7 @@ struct MainTabView: View {
                     HStack {
                         Spacer()
                         FloatingScanFab {
+                            Haptics.impact(.medium)
                             router.showingScanSheet = true
                         }
                     }
@@ -119,7 +120,7 @@ struct MainTabView: View {
                 if images.count == 1 {
                     toast.success(locale.t("scanQueue.batchSavedSingle"))
                 } else {
-                    toast.success(String(format: locale.t("scanQueue.batchSaved"), images.count))
+                    toast.success(String(format: locale.tPlural("scanQueue.batchSaved", count: images.count), images.count))
                 }
             }
         }
@@ -131,6 +132,11 @@ struct MainTabView: View {
                     router.push(.receiptDetail(id: created.id))
                 }
             }
+            // Half-sheet by default so the user sees the form alongside
+            // their previous context; expand to full-height when the
+            // line-items list grows.
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
             .environmentObject(locale)
         }
         .sheet(isPresented: $showQuickSplit) {
@@ -345,6 +351,7 @@ private struct HeaderIconButton: View {
 struct FloatingScanFab: View {
     let action: () -> Void
     @State private var pressed = false
+    @EnvironmentObject private var locale: AppLocale
 
     var body: some View {
         Button(action: action) {
@@ -370,7 +377,7 @@ struct FloatingScanFab: View {
                 .onChanged { _ in pressed = true }
                 .onEnded { _ in pressed = false }
         )
-        .accessibilityLabel(Text("Add"))
+        .accessibilityLabel(Text(locale.t("common.add")))
     }
 }
 
@@ -406,9 +413,13 @@ struct NBTabBar: View {
     private func tabSlot(_ tab: AppTab, systemImage: String, label: String) -> some View {
         let isActive = router.selectedTab == tab
         return Button {
+            // Selection haptic on tab swap, light impact on tap-to-pop —
+            // distinguishes "navigated" from "scrolled to top".
             if router.selectedTab == tab {
+                Haptics.impact(.light)
                 router.popToRoot()
             } else {
+                Haptics.selection()
                 router.selectedTab = tab
             }
         } label: {
@@ -550,24 +561,31 @@ private struct ScanFabSheet: View {
                            title: locale.t("receipts.takePhoto"),
                            subtitle: locale.t("scanFab.cameraSub"),
                            primary: true) {
+                        // Selection haptic on every option tap — gives the user
+                        // a subtle "ack" that the choice landed before the
+                        // sheet starts dismissing into the next sub-flow.
+                        Haptics.selection()
                         router.pendingScanMode = .camera
                         dismiss()
                     }
                     option(icon: "photo.on.rectangle.angled",
                            title: locale.t("receipts.photoLibrary"),
                            subtitle: locale.t("scanFab.librarySub")) {
+                        Haptics.selection()
                         router.pendingScanMode = .library
                         dismiss()
                     }
                     option(icon: "square.and.pencil",
                            title: locale.t("receipts.virtual"),
                            subtitle: locale.t("scanFab.virtualSub")) {
+                        Haptics.selection()
                         router.pendingScanMode = .virtual
                         dismiss()
                     }
                     option(icon: "person.2.fill",
                            title: locale.t("quickSplit.title"),
                            subtitle: locale.t("scanFab.quickSplitSub")) {
+                        Haptics.selection()
                         router.pendingScanMode = .quickSplit
                         dismiss()
                     }
@@ -585,7 +603,10 @@ private struct ScanFabSheet: View {
                 }
             }
         }
-        .presentationDetents([.medium, .large])
+        // 4 options + title/subtitle fit comfortably in ~380pt — snap there
+        // by default so the sheet doesn't waste half the screen, but still
+        // allow expand to .medium for accessibility large-text users.
+        .presentationDetents([.height(380), .medium])
         .presentationDragIndicator(.visible)
     }
 

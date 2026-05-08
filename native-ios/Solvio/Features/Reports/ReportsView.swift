@@ -10,7 +10,10 @@ struct ReportsView: View {
     @EnvironmentObject private var toast: ToastCenter
     @EnvironmentObject private var locale: AppLocale
 
-    @State private var isLoading = true
+    /// Starts as `false` — was previously `true` which showed the skeleton
+    /// before any task fired (no loading actually happening). `loadData()`
+    /// flips it to `true` for the duration of the actual fetch.
+    @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var yearBlocks: [YearBlock] = []
     @State private var expenseCountsByKey: [String: Int] = [:]
@@ -37,7 +40,11 @@ struct ReportsView: View {
                     // Error card only when there's nothing on screen. If
                     // reports are already loaded a transient refresh fail
                     // shouldn't replace them with an error UI.
-                    NBErrorCard(message: msg) { Task { await loadData() } }
+                    NBErrorCard(message: msg) {
+                        // Subtle retry tick — matches AI screens.
+                        Haptics.impact(.light)
+                        Task { await loadData() }
+                    }
                 } else if yearBlocks.isEmpty {
                     emptyState
                 } else {
@@ -55,7 +62,13 @@ struct ReportsView: View {
         .navigationTitle(locale.t("reports.navTitle"))
         .navigationBarTitleDisplayMode(.inline)
         .task { await loadData() }
-        .refreshable { await loadData() }
+        .refreshable {
+            // Light + success matches Dashboard's pull-to-refresh feel
+            // across every screen in the app.
+            Haptics.impact(.light)
+            await loadData()
+            if errorMessage == nil { Haptics.success() }
+        }
     }
 
     // MARK: - Header
@@ -137,6 +150,9 @@ struct ReportsView: View {
             }
 
             Button {
+                // Selection tick — discrete reveal, same family as the
+                // per-card chevrons in Prices.
+                Haptics.selection()
                 if isExpanded { expandedYears.remove(block.year) }
                 else { expandedYears.insert(block.year) }
             } label: {
@@ -212,7 +228,13 @@ struct ReportsView: View {
     }
 
     private func generateIconButton(isLoading: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
+        Button {
+            // Medium impact — generation is the primary CTA on this screen
+            // and kicks off real server work (PDF/CSV/DOCX build + upload).
+            // Same weight as Analysis "Regenerate".
+            Haptics.impact(.medium)
+            action()
+        } label: {
             SwiftUI.Group {
                 if isLoading {
                     ProgressView().tint(Theme.foreground)
@@ -263,6 +285,12 @@ struct ReportsView: View {
                         .background(Theme.foreground)
                         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                 }
+                // Medium impact on download tap — committal action that hands
+                // the file off to Safari / share sheet. simultaneousGesture so
+                // we don't block Link's native URL open.
+                .simultaneousGesture(TapGesture().onEnded {
+                    Haptics.impact(.medium)
+                })
             }
         }
         .padding(Theme.Spacing.sm)
@@ -289,6 +317,11 @@ struct ReportsView: View {
                         .background(Theme.foreground)
                         .clipShape(RoundedRectangle(cornerRadius: 4))
                 }
+                // Medium impact on monthly mini-download — same family as the
+                // year-level download buttons.
+                .simultaneousGesture(TapGesture().onEnded {
+                    Haptics.impact(.medium)
+                })
             } else {
                 Text(label)
                     .font(AppFont.mono(10))

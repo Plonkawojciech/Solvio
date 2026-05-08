@@ -1,14 +1,30 @@
 import { auth } from '@/lib/auth-compat'
 import { NextResponse } from 'next/server'
 import { getAIClient } from '@/lib/ai-client'
-import { rateLimit } from '@/lib/rate-limit'
+import { rateLimitPersistent } from '@/lib/rate-limit'
+import { z } from 'zod'
+
+// SECURITY (round 2 / A2): bound the AI-suggest body. Caps array sizes so
+// the prompt cost is predictable and an attacker can't burn AI credits by
+// sending huge `items` / `members` arrays.
+const AiSuggestSchema = z.object({
+  items: z.array(z.object({
+    name: z.string().max(200),
+    price: z.union([z.number().nonnegative(), z.string()]).optional(),
+  })).min(1).max(100),
+  members: z.array(z.object({
+    name: z.string().max(120),
+  })).min(1).max(30),
+  context: z.string().max(2000).optional().nullable(),
+  lang: z.enum(['pl', 'en']).optional().default('en'),
+})
 
 export async function POST(request: Request) {
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   // SECURITY FIX: Rate limit AI endpoint to prevent cost abuse
-  const rl = rateLimit(`ai:${userId}`, { maxRequests: 10, windowMs: 3600000 })
+  const rl = await rateLimitPersistent(`ai:group-suggest:${userId}`, { maxRequests: 10, windowMs: 3600000 })
   if (!rl.allowed) return NextResponse.json({ error: 'Too many requests' }, { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } })
 
   const ai = getAIClient()
@@ -17,11 +33,17 @@ export async function POST(request: Request) {
   }
 
   try {
-    const { items, members, context, lang = 'en' } = await request.json()
+    const rawBody = await request.json().catch(() => null)
+    if (!rawBody) return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
 
-    if (!items?.length || !members?.length) {
-      return NextResponse.json({ error: 'Items and members are required' }, { status: 400 })
+    const parsed = AiSuggestSchema.safeParse(rawBody)
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: 'Invalid input', details: parsed.error.flatten().fieldErrors },
+        { status: 400 },
+      )
     }
+    const { items, members, context, lang } = parsed.data
 
     const isPolish = lang === 'pl'
     const langInstruction = isPolish
@@ -33,10 +55,10 @@ export async function POST(request: Request) {
 ${langInstruction}
 
 ITEMS:
-${items.map((item: { name: string; price: number }, i: number) => `${i}. "${item.name}" — ${item.price}`).join('\n')}
+${items.map((item, i) => `${i}. "${item.name}" — ${item.price ?? ''}`).join('\n')}
 
 MEMBERS:
-${members.map((m: { name: string }) => `- ${m.name}`).join('\n')}
+${members.map((m) => `- ${m.name}`).join('\n')}
 
 ${context ? `CONTEXT: ${context}` : ''}
 
@@ -65,9 +87,9 @@ Return ONLY valid JSON (no markdown, no extra text):
     })
 
     const raw = completion.choices[0]?.message?.content || '{}'
-    const parsed = JSON.parse(raw)
+    const parsedAi = JSON.parse(raw)
 
-    return NextResponse.json(parsed)
+    return NextResponse.json(parsedAi)
   } catch (err) {
     console.error('[groups/ai-suggest] error:', err)
     return NextResponse.json(

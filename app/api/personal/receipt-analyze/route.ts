@@ -1,7 +1,7 @@
 import { auth } from '@/lib/auth-compat'
 import { NextResponse } from 'next/server'
 import { getAIClient, getAIClientForWebSearch } from '@/lib/ai-client'
-import { rateLimit } from '@/lib/rate-limit'
+import { rateLimitPersistent } from '@/lib/rate-limit'
 import { db } from '@/lib/db'
 import { receipts } from '@/lib/db/schema'
 import { and, eq } from 'drizzle-orm'
@@ -122,7 +122,7 @@ export async function POST(request: Request) {
     }, { status: 400 })
   }
 
-  const rl = rateLimit(`ai:receipt-analyze:${userId}`, { maxRequests: 20, windowMs: 60 * 60 * 1000 })
+  const rl = await rateLimitPersistent(`ai:receipt-analyze:${userId}`, { maxRequests: 20, windowMs: 60 * 60 * 1000 })
   if (!rl.allowed) {
     return NextResponse.json(
       { error: 'rate_limited', message: isPolish ? 'Za dużo zapytań. Spróbuj za chwilę.' : 'Too many requests. Try again shortly.' },

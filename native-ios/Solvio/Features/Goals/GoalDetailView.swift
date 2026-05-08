@@ -38,17 +38,36 @@ struct GoalDetailView: View {
         .background(Theme.background)
         .navigationTitle(locale.t("goalDetail.title"))
         .navigationBarTitleDisplayMode(.inline)
-        .task { await vm.load(id: goalId, locale: locale) }
-        .refreshable { await vm.load(id: goalId, locale: locale) }
+        .task {
+            // Pop the goal from the in-memory store first so the screen
+            // shows instantly when navigating from the list (no spinner).
+            // Then refresh from network to pick up any deposits added on
+            // another device.
+            if vm.goal == nil, let cached = store.goals.first(where: { $0.id == goalId }) {
+                vm.goal = cached
+            }
+            await vm.load(id: goalId, locale: locale)
+        }
+        .refreshable {
+            // Match Dashboard pattern: light tick on pull, success when
+            // fresh data lands without an error.
+            Haptics.impact(.light)
+            await vm.load(id: goalId, locale: locale)
+            if vm.errorMessage == nil {
+                Haptics.success()
+            }
+        }
         .sheet(isPresented: $showDepositSheet) {
             if let g = vm.goal {
                 DepositSheet(goal: g) { amount, note in
                     Task {
                         do {
                             _ = try await GoalsRepo.deposit(goalId: goalId, amount: amount, note: note)
+                            Haptics.success()
                             toast.success(locale.t("goalDetail.fundsAdded"))
                             showDepositSheet = false
                             await vm.load(id: goalId, locale: locale)
+                            store.didMutateGoals()
                         } catch {
                             toast.error(locale.t("goalDetail.failed"), description: error.localizedDescription)
                         }
@@ -95,6 +114,7 @@ struct GoalDetailView: View {
                     .frame(width: 56, height: 56)
                     .background(Theme.muted)
                     .overlay(RoundedRectangle(cornerRadius: Theme.Radius.md).stroke(Theme.border, lineWidth: Theme.Border.width))
+                    .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
                     NBEyebrow(text: g.category?.uppercased() ?? locale.t("goalDetail.goalFallback"))
                     Text(g.name)
@@ -107,6 +127,7 @@ struct GoalDetailView: View {
                     Image(systemName: "checkmark.seal.fill")
                         .font(.title2)
                         .foregroundColor(Theme.success)
+                        .accessibilityLabel(locale.t("goals.statCompleted"))
                 }
             }
 
@@ -118,6 +139,8 @@ struct GoalDetailView: View {
                 .foregroundColor(Theme.mutedForeground)
 
             NBProgressBar(value: pct)
+                .accessibilityLabel(locale.t("goals.progress"))
+                .accessibilityValue("\(pctLabel)%")
 
             HStack(spacing: Theme.Spacing.md) {
                 VStack(alignment: .leading, spacing: 2) {
@@ -126,6 +149,7 @@ struct GoalDetailView: View {
                         .font(AppFont.cardTitle)
                         .foregroundColor(Theme.foreground)
                 }
+                .accessibilityElement(children: .combine)
                 if let deadline = g.deadline {
                     Spacer()
                     VStack(alignment: .trailing, spacing: 2) {
@@ -134,12 +158,14 @@ struct GoalDetailView: View {
                             .font(AppFont.cardTitle)
                             .foregroundColor(Theme.foreground)
                     }
+                    .accessibilityElement(children: .combine)
                 }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(Theme.Spacing.md)
         .nbCard(radius: Theme.Radius.lg, shadow: Theme.Shadow.lg)
+        .accessibilityAddTraits(.isHeader)
     }
 
     private func kpiRow(_ g: SavingsGoal) -> some View {
@@ -177,6 +203,7 @@ struct GoalDetailView: View {
                 Image(systemName: systemImage)
                     .font(.caption)
                     .foregroundColor(Theme.mutedForeground)
+                    .accessibilityHidden(true)
                 Text(label)
                     .font(AppFont.caption)
                     .foregroundColor(Theme.mutedForeground)
@@ -190,17 +217,24 @@ struct GoalDetailView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(Theme.Spacing.sm)
         .nbCard(radius: Theme.Radius.md, shadow: Theme.Shadow.sm)
+        // KPI tile reads as one element: "Per month, 250 PLN" instead of
+        // icon→label→value as 3 separate items.
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(label), \(value)")
     }
 
     private func aiTips(_ tips: [String]) -> some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
             HStack(spacing: 6) {
                 Image(systemName: "sparkles")
+                    .accessibilityHidden(true)
                 NBEyebrow(text: locale.t("goalDetail.aiCoach"))
             }
             ForEach(Array(tips.enumerated()), id: \.offset) { _, tip in
                 HStack(alignment: .top, spacing: 6) {
-                    Text("•").foregroundColor(Theme.mutedForeground)
+                    Text("•")
+                        .foregroundColor(Theme.mutedForeground)
+                        .accessibilityHidden(true)
                     Text(tip)
                         .font(AppFont.body)
                         .foregroundColor(Theme.foreground)
@@ -216,16 +250,26 @@ struct GoalDetailView: View {
     private func actions(_ g: SavingsGoal) -> some View {
         VStack(spacing: Theme.Spacing.xs) {
             if g.isCompleted != true {
-                Button { showDepositSheet = true } label: {
+                Button {
+                    // Primary CTA on detail page — medium impact gives the
+                    // tap weight before the sheet animates in.
+                    Haptics.impact(.medium)
+                    showDepositSheet = true
+                } label: {
                     Label(locale.t("goalDetail.addFunds"), systemImage: "plus")
                 }
                 .buttonStyle(NBPrimaryButtonStyle())
+                .accessibilityHint(locale.t("goalDetail.addFundsHint"))
             }
 
-            Button { showDelete = true } label: {
+            Button {
+                Haptics.warning()
+                showDelete = true
+            } label: {
                 Label(locale.t("goalDetail.deleteGoal"), systemImage: "trash")
             }
             .buttonStyle(NBDestructiveButtonStyle())
+            .accessibilityHint(locale.t("goalDetail.deleteHint"))
         }
     }
 
@@ -253,6 +297,9 @@ struct GoalDetailView: View {
                         }
                     }
                     .padding(.vertical, Theme.Spacing.xs)
+                    // Single utterance per deposit row — VoiceOver reads
+                    // amount + (note + ) date as one element.
+                    .accessibilityElement(children: .combine)
                     if dep.id != deposits.last?.id {
                         Divider().background(Theme.foreground)
                     }
@@ -274,11 +321,17 @@ struct GoalDetailView: View {
 
     private func monthsRemaining(deadline: String?) -> Int? {
         guard let deadline else { return nil }
-        let iso = ISO8601DateFormatter()
+        // Backend stores deadlines as `yyyy-MM-dd`. The previous attempt
+        // to parse with `ISO8601DateFormatter` was always nil for that
+        // shape (ISO8601 needs `T` separator); only the fallback fired.
+        // Drop the dead attempt and anchor in UTC so different client
+        // timezones don't shift the result by a day.
         let df = DateFormatter()
+        df.calendar = Calendar(identifier: .gregorian)
+        df.locale = Locale(identifier: "en_US_POSIX")
+        df.timeZone = TimeZone(identifier: "UTC")
         df.dateFormat = "yyyy-MM-dd"
-        let date = iso.date(from: deadline) ?? df.date(from: deadline)
-        guard let target = date else { return nil }
+        guard let target = df.date(from: String(deadline.prefix(10))) else { return nil }
         let days = Calendar.current.dateComponents([.day], from: Date(), to: target).day ?? 0
         return max(days / 30, 0)
     }

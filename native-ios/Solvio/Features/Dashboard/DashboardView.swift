@@ -55,8 +55,13 @@ struct DashboardView: View {
         }
         .background(Theme.background)
         .refreshable {
+            // Light haptic when the user crosses the pull threshold,
+            // success haptic when fresh data lands. Without this,
+            // pull-to-refresh feels "deaf" on iOS.
+            Haptics.impact(.light)
             await store.awaitDashboard(force: true)
             rebuildDisplay()
+            Haptics.success()
         }
         .task {
             store.ensureDashboard()
@@ -89,6 +94,7 @@ struct DashboardView: View {
             subtitle: session.currentUser?.email,
             trailing: AnyView(
                 Button {
+                    Haptics.impact(.light)
                     Task {
                         await store.awaitDashboard(force: true)
                         rebuildDisplay()
@@ -105,6 +111,7 @@ struct DashboardView: View {
                                 .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
                         )
                 }
+                .accessibilityLabel(locale.t("common.refresh"))
             )
         )
     }
@@ -131,6 +138,8 @@ struct DashboardView: View {
                 .lineLimit(1)
                 .contentTransition(.numericText())
                 .animation(.nbSpring, value: d.totalSpent)
+                .accessibilityLabel("\(locale.t("dashboard.totalSpent")): \(Fmt.amount(d.totalSpent, currency: d.currency))")
+                .accessibilityAddTraits(.isHeader)
 
             HStack(spacing: Theme.Spacing.xs) {
                 NBTag(text: "\(d.totalTransactions) \(locale.t("dashboard.txns"))")
@@ -218,6 +227,7 @@ struct DashboardView: View {
 
                 HStack(spacing: Theme.Spacing.sm) {
                     Button {
+                        Haptics.selection()
                         router.selectedTab = .expenses
                     } label: {
                         HStack(spacing: 6) {
@@ -241,6 +251,7 @@ struct DashboardView: View {
                     .buttonStyle(.plain)
 
                     Button {
+                        Haptics.impact(.medium)
                         router.showingScanSheet = true
                     } label: {
                         HStack(spacing: 6) {
@@ -318,10 +329,14 @@ struct DashboardView: View {
             LazyVGrid(columns: [GridItem(.flexible(), spacing: Theme.Spacing.sm), GridItem(.flexible(), spacing: Theme.Spacing.sm)], spacing: Theme.Spacing.sm) {
                 if let forecast = d.monthlyForecast {
                     smallStat(icon: "gauge", label: locale.t("dashboard.monthlyForecast"), value: Fmt.amount(forecast, currency: d.currency), tint: Theme.foreground)
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel("\(locale.t("dashboard.monthlyForecast")): \(Fmt.amount(forecast, currency: d.currency))")
                 }
                 if let rate = d.savingsRate {
                     let tint: Color = rate >= 20 ? Theme.success : rate >= 10 ? Theme.warning : Theme.destructive
                     smallStat(icon: "banknote", label: locale.t("dashboard.savingsRate"), value: "\(rate)%", tint: tint)
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel("\(locale.t("dashboard.savingsRate")): \(rate)%")
                 }
             }
         }
@@ -612,6 +627,7 @@ struct DashboardView: View {
                     title: locale.t("dashboard.recentActivity"),
                     trailing: AnyView(
                         Button {
+                            Haptics.selection()
                             router.selectedTab = .expenses
                         } label: {
                             Text(locale.t("common.seeAll"))
@@ -620,11 +636,16 @@ struct DashboardView: View {
                                 .textCase(.uppercase)
                                 .foregroundColor(Theme.foreground)
                         }
+                        .accessibilityLabel(locale.t("common.seeAll"))
+                        .accessibilityHint(locale.t("dashboard.recentActivity"))
                     )
                 )
                 VStack(spacing: Theme.Spacing.xs) {
                     ForEach(d.recent.prefix(8)) { e in
-                        NBRow(action: { router.push(.expenseDetail(id: e.id)) }) {
+                        NBRow(action: {
+                            Haptics.selection()
+                            router.push(.expenseDetail(id: e.id))
+                        }) {
                             HStack(spacing: Theme.Spacing.sm) {
                                 NBIconBadge(systemImage: e.iconName)
                                 VStack(alignment: .leading, spacing: 2) {
@@ -683,6 +704,7 @@ struct DashboardView: View {
 
     private func aiInsightsCTA(_ d: DashboardDisplay) -> some View {
         Button {
+            Haptics.selection()
             router.push(.more(.analysis))
         } label: {
             VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
@@ -1012,7 +1034,6 @@ struct DashboardDisplay {
             let name = catKey == "__other__" ? "Other" : (catById[catKey]?.name ?? "Other")
             let icon: String
             if e.receiptId != nil { icon = "doc.text.fill" }
-            else if e.isRecurring == true { icon = "arrow.triangle.2.circlepath" }
             else { icon = "creditcard.fill" }
             return ExpenseWithAmount(
                 expenseId: e.id,
@@ -1095,7 +1116,6 @@ struct DashboardDisplay {
                 let cat = e.categoryId.flatMap { catById[$0]?.name } ?? "—"
                 let icon: String
                 if e.receiptId != nil { icon = "doc.text.fill" }
-                else if e.isRecurring == true { icon = "arrow.triangle.2.circlepath" }
                 else { icon = "creditcard.fill" }
                 let sub = "\(Fmt.dayMonth(e.date)) · \(cat)"
                 return RecentExpense(

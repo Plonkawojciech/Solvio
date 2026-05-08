@@ -4,6 +4,17 @@ import { db } from '@/lib/db'
 import { paymentRequests, groupMembers, groups } from '@/lib/db/schema'
 import { eq, and } from 'drizzle-orm'
 import crypto from 'crypto'
+import { recordAudit, extractRequestMeta } from '@/lib/audit-log'
+import { z } from 'zod'
+
+// SECURITY FIX: Zod validation on settlement PUT body — restrict `action`
+// to a known enum and accept token only as a string. Previously the
+// handler called `req.json()` without a try/catch so a malformed body
+// would 500 with the raw JSON parser stack instead of a 400.
+const SettlementMutateSchema = z.object({
+  token: z.string().max(256).optional().nullable(),
+  action: z.enum(['settle']).optional(),
+})
 
 // SECURITY FIX: Timing-safe token comparison to prevent timing attacks on share tokens
 function timingSafeTokenCompare(a: string | null | undefined, b: string | null | undefined): boolean {
@@ -117,8 +128,18 @@ export async function PUT(
 ) {
   try {
     const { id } = await params
-    const body = await req.json()
-    const { token, action } = body
+    const rawBody = await req.json().catch(() => null)
+    if (!rawBody) {
+      return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
+    }
+    const parsed = SettlementMutateSchema.safeParse(rawBody)
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: 'Invalid input', details: parsed.error.flatten().fieldErrors },
+        { status: 400 },
+      )
+    }
+    const { token, action } = parsed.data
 
     const [request] = await db
       .select()
@@ -165,6 +186,24 @@ export async function PUT(
           settledBy: 'debtor',
         })
         .where(and(eq(paymentRequests.id, id), eq(paymentRequests.status, 'pending')))
+
+      // SECURITY (round 2 / A2): record the public-link settle event.
+      // We don't know which user clicked (could be unauth'd via shareToken)
+      // but we record IP/UA + the payment_request id for forensic trace.
+      const { ip, userAgent } = extractRequestMeta(req)
+      void recordAudit({
+        userId: null,
+        action: 'payment_request.settle',
+        entityType: 'payment_request',
+        entityId: id,
+        payload: {
+          settledBy: 'debtor',
+          channel: token ? 'share_token' : 'authenticated',
+          groupId: request.groupId,
+        },
+        ip,
+        userAgent,
+      })
     }
 
     return NextResponse.json({ ok: true })

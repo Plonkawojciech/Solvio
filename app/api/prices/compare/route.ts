@@ -4,7 +4,7 @@ import { db } from '@/lib/db'
 import { receipts, priceComparisons } from '@/lib/db/schema'
 import { eq, desc, gte, and } from 'drizzle-orm'
 import { getAIClient, getAIClientForWebSearch } from '@/lib/ai-client'
-import { rateLimit } from '@/lib/rate-limit'
+import { rateLimitPersistent } from '@/lib/rate-limit'
 import { PRICE_COMPARE_STORES } from '@/lib/stores'
 import { z } from 'zod'
 import { readAnyIntel, readIntel, writeIntel } from '@/lib/store-intel'
@@ -60,7 +60,7 @@ export async function POST(req: NextRequest) {
   }
 
   // Rate-limit only on cache miss. 20 requests / hour / userId.
-  const rl = rateLimit(`ai:prices:${userId}`, { maxRequests: 20, windowMs: 60 * 60 * 1000 })
+  const rl = await rateLimitPersistent(`ai:prices:${userId}`, { maxRequests: 20, windowMs: 60 * 60 * 1000 })
   if (!rl.allowed) {
     return NextResponse.json(
       { error: 'Rate limit exceeded. Try again later.' },
@@ -135,11 +135,15 @@ export async function POST(req: NextRequest) {
       .sort((a, b) => b.price - a.price)
       .slice(0, 8)
 
-    // Build AI prompt for price comparison with web search
+    // Build AI prompt for price comparison with web search.
+    // Prompt-token frugality: declare the currency once at the header
+    // instead of repeating it on every product line. With 8 products,
+    // skipping ` ${currency}` per row trims ~30 chars; combined with
+    // shorter delimiters, productList drops by ~15-20%.
     const productList = topProducts
       .map(
         (p, i) =>
-          `${i + 1}. "${p.name}" - last paid ${p.price.toFixed(2)} ${currency} at ${p.vendor} on ${p.date}`,
+          `${i + 1}. "${p.name}" last ${p.price.toFixed(2)}@${p.vendor} on ${p.date}`,
       )
       .join('\n')
 
@@ -149,7 +153,7 @@ export async function POST(req: NextRequest) {
       ? `Jesteś ekspertem ds. porównywania cen w polskich sklepach spożywczych. Analizujesz zakupy użytkownika i szukasz aktualnych promocji i lepszych cen w ${storeNames}. Odpowiadasz tylko w JSON.`
       : `You are a price comparison expert for Polish grocery stores. You analyze user purchases and find current promotions and better prices at ${storeNames}. Respond only in JSON.`
 
-    const userPrompt = `The user recently bought these products:\n${productList}\n\nSearch for current prices of these products in Polish stores (${storeNames}). For each product:\n1. Find the best current price/promotion\n2. Compare with what the user paid\n3. Calculate potential savings\n\nReturn JSON:\n{\n  "comparisons": [\n    {\n      "productName": "string",\n      "userLastPrice": number,\n      "userLastStore": "string",\n      "allPrices": [{"store": "string", "price": number, "promotion": "string or null", "validUntil": "date or null"}],\n      "bestPrice": number,\n      "bestStore": "string",\n      "bestDeal": "string (description of the deal)",\n      "savingsAmount": number,\n      "savingsPercent": number,\n      "recommendation": "string",\n      "buyNow": boolean\n    }\n  ],\n  "totalPotentialSavings": number,\n  "summary": "string",\n  "bestStoreOverall": "string",\n  "tip": "string"\n}`
+    const userPrompt = `The user recently bought these products [currency: ${currency}]:\n${productList}\n\nSearch for current prices of these products in Polish stores (${storeNames}). For each product:\n1. Find the best current price/promotion\n2. Compare with what the user paid\n3. Calculate potential savings\n\nReturn JSON:\n{\n  "comparisons": [\n    {\n      "productName": "string",\n      "userLastPrice": number,\n      "userLastStore": "string",\n      "allPrices": [{"store": "string", "price": number, "promotion": "string or null", "validUntil": "date or null"}],\n      "bestPrice": number,\n      "bestStore": "string",\n      "bestDeal": "string (description of the deal)",\n      "savingsAmount": number,\n      "savingsPercent": number,\n      "recommendation": "string",\n      "buyNow": boolean\n    }\n  ],\n  "totalPotentialSavings": number,\n  "summary": "string",\n  "bestStoreOverall": "string",\n  "tip": "string"\n}`
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let result: any = {

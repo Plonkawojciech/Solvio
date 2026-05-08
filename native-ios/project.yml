@@ -26,8 +26,10 @@ targets:
       - path: Solvio
         excludes:
           - "Resources/Info.plist"
+          - "**/*.bak"
     resources:
       - path: Solvio/Resources/Assets.xcassets
+      - path: Solvio/Resources/PrivacyInfo.xcprivacy
       - path: Solvio/Resources/pl.lproj
       - path: Solvio/Resources/en.lproj
     info:

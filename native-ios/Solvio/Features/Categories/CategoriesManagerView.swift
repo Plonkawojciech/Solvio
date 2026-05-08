@@ -38,12 +38,16 @@ struct CategoriesManagerView: View {
                     } else {
                         LazyVStack(spacing: Theme.Spacing.xs) {
                             ForEach(vm.categories) { c in
-                                Button { editingCategory = c } label: {
+                                Button {
+                                    Haptics.selection()
+                                    editingCategory = c
+                                } label: {
                                     row(c)
                                 }
                                 .buttonStyle(.plain)
                                 .contextMenu {
                                     Button(locale.t("common.delete"), role: .destructive) {
+                                        Haptics.warning()
                                         Task {
                                             do {
                                                 try await CategoriesRepo.delete(id: c.id)
@@ -81,7 +85,10 @@ struct CategoriesManagerView: View {
             // mutation lands or the foreground refresh ticks.
             .onChange(of: store.categories) { _ in vm.syncFromStore(store: store) }
 
-            Button { showCreate = true } label: {
+            Button {
+                Haptics.impact(.light)
+                showCreate = true
+            } label: {
                 Image(systemName: "plus")
                     .font(.system(size: 22, weight: .bold))
                     .foregroundColor(Theme.background)

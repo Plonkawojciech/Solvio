@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { getAIClient, getAIClientForWebSearch } from '@/lib/ai-client'
 import { writeIntel } from '@/lib/store-intel'
 import { PRICE_COMPARE_STORES } from '@/lib/stores'
+import { isAuthorizedCron } from '@/lib/cron-auth'
 import crypto from 'crypto'
 
 /**
@@ -24,15 +25,10 @@ const PROMPT_VERSION = 'v2'
 const PROMO_TTL_S = 24 * 60 * 60        // 24h fresh
 const PROMO_REVALIDATE_S = 6 * 60 * 60  // 6h soft
 
-function authorized(req: Request): boolean {
-  const url = new URL(req.url)
-  const queryToken = url.searchParams.get('token')
-  const headerSig = req.headers.get('x-vercel-cron-signature')
-  const headerAuth = req.headers.get('authorization')?.replace(/^Bearer\s+/i, '')
-  const expected = process.env.CRON_SECRET
-  if (!expected) return false
-  return queryToken === expected || headerAuth === expected || (headerSig != null && headerSig.length > 0)
-}
+// SECURITY FIX: replaced with shared timing-safe cron auth helper.
+// Previous version accepted any non-empty x-vercel-cron-signature header
+// and used plain string equality (timing-attack-vulnerable).
+const authorized = isAuthorizedCron
 
 interface RawPromo {
   id?: string; store?: string; productName?: string;

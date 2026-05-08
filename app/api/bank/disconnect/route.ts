@@ -10,6 +10,13 @@ import { db } from '@/lib/db'
 import { bankConnections, bankAccounts, bankTransactions } from '@/lib/db/schema'
 import { eq, and, inArray } from 'drizzle-orm'
 import { getNordigenClient } from '@/lib/nordigen/client'
+import { rateLimitPersistent } from '@/lib/rate-limit'
+import { z } from 'zod'
+
+// SECURITY (round 2 / A2): bound the body. connectionId is a UUID.
+const DisconnectSchema = z.object({
+  connectionId: z.string().uuid('connectionId must be a valid UUID'),
+}).strict()
 
 export async function POST(request: NextRequest) {
   const { userId } = await auth()
@@ -17,15 +24,26 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  try {
-    const body = (await request.json()) as { connectionId?: string }
+  const rl = await rateLimitPersistent(`bank:disconnect:${userId}`, { maxRequests: 20, windowMs: 60 * 60 * 1000 })
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { error: 'Too many bank disconnect attempts. Try again later.' },
+      { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } },
+    )
+  }
 
-    if (!body.connectionId) {
+  try {
+    const rawBody = await request.json().catch(() => null)
+    if (!rawBody) return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
+
+    const parsed = DisconnectSchema.safeParse(rawBody)
+    if (!parsed.success) {
       return NextResponse.json(
-        { error: 'Missing required field: connectionId' },
+        { error: 'Invalid input', details: parsed.error.flatten().fieldErrors },
         { status: 400 },
       )
     }
+    const body = parsed.data
 
     // Find the connection
     const [connection] = await db

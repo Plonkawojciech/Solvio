@@ -41,14 +41,25 @@ struct GroupDetailView: View {
         .navigationTitle(vm.group?.name ?? locale.t("groupDetail.groupFallback"))
         .navigationBarTitleDisplayMode(.inline)
         .task { await vm.load(id: groupId) }
-        .refreshable { await vm.load(id: groupId) }
+        .refreshable {
+            // Dashboard pull-to-refresh pattern: light tick on threshold,
+            // success notification after fresh data lands. Gated on no-error
+            // so refresh-while-broken doesn't fake-celebrate.
+            Haptics.impact(.light)
+            await vm.load(id: groupId)
+            if vm.errorMessage == nil { Haptics.success() }
+        }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
-                    Button { showEdit = true } label: {
+                    Button {
+                        Haptics.selection()
+                        showEdit = true
+                    } label: {
                         Label(locale.t("groupDetail.edit"), systemImage: "pencil")
                     }
                     Button(role: .destructive) {
+                        Haptics.warning()
                         confirmDelete = true
                     } label: {
                         Label(locale.t("groupDetail.delete"), systemImage: "trash")
@@ -58,6 +69,8 @@ struct GroupDetailView: View {
                         .foregroundColor(Theme.foreground)
                 }
                 .disabled(vm.group == nil)
+                .accessibilityLabel(locale.t("groupDetail.menu"))
+                .accessibilityHint(locale.t("groupDetail.menuHint"))
             }
         }
         .sheet(isPresented: $showQuickSplit) {
@@ -131,6 +144,7 @@ struct GroupDetailView: View {
                         RoundedRectangle(cornerRadius: Theme.Radius.md)
                             .stroke(Theme.border, lineWidth: Theme.Border.width)
                     )
+                    .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
                     NBEyebrow(text: (g.mode ?? "group").uppercased())
                     Text(g.name)
@@ -165,6 +179,8 @@ struct GroupDetailView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(Theme.Spacing.md)
         .nbCard(radius: Theme.Radius.lg, shadow: Theme.Shadow.lg)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
     }
 
     // MARK: - KPI strip
@@ -199,15 +215,23 @@ struct GroupDetailView: View {
 
     private func tabsRow(_ g: Group) -> some View {
         HStack(spacing: Theme.Spacing.xs) {
-            Button { router.push(.groupReceipts(id: g.id)) } label: {
+            Button {
+                Haptics.selection()
+                router.push(.groupReceipts(id: g.id))
+            } label: {
                 Label(locale.t("nav.receipts"), systemImage: "doc.text.viewfinder")
             }
             .buttonStyle(NBSecondaryButtonStyle())
+            .accessibilityHint(locale.t("groupDetail.receiptsHint"))
 
-            Button { router.push(.groupSettlements(id: g.id)) } label: {
+            Button {
+                Haptics.impact(.medium)
+                router.push(.groupSettlements(id: g.id))
+            } label: {
                 Label(locale.t("groupDetail.settlements"), systemImage: "arrow.left.arrow.right")
             }
             .buttonStyle(NBSecondaryButtonStyle())
+            .accessibilityHint(locale.t("groupDetail.settlementsHint"))
         }
     }
 
@@ -243,6 +267,7 @@ struct GroupDetailView: View {
             .frame(width: 46, height: 46)
             .overlay(Circle().stroke(Theme.border, lineWidth: Theme.Border.width))
             .nbShadow(Theme.Shadow.sm)
+            .accessibilityHidden(true)
 
             Text(m.label)
                 .font(AppFont.caption)
@@ -251,15 +276,21 @@ struct GroupDetailView: View {
                 .frame(maxWidth: 76)
         }
         .frame(width: 80)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(m.label)
     }
 
     // MARK: - Quick split CTA
 
     private var quickSplitCTA: some View {
-        Button { showQuickSplit = true } label: {
+        Button {
+            Haptics.impact(.medium)
+            showQuickSplit = true
+        } label: {
             HStack(spacing: Theme.Spacing.sm) {
                 Image(systemName: "bolt.fill")
                     .font(.system(size: 18, weight: .bold))
+                    .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(locale.t("groupDetail.quickSplit"))
                         .font(AppFont.cardTitle)
@@ -270,6 +301,7 @@ struct GroupDetailView: View {
                 Spacer()
                 Image(systemName: "chevron.right")
                     .font(.system(size: 14, weight: .bold))
+                    .accessibilityHidden(true)
             }
             .foregroundColor(Theme.background)
             .padding(Theme.Spacing.md)
@@ -283,6 +315,9 @@ struct GroupDetailView: View {
             .nbShadow(Theme.Shadow.md)
         }
         .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(locale.t("groupDetail.quickSplit"))
+        .accessibilityHint(locale.t("groupDetail.quickSplitHint"))
     }
 
     // MARK: - Splits list
@@ -316,13 +351,16 @@ struct GroupDetailView: View {
     private func splitCard(_ s: ExpenseSplit, group: Group) -> some View {
         let payer = group.members?.first(where: { $0.id == s.paidByMemberId })?.label ?? locale.t("common.other")
         let currency = s.currency ?? group.currency
+        let title = s.description?.isEmpty == false ? s.description! : locale.t("groupDetail.splitFallback")
+        let totalStr = Fmt.amount(s.totalAmount, currency: currency)
+        let unsettledCount = s.splits.filter { $0.settled != true }.count
         return VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
             HStack(alignment: .firstTextBaseline) {
-                Text(s.description?.isEmpty == false ? s.description! : locale.t("groupDetail.splitFallback"))
+                Text(title)
                     .font(AppFont.cardTitle)
                     .foregroundColor(Theme.foreground)
                 Spacer()
-                Text(Fmt.amount(s.totalAmount, currency: currency))
+                Text(totalStr)
                     .font(AppFont.amount)
                     .foregroundColor(Theme.foreground)
             }
@@ -330,6 +368,7 @@ struct GroupDetailView: View {
                 Image(systemName: "creditcard")
                     .font(.caption2)
                     .foregroundColor(Theme.mutedForeground)
+                    .accessibilityHidden(true)
                 Text(String(format: locale.t("groupDetail.paidByPrefix"), payer))
                     .font(AppFont.caption)
                     .foregroundColor(Theme.mutedForeground)
@@ -337,6 +376,7 @@ struct GroupDetailView: View {
                     Text("·")
                         .font(AppFont.caption)
                         .foregroundColor(Theme.mutedForeground)
+                        .accessibilityHidden(true)
                     Text(Fmt.date(created))
                         .font(AppFont.caption)
                         .foregroundColor(Theme.mutedForeground)
@@ -346,9 +386,11 @@ struct GroupDetailView: View {
                 Rectangle()
                     .fill(Theme.foreground.opacity(0.12))
                     .frame(height: Theme.Border.widthThin)
+                    .accessibilityHidden(true)
                 VStack(spacing: 4) {
                     ForEach(Array(s.splits.enumerated()), id: \.offset) { _, share in
                         let name = group.members?.first(where: { $0.id == share.memberId })?.label ?? "—"
+                        let settledStr = share.settled == true ? ", \(locale.t("groupDetail.settledTag").lowercased())" : ""
                         HStack {
                             Text(name)
                                 .font(AppFont.body)
@@ -361,6 +403,8 @@ struct GroupDetailView: View {
                                 .font(AppFont.mono(12))
                                 .foregroundColor(Theme.mutedForeground)
                         }
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel("\(name)\(settledStr), \(Fmt.amount(share.amount, currency: currency))")
                     }
                 }
             }
@@ -368,6 +412,22 @@ struct GroupDetailView: View {
         .padding(Theme.Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
         .nbCard(radius: Theme.Radius.md, shadow: Theme.Shadow.sm)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(splitCardSummary(title: title, total: totalStr, payer: payer, count: s.splits.count, unsettled: unsettledCount))
+    }
+
+    /// Top-level summary so VoiceOver users hear "Pizza, 120 PLN, paid by Marek,
+    /// 4 shares, 2 unsettled" before drilling in. The detail rows below stay
+    /// individually focusable for share-by-share inspection.
+    private func splitCardSummary(title: String, total: String, payer: String, count: Int, unsettled: Int) -> String {
+        var parts: [String] = [title, total, String(format: locale.t("groupDetail.paidByPrefix"), payer)]
+        if count > 0 {
+            parts.append(String(format: locale.t("groupDetail.sharesCountFmt"), count))
+            if unsettled > 0 {
+                parts.append(String(format: locale.t("groupDetail.unsettledCountFmt"), unsettled))
+            }
+        }
+        return parts.joined(separator: ", ")
     }
 }
 
@@ -460,13 +520,27 @@ struct QuickSplitSheet: View {
             .navigationTitle(locale.t("quickSplit.title"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button(locale.t("common.cancel")) { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(locale.t("common.cancel")) {
+                        Haptics.selection()
+                        dismiss()
+                    }
+                }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button(locale.t("common.save")) { submit() }
-                        .disabled(!isValid)
+                    Button(locale.t("common.save")) {
+                        // Money commit — medium impact matches Goals/Expenses
+                        // pattern. The success notification fires from the
+                        // ToastCenter once the network round-trip lands.
+                        Haptics.impact(.medium)
+                        submit()
+                    }
+                    .disabled(!isValid)
+                    .accessibilityHint(locale.t("quickSplit.saveHint"))
                 }
             }
         }
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
         .onAppear {
             currency = group.currency
             if paidBy.isEmpty { paidBy = group.members?.first?.id ?? "" }
@@ -484,11 +558,15 @@ struct QuickSplitSheet: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 6) {
                     ForEach(group.members ?? []) { m in
-                        Button { paidBy = m.id } label: {
+                        Button {
+                            Haptics.selection()
+                            paidBy = m.id
+                        } label: {
                             HStack(spacing: 6) {
                                 Circle()
                                     .fill(Color(hex: m.color ?? "") ?? Theme.muted)
                                     .frame(width: 14, height: 14)
+                                    .accessibilityHidden(true)
                                 Text(m.label)
                                     .font(AppFont.mono(11))
                                     .tracking(0.5)
@@ -505,6 +583,8 @@ struct QuickSplitSheet: View {
                             )
                         }
                         .buttonStyle(.plain)
+                        .accessibilityLabel(m.label)
+                        .accessibilityAddTraits(paidBy == m.id ? [.isButton, .isSelected] : .isButton)
                     }
                 }
             }
@@ -520,6 +600,9 @@ struct QuickSplitSheet: View {
                 selection: $mode,
                 options: SplitMode.allCases.map { (value: $0, label: modeLabel($0)) }
             )
+            .onChange(of: mode) { _ in
+                Haptics.selection()
+            }
         }
     }
 
@@ -531,6 +614,7 @@ struct QuickSplitSheet: View {
                     .foregroundColor(Theme.foreground)
                 Spacer()
                 Button {
+                    Haptics.selection()
                     let all = Set((group.members ?? []).map(\.id))
                     selected = selected == all ? [] : all
                 } label: {
@@ -546,11 +630,13 @@ struct QuickSplitSheet: View {
                 ForEach(group.members ?? []) { m in
                     let isOn = selected.contains(m.id)
                     Button {
+                        Haptics.selection()
                         if isOn { selected.remove(m.id) } else { selected.insert(m.id) }
                     } label: {
                         HStack(spacing: 6) {
                             Image(systemName: isOn ? "checkmark.square.fill" : "square")
                                 .font(.system(size: 14, weight: .bold))
+                                .accessibilityHidden(true)
                             Text(m.label)
                                 .font(AppFont.caption)
                                 .lineLimit(1)
@@ -567,6 +653,8 @@ struct QuickSplitSheet: View {
                         )
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel(m.label)
+                    .accessibilityAddTraits(isOn ? [.isButton, .isSelected] : .isButton)
                 }
             }
         }
@@ -704,12 +792,20 @@ struct QuickSplitSheet: View {
         let portions: [SplitPortionInput]
         switch mode {
         case .equal:
-            let each = round((total / Double(selectedMembers.count)) * 100) / 100
-            portions = selectedMembers.map {
-                SplitPortionInput(
-                    memberId: $0.id,
-                    amount: each,
-                    settled: $0.id == paidBy
+            // Distribute residual to the LAST selected member so the sum
+            // matches `total` exactly. Was previously `each = round(total /
+            // n)` for everyone, so 100/3 → 33.33 × 3 = 99.99 ≠ 100 and the
+            // backend rejected the split as not summing.
+            let n = selectedMembers.count
+            let each = round((total / Double(n)) * 100) / 100
+            let baseSum = each * Double(n - 1)
+            let last = round((total - baseSum) * 100) / 100
+            portions = selectedMembers.enumerated().map { (idx, m) in
+                let amount = idx == n - 1 ? last : each
+                return SplitPortionInput(
+                    memberId: m.id,
+                    amount: amount,
+                    settled: m.id == paidBy
                 )
             }
         case .percentage:
@@ -780,6 +876,9 @@ struct GroupEditSheet: View {
                                 (value: "household", label: locale.t("groups.modeHousehold")),
                             ]
                         )
+                        .onChange(of: mode) { _ in
+                            Haptics.selection()
+                        }
                     }
                     VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
                         Text(locale.t("groups.description"))
@@ -803,9 +902,17 @@ struct GroupEditSheet: View {
             .navigationTitle(locale.t("groupEdit.title"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button(locale.t("common.cancel")) { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(locale.t("common.cancel")) {
+                        Haptics.selection()
+                        dismiss()
+                    }
+                }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(locale.t("common.save")) {
+                        // Settings-style commit (rename / currency / mode swap)
+                        // — medium impact mirrors GroupCreate / GoalEdit save.
+                        Haptics.impact(.medium)
                         onSubmit(GroupUpdate(
                             name: name.isEmpty ? nil : name,
                             description: description.isEmpty ? nil : description,
@@ -817,9 +924,12 @@ struct GroupEditSheet: View {
                         ))
                     }
                     .disabled(name.isEmpty)
+                    .accessibilityHint(locale.t("groupEdit.saveHint"))
                 }
             }
         }
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
         .onAppear {
             name = group.name
             emoji = group.emoji ?? ""

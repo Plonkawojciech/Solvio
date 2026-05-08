@@ -32,28 +32,30 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
       if (!membership) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     }
 
-    const members = await db.select().from(groupMembers).where(eq(groupMembers.groupId, id))
-
-    // Get all receipts for this group (exclude rawOcr — not needed for dashboard)
-    const groupReceipts = await db
-      .select({
-        id: receipts.id,
-        vendor: receipts.vendor,
-        date: receipts.date,
-        total: receipts.total,
-        imageUrl: receipts.imageUrl,
-        items: receipts.items,
-        paidByMemberId: receipts.paidByMemberId,
-        createdAt: receipts.createdAt,
-      })
-      .from(receipts)
-      .where(and(eq(receipts.groupId, id), eq(receipts.status, 'processed')))
-
-    // Get all expense splits
-    const splits = await db
-      .select()
-      .from(expenseSplits)
-      .where(eq(expenseSplits.groupId, id))
+    // Round-4 perf: was 3 SEQUENTIAL HTTP calls (members → receipts → splits),
+    // each one a separate Neon-HTTP POST. db.batch packs all three into one
+    // pipelined request inside a read-only transaction snapshot. Biggest
+    // single win on the trip-dashboard endpoint — was 3 RTTs, now 1.
+    const [members, groupReceipts, splits] = await db.batch([
+      db.select().from(groupMembers).where(eq(groupMembers.groupId, id)),
+      db
+        .select({
+          id: receipts.id,
+          vendor: receipts.vendor,
+          date: receipts.date,
+          total: receipts.total,
+          imageUrl: receipts.imageUrl,
+          items: receipts.items,
+          paidByMemberId: receipts.paidByMemberId,
+          createdAt: receipts.createdAt,
+        })
+        .from(receipts)
+        .where(and(eq(receipts.groupId, id), eq(receipts.status, 'processed'))),
+      db
+        .select()
+        .from(expenseSplits)
+        .where(eq(expenseSplits.groupId, id)),
+    ])
 
     // Compute total group spend from receipts
     let totalGroupSpend = 0

@@ -1,7 +1,19 @@
 "use client"
 
 import * as React from "react"
-import * as RechartsPrimitive from "recharts"
+// Round-4 perf: was `import * as RechartsPrimitive from "recharts"` — a
+// wildcard namespace import that defeats tree-shaking under most bundlers
+// (Webpack/Turbopack can mark side-effect-free leaf imports as DCE-safe,
+// but a `* as` namespace pulls the module record's full symbol table into
+// the chunk graph, even with `optimizePackageImports`). Pulling only the
+// three actually-used named exports lets Webpack drop the rest of the
+// recharts surface from this chunk.
+import {
+  ResponsiveContainer as RechartsResponsiveContainer,
+  Tooltip as RechartsTooltip,
+  Legend as RechartsLegend,
+  type LegendProps as RechartsLegendProps,
+} from "recharts"
 
 import { cn } from "@/lib/utils"
 
@@ -43,7 +55,7 @@ function ChartContainer({
 }: React.ComponentProps<"div"> & {
   config: ChartConfig
   children: React.ComponentProps<
-    typeof RechartsPrimitive.ResponsiveContainer
+    typeof RechartsResponsiveContainer
   >["children"]
 }) {
   const uniqueId = React.useId()
@@ -61,9 +73,9 @@ function ChartContainer({
         {...props}
       >
         <ChartStyle id={chartId} config={config} />
-        <RechartsPrimitive.ResponsiveContainer>
+        <RechartsResponsiveContainer>
           {children}
-        </RechartsPrimitive.ResponsiveContainer>
+        </RechartsResponsiveContainer>
       </div>
     </ChartContext.Provider>
   )
@@ -102,7 +114,7 @@ ${colorConfig
   )
 }
 
-const ChartTooltip = RechartsPrimitive.Tooltip
+const ChartTooltip = RechartsTooltip
 
 function ChartTooltipContent({
   active,
@@ -118,7 +130,7 @@ function ChartTooltipContent({
   color,
   nameKey,
   labelKey,
-}: React.ComponentProps<typeof RechartsPrimitive.Tooltip> &
+}: React.ComponentProps<typeof RechartsTooltip> &
   React.ComponentProps<"div"> & {
     hideLabel?: boolean
     hideIndicator?: boolean
@@ -250,7 +262,7 @@ function ChartTooltipContent({
   )
 }
 
-const ChartLegend = RechartsPrimitive.Legend
+const ChartLegend = RechartsLegend
 
 function ChartLegendContent({
   className,
@@ -259,7 +271,7 @@ function ChartLegendContent({
   verticalAlign = "bottom",
   nameKey,
 }: React.ComponentProps<"div"> &
-  Pick<RechartsPrimitive.LegendProps, "payload" | "verticalAlign"> & {
+  Pick<RechartsLegendProps, "payload" | "verticalAlign"> & {
     hideIcon?: boolean
     nameKey?: string
   }) {

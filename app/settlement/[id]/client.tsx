@@ -1,8 +1,18 @@
 'use client'
 
 import { useState } from 'react'
-import { CheckCircle2, Clock, XCircle, Copy, ArrowRight, Loader2 } from 'lucide-react'
+import {
+  ArrowRight,
+  Check,
+  CheckCircle2,
+  Clock,
+  Copy,
+  Loader2,
+  Printer,
+  XCircle,
+} from 'lucide-react'
 import { formatAmount, formatDate } from '@/lib/format'
+import { pluralizeEN, pluralizePL } from '@/lib/plural'
 
 interface ItemBreakdown {
   itemName: string
@@ -38,53 +48,120 @@ interface SettlementData {
   } | null
 }
 
+export interface SettlementPageLabels {
+  invalidTitle: string
+  invalidDescription: string
+  paymentRequest: string
+  pending: string
+  settled: string
+  declined: string
+  owes: string
+  receives: string
+  message: string
+  bankAccount: string
+  copyBankAccount: string
+  copied: string
+  details: string
+  total: string
+  created: string
+  settledAt: string
+  markPaid: string
+  marking: string
+  paymentConfirmed: string
+  paymentConfirmedDescription: string
+  markFailed: string
+  print: string
+  openSolvio: string
+  showBreakdown: string
+  hideBreakdown: string
+  poweredBy: string
+  itemOne: string
+  itemFew?: string
+  itemMany?: string
+  itemOther: string
+}
+
 function getInitials(name: string): string {
   return name
     .split(' ')
-    .map((w) => w[0])
+    .map((word) => word[0])
     .join('')
     .slice(0, 2)
     .toUpperCase()
 }
 
+function softColor(hex: string, alpha: string): string {
+  return `${hex}${alpha}`
+}
 
 export function SettlementPageClient({
   data,
   hasValidToken,
   token,
+  lang,
+  labels,
 }: {
   data: SettlementData
   hasValidToken: boolean
   token: string | null
+  lang: 'pl' | 'en'
+  labels: SettlementPageLabels
 }) {
   const [status, setStatus] = useState(data.status)
   const [marking, setMarking] = useState(false)
   const [showBreakdown, setShowBreakdown] = useState(false)
+  const [copyState, setCopyState] = useState<'idle' | 'copied'>('idle')
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
   const isPending = status === 'pending'
   const isSettled = status === 'settled'
 
+  const breakdownCountLabel = (() => {
+    const count = data.itemBreakdown?.length ?? 0
+    return lang === 'pl'
+      ? pluralizePL({
+          count,
+          one: labels.itemOne,
+          few: labels.itemFew ?? labels.itemOther,
+          many: labels.itemMany ?? labels.itemOther,
+          other: labels.itemOther,
+        })
+      : pluralizeEN({
+          count,
+          one: labels.itemOne,
+          other: labels.itemOther,
+        })
+  })()
+
   const handleMarkPaid = async () => {
     setMarking(true)
+    setErrorMessage(null)
+
     try {
-      const res = await fetch(`/api/settlement/${data.id}`, {
+      const response = await fetch(`/api/settlement/${data.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token, action: 'settle' }),
       })
-      if (res.ok) {
-        setStatus('settled')
+
+      if (!response.ok) {
+        setErrorMessage(labels.markFailed)
+        return
       }
+
+      setStatus('settled')
     } catch {
-      // Silent fail
+      setErrorMessage(labels.markFailed)
     } finally {
       setMarking(false)
     }
   }
 
-  const handleCopy = (text: string) => {
+  const handleCopy = async (text: string) => {
     try {
-      navigator.clipboard.writeText(text)
+      await navigator.clipboard.writeText(text)
+      setCopyState('copied')
+      window.setTimeout(() => setCopyState('idle'), 2000)
     } catch {
       const textArea = document.createElement('textarea')
       textArea.value = text
@@ -92,186 +169,202 @@ export function SettlementPageClient({
       textArea.select()
       document.execCommand('copy')
       document.body.removeChild(textArea)
+      setCopyState('copied')
+      window.setTimeout(() => setCopyState('idle'), 2000)
     }
   }
 
   if (!hasValidToken) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-        <div className="text-center">
-          <div className="flex h-16 w-16 mx-auto items-center justify-center rounded-full bg-red-100 mb-4">
-            <XCircle className="h-8 w-8 text-red-500" />
+      <div className="min-h-screen bg-background px-4 py-10 text-foreground">
+        <div className="mx-auto flex max-w-md items-center justify-center">
+          <div className="w-full rounded-3xl border border-border bg-card p-8 text-center shadow-lg">
+            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-destructive/10 text-destructive">
+              <XCircle className="h-8 w-8" aria-hidden="true" />
+            </div>
+            <h1 className="text-xl font-bold">{labels.invalidTitle}</h1>
+            <p className="mt-2 text-sm text-muted-foreground">{labels.invalidDescription}</p>
+            <a
+              href="https://solvio-lac.vercel.app"
+              className="mt-6 inline-flex min-h-[44px] items-center justify-center rounded-xl border border-border bg-foreground px-5 py-3 text-sm font-semibold text-background transition-colors hover:bg-foreground/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            >
+              {labels.openSolvio}
+            </a>
           </div>
-          <h1 className="text-xl font-bold text-gray-900">Invalid link</h1>
-          <p className="text-gray-500 mt-2">This settlement link is invalid or expired.</p>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100 py-8 px-4 print:bg-white print:py-0">
-      <div className="max-w-md mx-auto">
-        {/* Main card */}
-        <div className="bg-white rounded-3xl shadow-xl overflow-hidden print:shadow-none print:rounded-none">
-          {/* Gradient header */}
+    <div className="min-h-screen bg-background px-4 py-8 text-foreground print:bg-white print:py-0">
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 overflow-hidden print:hidden"
+      >
+        <div className="absolute left-[-8rem] top-[-6rem] h-64 w-64 rounded-full blur-3xl opacity-20" style={{ backgroundColor: softColor(data.fromColor, '55') }} />
+        <div className="absolute bottom-[-7rem] right-[-5rem] h-72 w-72 rounded-full blur-3xl opacity-15" style={{ backgroundColor: softColor(data.toColor, '55') }} />
+      </div>
+
+      <div className="relative mx-auto max-w-md">
+        <div className="overflow-hidden rounded-[2rem] border border-border bg-card shadow-xl print:rounded-none print:border-0 print:shadow-none">
           <div
-            className="px-8 py-10 text-center"
+            className="px-8 py-10 text-center text-white"
             style={{
-              background: `linear-gradient(135deg, ${data.fromColor}dd, ${data.toColor}dd)`,
+              background: `linear-gradient(145deg, ${data.fromColor}, ${data.toColor})`,
             }}
           >
-            {/* Solvio branding */}
-            <div className="flex items-center justify-center gap-2 mb-6">
-              <div className="w-7 h-7 rounded-lg bg-white/20 flex items-center justify-center backdrop-blur-sm">
-                <span className="text-white font-black text-xs">S</span>
+            <div className="mb-6 flex items-center justify-center gap-2">
+              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/15 font-black backdrop-blur-sm">
+                S
               </div>
-              <span className="text-white/80 text-xs font-light tracking-[0.2em] uppercase">
-                Solvio
-              </span>
+              <span className="text-xs uppercase tracking-[0.22em] text-white/80">Solvio</span>
             </div>
 
-            {/* Group info */}
             {data.group && (
-              <p className="text-white/60 text-xs tracking-[0.15em] uppercase mb-2">
-                {data.group.emoji} {data.group.name}
+              <p className="mb-2 text-xs uppercase tracking-[0.16em] text-white/75">
+                {data.group.emoji ? `${data.group.emoji} ` : ''}
+                {data.group.name}
                 {data.group.mode === 'trip' && data.group.startDate && data.group.endDate && (
-                  <span className="block mt-0.5 tracking-normal normal-case text-white/40">
-                    {formatDate(data.group.startDate)} — {formatDate(data.group.endDate)}
+                  <span className="mt-1 block normal-case tracking-normal text-white/55">
+                    {formatDate(data.group.startDate)} - {formatDate(data.group.endDate)}
                   </span>
                 )}
               </p>
             )}
 
-            <p className="text-white/50 text-[10px] tracking-[0.3em] uppercase mb-6">
-              Payment Request
+            <p className="mb-6 text-[11px] uppercase tracking-[0.28em] text-white/60">
+              {labels.paymentRequest}
             </p>
 
-            {/* Amount */}
-            <p className="text-5xl font-black text-white tracking-tight tabular-nums">
+            <p className="text-5xl font-black tracking-tight tabular-nums">
               {formatAmount(data.amount, data.currency)}
             </p>
 
-            {/* Status */}
-            <div className="mt-4 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/15 backdrop-blur-sm">
+            <div className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1 backdrop-blur-sm">
               {isPending ? (
                 <>
-                  <Clock className="h-3.5 w-3.5 text-white/80" />
-                  <span className="text-xs font-medium text-white/80">Pending</span>
+                  <Clock className="h-3.5 w-3.5 text-white/80" aria-hidden="true" />
+                  <span className="text-xs font-medium text-white/85">{labels.pending}</span>
                 </>
               ) : isSettled ? (
                 <>
-                  <CheckCircle2 className="h-3.5 w-3.5 text-white" />
-                  <span className="text-xs font-medium text-white">Settled</span>
+                  <CheckCircle2 className="h-3.5 w-3.5 text-white" aria-hidden="true" />
+                  <span className="text-xs font-medium text-white">{labels.settled}</span>
                 </>
               ) : (
                 <>
-                  <XCircle className="h-3.5 w-3.5 text-white/80" />
-                  <span className="text-xs font-medium text-white/80">Declined</span>
+                  <XCircle className="h-3.5 w-3.5 text-white/80" aria-hidden="true" />
+                  <span className="text-xs font-medium text-white/85">{labels.declined}</span>
                 </>
               )}
             </div>
           </div>
 
-          {/* From -> To section */}
           <div className="px-8 py-6">
             <div className="flex items-center justify-between gap-4">
-              {/* From */}
-              <div className="flex flex-col items-center gap-2 flex-1">
+              <div className="flex flex-1 flex-col items-center gap-2">
                 <div
-                  className="h-14 w-14 rounded-full flex items-center justify-center text-lg font-bold text-white shadow-lg"
+                  className="flex h-14 w-14 items-center justify-center rounded-full text-lg font-bold text-white shadow-lg"
                   style={{
                     backgroundColor: data.fromColor,
-                    boxShadow: `0 4px 14px ${data.fromColor}40`,
+                    boxShadow: `0 12px 28px ${softColor(data.fromColor, '33')}`,
                   }}
                 >
                   {getInitials(data.fromName)}
                 </div>
                 <div className="text-center">
-                  <p className="text-sm font-semibold text-gray-900">{data.fromName}</p>
-                  <p className="text-[10px] text-gray-500 uppercase tracking-wider">Owes</p>
+                  <p className="text-sm font-semibold text-foreground">{data.fromName}</p>
+                  <p className="text-[11px] uppercase tracking-wider text-muted-foreground">
+                    {labels.owes}
+                  </p>
                 </div>
               </div>
 
-              {/* Arrow */}
-              <div className="flex flex-col items-center gap-1 shrink-0">
+              <div className="flex shrink-0 flex-col items-center gap-1">
                 <div
-                  className="w-16 h-0.5 rounded-full"
+                  className="h-0.5 w-16 rounded-full"
                   style={{
                     background: `linear-gradient(to right, ${data.fromColor}, ${data.toColor})`,
                   }}
                 />
-                <ArrowRight className="h-5 w-5 text-gray-500" />
+                <ArrowRight className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
               </div>
 
-              {/* To */}
-              <div className="flex flex-col items-center gap-2 flex-1">
+              <div className="flex flex-1 flex-col items-center gap-2">
                 <div
-                  className="h-14 w-14 rounded-full flex items-center justify-center text-lg font-bold text-white shadow-lg"
+                  className="flex h-14 w-14 items-center justify-center rounded-full text-lg font-bold text-white shadow-lg"
                   style={{
                     backgroundColor: data.toColor,
-                    boxShadow: `0 4px 14px ${data.toColor}40`,
+                    boxShadow: `0 12px 28px ${softColor(data.toColor, '33')}`,
                   }}
                 >
                   {getInitials(data.toName)}
                 </div>
                 <div className="text-center">
-                  <p className="text-sm font-semibold text-gray-900">{data.toName}</p>
-                  <p className="text-[10px] text-gray-500 uppercase tracking-wider">Receives</p>
+                  <p className="text-sm font-semibold text-foreground">{data.toName}</p>
+                  <p className="text-[11px] uppercase tracking-wider text-muted-foreground">
+                    {labels.receives}
+                  </p>
                 </div>
               </div>
             </div>
           </div>
 
-          {/* Divider */}
           <div className="px-6">
-            <div className="border-t border-dashed border-gray-200" />
+            <div className="border-t border-dashed border-border" />
           </div>
 
-          {/* Note */}
           {data.note && (
             <div className="px-8 py-4">
-              <p className="text-xs text-gray-500 uppercase tracking-wider mb-1.5">Message</p>
-              <div className="bg-gray-50 rounded-xl p-3">
-                <p className="text-sm text-gray-700 italic">&ldquo;{data.note}&rdquo;</p>
+              <p className="mb-1.5 text-xs uppercase tracking-wider text-muted-foreground">
+                {labels.message}
+              </p>
+              <div className="rounded-2xl border border-border bg-muted/40 p-4">
+                <p className="text-sm italic text-foreground/85">&ldquo;{data.note}&rdquo;</p>
               </div>
             </div>
           )}
 
-          {/* Bank account */}
           {data.bankAccount && isPending && (
             <div className="px-8 py-4">
-              <p className="text-xs text-gray-500 uppercase tracking-wider mb-1.5">
-                Bank account for transfer
+              <p className="mb-1.5 text-xs uppercase tracking-wider text-muted-foreground">
+                {labels.bankAccount}
               </p>
-              <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 flex items-center justify-between gap-2">
-                <span className="font-mono text-sm text-blue-800 select-all break-all">
+              <div className="flex items-center justify-between gap-2 rounded-2xl border border-border bg-muted/40 p-3">
+                <span className="select-all break-all font-mono text-sm text-foreground">
                   {data.bankAccount}
                 </span>
                 <button
                   type="button"
                   onClick={() => handleCopy(data.bankAccount!)}
-                  className="shrink-0 p-1.5 rounded-lg hover:bg-blue-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 transition-colors min-h-[36px] min-w-[36px] flex items-center justify-center"
-                  aria-label="Copy bank account number to clipboard"
+                  className="flex min-h-[40px] min-w-[40px] shrink-0 items-center justify-center rounded-xl border border-border bg-background text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  aria-label={labels.copyBankAccount}
                 >
-                  <Copy className="h-4 w-4 text-blue-600" aria-hidden="true" />
+                  {copyState === 'copied' ? (
+                    <Check className="h-4 w-4 text-emerald-600" aria-hidden="true" />
+                  ) : (
+                    <Copy className="h-4 w-4" aria-hidden="true" />
+                  )}
                 </button>
               </div>
+              <p className="mt-2 text-xs text-muted-foreground" aria-live="polite">
+                {copyState === 'copied' ? labels.copied : ''}
+              </p>
             </div>
           )}
 
-          {/* Item breakdown */}
           {data.itemBreakdown && data.itemBreakdown.length > 0 && (
             <div className="px-8 py-4">
               <button
                 type="button"
-                onClick={() => setShowBreakdown(!showBreakdown)}
+                onClick={() => setShowBreakdown((value) => !value)}
                 aria-expanded={showBreakdown}
                 aria-controls="settlement-breakdown-list"
-                aria-label={`${showBreakdown ? 'Hide' : 'Show'} item breakdown (${data.itemBreakdown.length} items)`}
-                className="text-xs text-gray-500 uppercase tracking-wider mb-2 hover:text-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400 rounded transition-colors cursor-pointer flex items-center gap-1"
+                aria-label={`${showBreakdown ? labels.hideBreakdown : labels.showBreakdown}: ${breakdownCountLabel}`}
+                className="mb-2 flex min-h-[44px] items-center gap-1 rounded-lg text-xs uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               >
-                Details ({data.itemBreakdown.length} items)
+                {labels.details} ({breakdownCountLabel})
                 <svg
                   className={`h-3 w-3 transition-transform ${showBreakdown ? 'rotate-180' : ''}`}
                   aria-hidden="true"
@@ -285,28 +378,30 @@ export function SettlementPageClient({
 
               {showBreakdown && (
                 <div id="settlement-breakdown-list" className="space-y-1.5">
-                  {data.itemBreakdown.map((item, i) => (
+                  {data.itemBreakdown.map((item, index) => (
                     <div
-                      key={i}
-                      className="flex items-center justify-between text-sm py-1.5 px-3 rounded-lg bg-gray-50"
+                      key={`${item.itemName}-${item.share}-${index}`}
+                      className="flex items-center justify-between rounded-2xl border border-border bg-muted/35 px-3 py-2 text-sm"
                     >
-                      <div>
-                        <span className="text-gray-800">{item.itemName}</span>
+                      <div className="min-w-0">
+                        <span className="text-foreground">{item.itemName}</span>
                         {item.store && (
-                          <span className="text-gray-500 text-xs ml-1">({item.store})</span>
+                          <span className="ml-1 text-xs text-muted-foreground">
+                            ({item.store})
+                          </span>
                         )}
                       </div>
-                      <span className="font-medium text-gray-900 tabular-nums">
+                      <span className="font-medium tabular-nums text-foreground">
                         {formatAmount(item.share, data.currency)}
                       </span>
                     </div>
                   ))}
-                  <div className="flex items-center justify-between text-sm font-semibold pt-2 border-t border-gray-200 px-3">
-                    <span className="text-gray-600">Total</span>
-                    <span className="text-gray-900 tabular-nums">
+                  <div className="flex items-center justify-between border-t border-border px-3 pt-3 text-sm font-semibold">
+                    <span className="text-muted-foreground">{labels.total}</span>
+                    <span className="tabular-nums text-foreground">
                       {formatAmount(
-                        data.itemBreakdown.reduce((sum, i) => sum + i.share, 0),
-                        data.currency
+                        data.itemBreakdown.reduce((sum, item) => sum + item.share, 0),
+                        data.currency,
                       )}
                     </span>
                   </div>
@@ -315,111 +410,106 @@ export function SettlementPageClient({
             </div>
           )}
 
-          {/* Divider */}
           <div className="px-6">
-            <div className="border-t border-dashed border-gray-200" />
+            <div className="border-t border-dashed border-border" />
           </div>
 
-          {/* Date info */}
           <div className="px-8 py-4 text-center">
-            <p className="text-xs text-gray-500">
-              Created {formatDate(data.createdAt)}
+            <p className="text-xs text-muted-foreground">
+              {labels.created} {formatDate(data.createdAt)}
             </p>
             {isSettled && data.settledAt && (
-              <p className="text-xs text-emerald-600 mt-0.5">
-                Settled {formatDate(data.settledAt)}
+              <p className="mt-0.5 text-xs text-emerald-600">
+                {labels.settledAt} {formatDate(data.settledAt)}
               </p>
             )}
           </div>
 
-          {/* Action button */}
+          {errorMessage && (
+            <div className="px-8 pb-2">
+              <div className="rounded-2xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+                {errorMessage}
+              </div>
+            </div>
+          )}
+
           {isPending && hasValidToken && (
             <div className="px-8 pb-6">
               <button
+                type="button"
                 onClick={handleMarkPaid}
                 disabled={marking}
-                className="w-full py-3.5 rounded-xl font-semibold text-white text-sm transition-all duration-200 flex items-center justify-center gap-2 disabled:opacity-60"
+                className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-2xl px-5 py-3 text-sm font-semibold text-white transition-opacity disabled:opacity-65"
                 style={{
-                  background: `linear-gradient(135deg, ${data.fromColor}, ${data.toColor})`,
-                  boxShadow: `0 4px 14px ${data.toColor}30`,
+                  background: `linear-gradient(145deg, ${data.fromColor}, ${data.toColor})`,
+                  boxShadow: `0 12px 28px ${softColor(data.toColor, '33')}`,
                 }}
               >
                 {marking ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
                 ) : (
-                  <CheckCircle2 className="h-4 w-4" />
+                  <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
                 )}
-                {marking ? 'Marking...' : "I've paid this"}
+                {marking ? labels.marking : labels.markPaid}
               </button>
             </div>
           )}
 
-          {/* Settled confirmation */}
           {isSettled && (
             <div className="px-8 pb-6">
-              <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-center">
-                <CheckCircle2 className="h-6 w-6 text-emerald-600 mx-auto mb-2" />
-                <p className="text-sm font-semibold text-emerald-800">Payment confirmed</p>
-                <p className="text-xs text-emerald-600 mt-0.5">
-                  This settlement has been marked as paid
+              <div className="rounded-2xl border border-emerald-500/25 bg-emerald-500/10 p-4 text-center">
+                <CheckCircle2 className="mx-auto mb-2 h-6 w-6 text-emerald-600" aria-hidden="true" />
+                <p className="text-sm font-semibold text-emerald-700 dark:text-emerald-400">
+                  {labels.paymentConfirmed}
+                </p>
+                <p className="mt-0.5 text-xs text-emerald-700/80 dark:text-emerald-400/80">
+                  {labels.paymentConfirmedDescription}
                 </p>
               </div>
             </div>
           )}
 
-          {/* Footer */}
-          <div className="px-8 py-4 bg-gray-50 text-center">
-            <p className="text-[10px] text-gray-500">
-              ID: <span className="font-mono">{data.id.slice(0, 8)}...</span>
+          <div className="bg-muted/25 px-8 py-4 text-center">
+            <p className="text-[10px] text-muted-foreground">
+              ID: <span className="font-mono text-foreground">{data.id.slice(0, 8)}...</span>
             </p>
-            <p className="text-[10px] text-gray-500 mt-0.5">
-              Powered by{' '}
+            <p className="mt-0.5 text-[10px] text-muted-foreground">
+              {labels.poweredBy}{' '}
               <a
                 href="https://solvio-lac.vercel.app"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-gray-600 hover:underline font-medium"
+                className="font-medium text-foreground hover:underline"
               >
                 Solvio
-              </a>{' '}
-              &bull; solvio-lac.vercel.app
+              </a>
             </p>
           </div>
         </div>
 
-        {/* Actions below card — hidden on print */}
         <div className="mt-6 flex justify-center gap-3 print:hidden">
           <button
             type="button"
             onClick={() => window.print()}
-            aria-label="Print this settlement receipt"
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-gray-800 text-white text-sm font-medium hover:bg-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-800 focus-visible:ring-offset-2 transition-colors"
+            aria-label={labels.print}
+            className="inline-flex min-h-[44px] items-center gap-2 rounded-xl bg-foreground px-5 py-2.5 text-sm font-medium text-background transition-colors hover:bg-foreground/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
-            <svg className="w-4 h-4" aria-hidden="true" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"
-              />
-            </svg>
-            Print
+            <Printer className="h-4 w-4" aria-hidden="true" />
+            {labels.print}
           </button>
           <a
             href="https://solvio-lac.vercel.app"
-            aria-label="Open Solvio home page"
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg border border-gray-200 bg-white text-gray-700 text-sm font-medium hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400 focus-visible:ring-offset-2 transition-colors"
+            aria-label={labels.openSolvio}
+            className="inline-flex min-h-[44px] items-center gap-2 rounded-xl border border-border bg-card px-5 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
-            Open Solvio
+            {labels.openSolvio}
           </a>
         </div>
 
-        {/* Print styles */}
         <style>{`
           @media print {
             body { margin: 0; }
             .print\\:hidden { display: none !important; }
-            .print\\:bg-white { background-color: white !important; }
             .print\\:shadow-none { box-shadow: none !important; }
             .print\\:rounded-none { border-radius: 0 !important; }
             .print\\:py-0 { padding-top: 0 !important; padding-bottom: 0 !important; }

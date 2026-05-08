@@ -10,7 +10,17 @@ import { auth } from '@/lib/auth-compat'
 import { db } from '@/lib/db'
 import { bankConnections } from '@/lib/db/schema'
 import { getNordigenClient } from '@/lib/nordigen/client'
+import { rateLimitPersistent } from '@/lib/rate-limit'
 import * as crypto from 'crypto'
+import { z } from 'zod'
+
+// SECURITY FIX: Zod validation. Nordigen institutionIds are short
+// alphanumeric tokens (e.g. "PKO_BP_BPKOPLPW"); cap length and charset
+// to prevent oversize payloads / injection of control bytes into the
+// outbound Nordigen request.
+const BankConnectSchema = z.object({
+  institutionId: z.string().min(2).max(80).regex(/^[A-Za-z0-9_-]+$/, 'institutionId must be alphanumeric'),
+})
 
 export async function POST(request: NextRequest) {
   const { userId } = await auth()
@@ -18,15 +28,29 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  try {
-    const body = (await request.json()) as { institutionId?: string }
+  // SECURITY FIX: rate-limit per-user — bank connection initiations are an
+  // expensive Nordigen API call, capped at 10/hour to slow account-lockout/scan abuse.
+  const rl = await rateLimitPersistent(`bank:connect:${userId}`, { maxRequests: 10, windowMs: 60 * 60 * 1000 })
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { error: 'Too many bank connection attempts. Try again later.' },
+      { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } },
+    )
+  }
 
-    if (!body.institutionId) {
+  try {
+    const rawBody = await request.json().catch(() => null)
+    if (!rawBody) {
+      return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
+    }
+    const parsed = BankConnectSchema.safeParse(rawBody)
+    if (!parsed.success) {
       return NextResponse.json(
-        { error: 'Missing required field: institutionId' },
+        { error: 'Invalid input', details: parsed.error.flatten().fieldErrors },
         { status: 400 },
       )
     }
+    const body = parsed.data
 
     const client = getNordigenClient()
 

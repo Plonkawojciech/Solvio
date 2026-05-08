@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { companyMembers } from '@/lib/db/schema'
 import { eq, and } from 'drizzle-orm'
+import { recordAudit } from '@/lib/audit-log'
 import { z } from 'zod'
 
 // SECURITY FIX: Zod schema validation — role must be one of the allowed enum values
@@ -143,6 +144,21 @@ export async function DELETE(
 
     await db.delete(companyMembers)
       .where(eq(companyMembers.id, memberId))
+
+    // SECURITY (round 2 / A2): audit member-remove so an admin sweep
+    // is reconstructable after the fact.
+    void recordAudit({
+      userId,
+      action: 'group.member.remove',
+      entityType: 'company_member',
+      entityId: memberId,
+      payload: {
+        companyId,
+        targetUserId: target[0].userId,
+        targetRole: target[0].role,
+        targetEmail: target[0].email?.slice(0, 256) ?? null,
+      },
+    })
 
     return NextResponse.json({ success: true })
   } catch (err) {

@@ -4,6 +4,7 @@ import { db, expenses, categories } from '@/lib/db'
 import { eq, gte, lte, and, inArray, sql } from 'drizzle-orm'
 import { buildCsvBuffer, buildPdfBuffer, buildDocxBuffer } from '@/lib/reports/builders'
 import JSZip from 'jszip'
+import { rateLimitPersistent } from '@/lib/rate-limit'
 import { z } from 'zod'
 
 const CustomReportSchema = z.object({
@@ -11,16 +12,40 @@ const CustomReportSchema = z.object({
   dateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
   minAmount: z.union([z.number().nonnegative(), z.string().regex(/^\d+(\.\d+)?$/).transform(Number)]).optional().nullable(),
   maxAmount: z.union([z.number().nonnegative(), z.string().regex(/^\d+(\.\d+)?$/).transform(Number)]).optional().nullable(),
-  categories: z.array(z.string()).optional().default([]),
+  categories: z.array(z.string().trim().min(1).max(80)).max(50).optional().default([]),
   formatPdf: z.boolean().optional(),
   formatCsv: z.boolean().optional(),
   formatDocx: z.boolean().optional(),
   currency: z.string().length(3).optional().default('PLN'),
+}).superRefine((value, ctx) => {
+  if (value.dateFrom && value.dateTo && value.dateFrom > value.dateTo) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['dateTo'],
+      message: 'dateTo must be on or after dateFrom',
+    })
+  }
+
+  if (value.minAmount != null && value.maxAmount != null && value.minAmount > value.maxAmount) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['maxAmount'],
+      message: 'maxAmount must be greater than or equal to minAmount',
+    })
+  }
 })
 
 export async function POST(request: Request) {
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const rl = await rateLimitPersistent(`reports:custom:${userId}`, { maxRequests: 10, windowMs: 60 * 60 * 1000 })
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { error: 'Too many custom report requests. Try again later.' },
+      { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } },
+    )
+  }
 
   const rawBody = await request.json().catch(() => null)
   if (!rawBody) return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })

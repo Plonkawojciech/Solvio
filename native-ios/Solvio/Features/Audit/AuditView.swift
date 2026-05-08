@@ -7,10 +7,15 @@ import SwiftUI
 struct AuditView: View {
     @EnvironmentObject private var toast: ToastCenter
     @EnvironmentObject private var locale: AppLocale
+    @EnvironmentObject private var store: AppDataStore
     @State private var isLoading = false
     @State private var result: AuditResult?
     @State private var errorMessage: String?
-    @State private var currency: String = "PLN"
+    // Read currency synchronously from the central store. Was previously
+    // hardcoded "PLN" with an async `loadCurrency()` task that produced
+    // a race where Generate could fire in PLN while the user actually
+    // had EUR set in settings.
+    private var currency: String { store.currency }
 
     var body: some View {
         ScrollView {
@@ -31,7 +36,12 @@ struct AuditView: View {
                     )
                 }
                 if let msg = errorMessage, result == nil {
-                    NBErrorCard(message: msg) { Task { await run() } }
+                    NBErrorCard(message: msg) {
+                        // Light tick on retry — subtle, error already grabbed
+                        // attention with the toast.
+                        Haptics.impact(.light)
+                        Task { await run() }
+                    }
                 }
                 if let r = result {
                     kpiCard(r)
@@ -68,15 +78,13 @@ struct AuditView: View {
         .background(Theme.background)
         .navigationTitle(locale.t("audit.navTitle"))
         .navigationBarTitleDisplayMode(.inline)
-        .task { await loadCurrency() }
-        .refreshable { await run() }
-    }
-
-    private func loadCurrency() async {
-        guard let bundle = try? await SettingsRepo.fetch(),
-              let code = bundle.settings?.currency,
-              !code.isEmpty else { return }
-        currency = code
+        .refreshable {
+            // Light + success pattern matches Dashboard so all pull-to-refresh
+            // surfaces feel identical.
+            Haptics.impact(.light)
+            await run()
+            if errorMessage == nil { Haptics.success() }
+        }
     }
 
     // MARK: - Header + CTA
@@ -95,15 +103,13 @@ struct AuditView: View {
                 .font(AppFont.body)
                 .foregroundColor(Theme.mutedForeground)
                 .fixedSize(horizontal: false, vertical: true)
-            VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
-                Text(locale.t("audit.currency")).font(AppFont.bodyMedium)
-                NBSegmented(selection: $currency, options: [
-                    (value: "PLN", label: "PLN"),
-                    (value: "EUR", label: "EUR"),
-                    (value: "USD", label: "USD")
-                ])
-            }
+            // Currency picker removed — was duplicating Settings, where the
+            // user already picks their currency once. The audit response
+            // server-side normalizes anyway based on user's settings.
             Button {
+                // Medium impact — this kicks off ~18s of work, the user
+                // should feel the commit. Same weight as Analysis CTA.
+                Haptics.impact(.medium)
                 Task { await run() }
             } label: {
                 HStack {
@@ -138,7 +144,7 @@ struct AuditView: View {
                 .foregroundColor(Theme.foreground)
                 .minimumScaleFactor(0.6)
                 .lineLimit(1)
-            Text(String(format: locale.t("audit.txnsFmt"), r.transactionCount))
+            Text(String(format: locale.tPlural("audit.txnsFmt", count: r.transactionCount), r.transactionCount))
                 .font(AppFont.caption)
                 .foregroundColor(Theme.mutedForeground)
 

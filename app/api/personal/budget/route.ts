@@ -2,6 +2,26 @@ import { auth, getHubAuth } from '@/lib/auth-compat'
 import { NextResponse, NextRequest } from 'next/server'
 import { db, monthlyBudgets, expenses, categories, categoryBudgets } from '@/lib/db'
 import { eq, and, gte, lte, sql } from 'drizzle-orm'
+import { z } from 'zod'
+
+// SECURITY FIX: Zod validation. Caps numeric ranges to prevent overflow
+// of decimal(12,2) columns and constrains `month` to YYYY-MM (avoiding
+// SQL-string surprises and forcing a known shape).
+const MONEY_MAX = 9_999_999_999.99
+const moneyField = z
+  .union([
+    z.number().finite().min(0).max(MONEY_MAX),
+    z.string().regex(/^\d+(\.\d+)?$/),
+    z.null(),
+  ])
+  .optional()
+
+const BudgetUpsertSchema = z.object({
+  month: z.string().regex(/^\d{4}-\d{2}$/, 'month must be YYYY-MM'),
+  totalIncome: moneyField,
+  totalBudget: moneyField,
+  savingsTarget: moneyField,
+})
 
 export async function GET(request: NextRequest) {
   let userId = (await auth()).userId
@@ -123,19 +143,19 @@ export async function POST(request: Request) {
   }
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let body: any
-  try {
-    body = await request.json()
-  } catch {
+  const rawBody = await request.json().catch(() => null)
+  if (!rawBody) {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
 
-  const { month, totalIncome, totalBudget, savingsTarget } = body
-
-  if (!month) {
-    return NextResponse.json({ error: 'Month is required' }, { status: 400 })
+  const parsed = BudgetUpsertSchema.safeParse(rawBody)
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: 'Invalid input', details: parsed.error.flatten().fieldErrors },
+      { status: 400 },
+    )
   }
+  const { month, totalIncome, totalBudget, savingsTarget } = parsed.data
 
   try {
     // Upsert the monthly budget

@@ -38,9 +38,12 @@ struct VirtualReceiptCreateView: View {
                     Text(locale.t("virtualReceipt.dateLabel"))
                         .font(AppFont.bodyMedium)
                         .foregroundColor(Theme.foreground)
+                        .accessibilityAddTraits(.isHeader)
                     DatePicker("", selection: $date, displayedComponents: .date)
                         .labelsHidden()
                         .datePickerStyle(.compact)
+                        .accessibilityLabel(locale.t("virtualReceipt.dateLabel"))
+                        .accessibilityHint(locale.t("virtualReceipt.dateHint"))
                 }
 
                 HStack(spacing: Theme.Spacing.sm) {
@@ -57,6 +60,7 @@ struct VirtualReceiptCreateView: View {
                     Text(locale.t("virtualReceipt.notesLabel"))
                         .font(AppFont.bodyMedium)
                         .foregroundColor(Theme.foreground)
+                        .accessibilityAddTraits(.isHeader)
                     TextEditor(text: $notes)
                         .font(AppFont.body)
                         .frame(minHeight: 72)
@@ -67,6 +71,8 @@ struct VirtualReceiptCreateView: View {
                             RoundedRectangle(cornerRadius: Theme.Radius.md)
                                 .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
                         )
+                        .accessibilityLabel(locale.t("virtualReceipt.notesLabel"))
+                        .accessibilityHint(locale.t("virtualReceipt.notesHint"))
                 }
 
                 if didTryToSave, !canSave, !vendor.trimmingCharacters(in: .whitespaces).isEmpty {
@@ -76,15 +82,20 @@ struct VirtualReceiptCreateView: View {
                 Button {
                     didTryToSave = true
                     guard canSave else {
+                        Haptics.warning()
                         toast.warning(locale.t("validation.vendorRequired"))
                         return
                     }
+                    // Money commit — medium impact gives the user immediate
+                    // pre-roundtrip feedback before the network call.
+                    Haptics.impact(.medium)
                     Task { await save() }
                 } label: {
                     Text(isSaving ? locale.t("virtualReceipt.saving") : locale.t("virtualReceipt.save"))
                 }
                 .buttonStyle(NBPrimaryButtonStyle())
                 .disabled(isSaving)
+                .accessibilityHint(locale.t("virtualReceipt.saveHint"))
 
                 Spacer(minLength: Theme.Spacing.xl)
             }
@@ -95,7 +106,10 @@ struct VirtualReceiptCreateView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
-                Button(locale.t("common.cancel")) { dismiss() }
+                Button(locale.t("common.cancel")) {
+                    Haptics.selection()
+                    dismiss()
+                }
             }
         }
     }
@@ -122,6 +136,10 @@ struct VirtualReceiptCreateView: View {
                 NBEyebrow(text: locale.t("virtualReceipt.itemsTitle"))
                 Spacer()
                 Button {
+                    // Selection haptic confirms the row was inserted —
+                    // useful when the new row appears below the fold and
+                    // the user can't immediately see it.
+                    Haptics.selection()
                     items.append(EditableItem())
                 } label: {
                     Label(locale.t("virtualReceipt.addItem"), systemImage: "plus")
@@ -129,8 +147,23 @@ struct VirtualReceiptCreateView: View {
                         .foregroundColor(Theme.foreground)
                 }
             }
-            ForEach($items) { $item in
-                itemRow($item)
+            if items.isEmpty {
+                NBEmptyState(
+                    systemImage: "list.bullet.rectangle",
+                    title: locale.t("virtualReceipt.itemsEmptyTitle"),
+                    subtitle: locale.t("virtualReceipt.itemsEmptySubtitle"),
+                    action: (
+                        label: locale.t("virtualReceipt.addItem"),
+                        run: {
+                            Haptics.selection()
+                            items.append(EditableItem())
+                        }
+                    )
+                )
+            } else {
+                ForEach($items) { $item in
+                    itemRow($item)
+                }
             }
         }
     }
@@ -143,6 +176,7 @@ struct VirtualReceiptCreateView: View {
                     .textInputAutocapitalization(.sentences)
                 Spacer()
                 Button(role: .destructive) {
+                    Haptics.selection()
                     if let idx = items.firstIndex(where: { $0.id == item.wrappedValue.id }) {
                         items.remove(at: idx)
                     }
@@ -151,7 +185,6 @@ struct VirtualReceiptCreateView: View {
                         .foregroundColor(Theme.destructive)
                 }
                 .buttonStyle(.plain)
-                .disabled(items.count <= 1)
             }
             HStack(spacing: Theme.Spacing.xs) {
                 labeledField(locale.t("virtualReceipt.qty"), text: item.quantityText, width: 80)

@@ -10,6 +10,13 @@ import { auth } from '@/lib/auth-compat'
 import { db } from '@/lib/db'
 import { bankTransactions, expenses } from '@/lib/db/schema'
 import { eq, and, sql } from 'drizzle-orm'
+import { rateLimitPersistent } from '@/lib/rate-limit'
+import { z } from 'zod'
+
+// SECURITY (round 2 / A2): bound the body. transactionId is a UUID.
+const BankMatchSchema = z.object({
+  transactionId: z.string().uuid('transactionId must be a valid UUID'),
+}).strict()
 
 export async function POST(request: NextRequest) {
   const { userId } = await auth()
@@ -17,15 +24,26 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  try {
-    const body = (await request.json()) as { transactionId?: string }
+  const rl = await rateLimitPersistent(`bank:match:${userId}`, { maxRequests: 120, windowMs: 60 * 60 * 1000 })
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { error: 'Too many bank match attempts. Try again later.' },
+      { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } },
+    )
+  }
 
-    if (!body.transactionId) {
+  try {
+    const rawBody = await request.json().catch(() => null)
+    if (!rawBody) return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
+
+    const parsed = BankMatchSchema.safeParse(rawBody)
+    if (!parsed.success) {
       return NextResponse.json(
-        { error: 'Missing required field: transactionId' },
+        { error: 'Invalid input', details: parsed.error.flatten().fieldErrors },
         { status: 400 },
       )
     }
+    const body = parsed.data
 
     // Verify the transaction belongs to this user
     const [transaction] = await db

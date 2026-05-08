@@ -3,8 +3,9 @@ import { db } from '@/lib/db'
 import { paymentRequests, groupMembers, groups } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import { notFound } from 'next/navigation'
+import { headers } from 'next/headers'
 import { getSession } from '@/lib/session'
-import { SettlementPageClient } from './client'
+import { SettlementPageClient, type SettlementPageLabels } from './client'
 
 export const dynamic = 'force-dynamic'
 
@@ -12,6 +13,84 @@ const MEMBER_COLORS = [
   '#6366f1', '#ec4899', '#f59e0b', '#10b981',
   '#3b82f6', '#8b5cf6', '#ef4444', '#14b8a6',
 ]
+
+async function detectLang(): Promise<'pl' | 'en'> {
+  try {
+    const hdrs = await headers()
+    const accept = hdrs.get('accept-language') || ''
+    return accept.toLowerCase().includes('pl') ? 'pl' : 'en'
+  } catch {
+    return 'pl'
+  }
+}
+
+function getLabels(lang: 'pl' | 'en'): SettlementPageLabels {
+  if (lang === 'pl') {
+    return {
+      invalidTitle: 'Nieprawidłowy link',
+      invalidDescription: 'Ten link do prośby o płatność wygasł lub jest niepoprawny.',
+      paymentRequest: 'Prośba o płatność',
+      pending: 'Oczekuje',
+      settled: 'Rozliczone',
+      declined: 'Odrzucone',
+      owes: 'Jest winien',
+      receives: 'Otrzyma',
+      message: 'Wiadomość',
+      bankAccount: 'Numer konta do przelewu',
+      copyBankAccount: 'Kopiuj numer konta',
+      copied: 'Skopiowano',
+      details: 'Szczegóły',
+      total: 'Razem',
+      created: 'Utworzono',
+      settledAt: 'Rozliczono',
+      markPaid: 'Oznacz jako zapłacone',
+      marking: 'Oznaczanie...',
+      paymentConfirmed: 'Płatność potwierdzona',
+      paymentConfirmedDescription: 'Ta prośba została oznaczona jako opłacona.',
+      markFailed: 'Nie udało się oznaczyć płatności.',
+      print: 'Drukuj',
+      openSolvio: 'Otwórz Solvio',
+      showBreakdown: 'Pokaż szczegóły',
+      hideBreakdown: 'Ukryj szczegóły',
+      poweredBy: 'Wygenerowano przez',
+      itemOne: 'pozycja',
+      itemFew: 'pozycje',
+      itemMany: 'pozycji',
+      itemOther: 'pozycji',
+    }
+  }
+
+  return {
+    invalidTitle: 'Invalid link',
+    invalidDescription: 'This payment request link has expired or is invalid.',
+    paymentRequest: 'Payment request',
+    pending: 'Pending',
+    settled: 'Settled',
+    declined: 'Declined',
+    owes: 'Owes',
+    receives: 'Receives',
+    message: 'Message',
+    bankAccount: 'Bank account for transfer',
+    copyBankAccount: 'Copy bank account number',
+    copied: 'Copied',
+    details: 'Details',
+    total: 'Total',
+    created: 'Created',
+    settledAt: 'Settled at',
+    markPaid: 'Mark as paid',
+    marking: 'Marking...',
+    paymentConfirmed: 'Payment confirmed',
+    paymentConfirmedDescription: 'This request has been marked as paid.',
+    markFailed: 'Failed to update payment status.',
+    print: 'Print',
+    openSolvio: 'Open Solvio',
+    showBreakdown: 'Show details',
+    hideBreakdown: 'Hide details',
+    poweredBy: 'Powered by',
+    itemOne: 'item',
+    itemOther: 'items',
+  }
+}
 
 export async function generateMetadata({
   params,
@@ -90,6 +169,8 @@ export default async function SettlementPage({
 }) {
   const { id } = await params
   const { token } = await searchParams
+  const lang = await detectLang()
+  const labels = getLabels(lang)
 
   const [request] = await db.select().from(paymentRequests).where(eq(paymentRequests.id, id))
   if (!request) notFound()
@@ -166,5 +247,13 @@ export default async function SettlementPage({
       : null,
   }
 
-  return <SettlementPageClient data={data} hasValidToken={hasValidToken} token={token || null} />
+  return (
+    <SettlementPageClient
+      data={data}
+      hasValidToken={hasValidToken}
+      token={token || null}
+      lang={lang}
+      labels={labels}
+    />
+  )
 }

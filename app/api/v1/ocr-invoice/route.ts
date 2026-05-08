@@ -5,7 +5,7 @@ import { db } from '@/lib/db'
 import { invoices, companyMembers, vatEntries, userSettings } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import { put } from '@vercel/blob'
-import { rateLimit } from '@/lib/rate-limit'
+import { rateLimitPersistent } from '@/lib/rate-limit'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -217,7 +217,7 @@ export async function POST(req: NextRequest) {
   if (!userId) return json({ error: 'Unauthorized' }, 401)
 
   // SECURITY FIX: Rate limit OCR endpoint to prevent cost abuse (Azure Document Intelligence)
-  const rl = rateLimit(`ai:${userId}`, { maxRequests: 10, windowMs: 3600000 })
+  const rl = await rateLimitPersistent(`ocr:invoice:${userId}`, { maxRequests: 10, windowMs: 3600000 })
   if (!rl.allowed) return json({ error: 'Too many requests', retryAfter: rl.retryAfter }, 429)
 
   // Verify business user

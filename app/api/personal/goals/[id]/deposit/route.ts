@@ -2,6 +2,17 @@ import { auth } from '@/lib/auth-compat'
 import { NextResponse } from 'next/server'
 import { db, savingsGoals, savingsDeposits } from '@/lib/db'
 import { eq, and, sql } from 'drizzle-orm'
+import { z } from 'zod'
+
+// SECURITY (round 2 / A2): bound the deposit body. Money max is the
+// decimal(14,2) ceiling.
+const DepositSchema = z.object({
+  amount: z.union([
+    z.number().positive().max(99_999_999_999.99),
+    z.string().regex(/^\d+(\.\d{1,2})?$/).transform(Number),
+  ]),
+  note: z.string().max(500).optional().nullable(),
+}).strict()
 
 export async function POST(
   request: Request,
@@ -12,19 +23,17 @@ export async function POST(
 
   const { id } = await params
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let body: any
-  try {
-    body = await request.json()
-  } catch {
-    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
-  }
+  const rawBody = await request.json().catch(() => null)
+  if (!rawBody) return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
 
-  const { amount: rawAmount, note } = body
-  const amount = typeof rawAmount === 'string' ? parseFloat(rawAmount) : Number(rawAmount)
-  if (!amount || isNaN(amount) || amount <= 0) {
-    return NextResponse.json({ error: 'Amount must be positive' }, { status: 400 })
+  const parsed = DepositSchema.safeParse(rawBody)
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: 'Invalid input', details: parsed.error.flatten().fieldErrors },
+      { status: 400 },
+    )
   }
+  const { amount, note } = parsed.data
 
   try {
     // Verify the goal belongs to the user

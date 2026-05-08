@@ -273,7 +273,7 @@ struct NBPrimaryButtonStyle: ButtonStyle {
             )
             .offset(x: configuration.isPressed ? 2 : 0, y: configuration.isPressed ? 2 : 0)
             .nbShadow(configuration.isPressed ? 0 : Theme.Shadow.md)
-            .animation(.easeOut(duration: 0.1), value: configuration.isPressed)
+            .animation(.spring(response: 0.18, dampingFraction: 0.7), value: configuration.isPressed)
     }
 }
 
@@ -293,7 +293,7 @@ struct NBSecondaryButtonStyle: ButtonStyle {
             )
             .offset(x: configuration.isPressed ? 2 : 0, y: configuration.isPressed ? 2 : 0)
             .nbShadow(configuration.isPressed ? 0 : Theme.Shadow.md)
-            .animation(.easeOut(duration: 0.1), value: configuration.isPressed)
+            .animation(.spring(response: 0.18, dampingFraction: 0.7), value: configuration.isPressed)
     }
 }
 
@@ -313,7 +313,7 @@ struct NBDestructiveButtonStyle: ButtonStyle {
             )
             .offset(x: configuration.isPressed ? 2 : 0, y: configuration.isPressed ? 2 : 0)
             .nbShadow(configuration.isPressed ? 0 : Theme.Shadow.md, color: Theme.destructive)
-            .animation(.easeOut(duration: 0.1), value: configuration.isPressed)
+            .animation(.spring(response: 0.18, dampingFraction: 0.7), value: configuration.isPressed)
     }
 }
 

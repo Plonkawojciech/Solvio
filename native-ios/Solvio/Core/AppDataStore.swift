@@ -698,44 +698,76 @@ final class AppDataStore: ObservableObject {
     }
 
     // MARK: - Mutation hooks (call from view-models after writes)
+    //
+    // Mutations triggered three force-refreshes (dashboard / budget /
+    // financialHealth) and four for receipts. ScanQueueManager finishing
+    // a batch of 10 receipts → 40 concurrent API calls in 30 s. Backend
+    // (Neon hobby + Vercel cold starts) was getting hammered.
+    //
+    // Solution: coalesce mutations of the same type within a 500 ms
+    // window — if `didMutateExpenses` fires twice within half a second,
+    // only one cascade actually runs. Last-write-wins via a per-bucket
+    // Task pointer.
+
+    private var coalesceTasks: [String: Task<Void, Never>] = [:]
+    private static let coalesceDelay: UInt64 = 500_000_000 // 500 ms
+
+    private func coalesce(key: String, _ work: @escaping @MainActor () -> Void) {
+        coalesceTasks[key]?.cancel()
+        coalesceTasks[key] = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: Self.coalesceDelay)
+            guard let self, !Task.isCancelled else { return }
+            self.coalesceTasks.removeValue(forKey: key)
+            work()
+        }
+    }
 
     /// After creating / updating / deleting an expense, dashboard +
     /// budget + financial-health all become stale (every category-grouped
     /// view depends on the expense list). UI shows the optimistic value
     /// while the refreshes land.
     func didMutateExpenses() {
-        invalidateDashboard()
-        invalidateBudget()
-        invalidateFinancialHealth()
-        ensureDashboard(force: true)
-        ensureBudget(force: true)
-        ensureFinancialHealth(force: true)
+        coalesce(key: "expenses") { [weak self] in
+            guard let self else { return }
+            self.invalidateDashboard()
+            self.invalidateBudget()
+            self.invalidateFinancialHealth()
+            self.ensureDashboard(force: true)
+            self.ensureBudget(force: true)
+            self.ensureFinancialHealth(force: true)
+        }
     }
 
     func didMutateReceipts() {
         // Receipts spawn expenses on the backend, so receipt mutations
         // ripple all the way through to budget + health-score just like
         // expense mutations.
-        invalidateReceipts()
-        invalidateDashboard()
-        invalidateBudget()
-        invalidateFinancialHealth()
-        ensureReceipts(force: true)
-        ensureDashboard(force: true)
-        ensureBudget(force: true)
-        ensureFinancialHealth(force: true)
+        coalesce(key: "receipts") { [weak self] in
+            guard let self else { return }
+            self.invalidateReceipts()
+            self.invalidateDashboard()
+            self.invalidateBudget()
+            self.invalidateFinancialHealth()
+            self.ensureReceipts(force: true)
+            self.ensureDashboard(force: true)
+            self.ensureBudget(force: true)
+            self.ensureFinancialHealth(force: true)
+        }
     }
 
     func didMutateCategoriesOrBudgetsOrSettings() {
         // Categories/budgets/settings live on the dashboard payload, but
         // changing budgets directly affects the budget endpoint and the
         // health score derived from it — refresh both alongside.
-        invalidateDashboard()
-        invalidateBudget()
-        invalidateFinancialHealth()
-        ensureDashboard(force: true)
-        ensureBudget(force: true)
-        ensureFinancialHealth(force: true)
+        coalesce(key: "categoriesBudgetsSettings") { [weak self] in
+            guard let self else { return }
+            self.invalidateDashboard()
+            self.invalidateBudget()
+            self.invalidateFinancialHealth()
+            self.ensureDashboard(force: true)
+            self.ensureBudget(force: true)
+            self.ensureFinancialHealth(force: true)
+        }
     }
 
     func didMutateGoals() {

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { SESSION_COOKIE, buildSignedSession } from '@/lib/session'
-import { rateLimit } from '@/lib/rate-limit'
+import { rateLimitPersistent } from '@/lib/rate-limit'
 
 const DEMO_EMAIL = 'demo@solvio.app'
 
@@ -9,7 +9,7 @@ export async function POST(request: NextRequest) {
   const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
              request.headers.get('x-real-ip') ??
              'unknown'
-  const rl = rateLimit(`auth:demo:${ip}`, { maxRequests: 20, windowMs: 60 * 60 * 1000 })
+  const rl = await rateLimitPersistent(`auth:demo:${ip}`, { maxRequests: 20, windowMs: 60 * 60 * 1000 })
   if (!rl.allowed) {
     return NextResponse.json(
       { error: 'Too many requests. Try again later.' },

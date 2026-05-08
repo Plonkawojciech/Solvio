@@ -11,7 +11,7 @@ Legend: ✅ fully ported · 🟡 partial · 🔲 not started · ❌ intentionall
 | PWA route | iOS | Status | Notes |
 |-----------|-----|--------|-------|
 | `/dashboard` | `DashboardView` | ✅ | Full client-side aggregation (fx conversion, momChange, forecast, wellness, anomalies, over-budget, savings rate) — mirrors web's `calculatedData` memo |
-| `/expenses` | `ExpensesListView` + `ExpenseDetailView` | ✅ | Search, category filter chips, date-range chips, tags, CRUD (minus isRecurring/receiptId) |
+| `/expenses` | `ExpensesListView` + `ExpenseDetailView` | ✅ | Search, category filter chips, date-range chips, tags, CRUD (R2: receiptId roundtrip; R3: isRecurring removed — was never persisted by any path) |
 | `/groups` | `GroupsListView` + `GroupDetailView` | ✅ | Emoji + currency picker, dynamic member rows with color swatches, **Quick Split sheet** (equal/percent/custom modes, multi-select, sum validation) |
 | `/groups/[id]/receipts` | `GroupReceiptsView` | ✅ | Expandable cards with item assignments + member color chips |
 | `/groups/[id]/settle` | `GroupSettlementsView` | ✅ | 4-tile stats, "who owes whom" with inline settle, per-person balance (±), payment request status pills |

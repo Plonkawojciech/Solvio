@@ -30,6 +30,8 @@ struct LoyaltyView: View {
                     .padding(.horizontal, Theme.Spacing.md)
                     .padding(.top, Theme.Spacing.md)
                     .padding(.bottom, Theme.Spacing.xs)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityAddTraits(.isHeader)
                 }
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
@@ -67,7 +69,10 @@ struct LoyaltyView: View {
                 } else {
                     Section {
                         ForEach(cards) { card in
-                            Button { expandedCard = card } label: {
+                            Button {
+                                Haptics.selection()
+                                expandedCard = card
+                            } label: {
                                 cardRow(card)
                             }
                             .buttonStyle(.plain)
@@ -81,6 +86,7 @@ struct LoyaltyView: View {
                             ))
                             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                 Button(role: .destructive) {
+                                    Haptics.warning()
                                     pendingDelete = card
                                 } label: {
                                     Label(locale.t("common.delete"), systemImage: "trash")
@@ -88,6 +94,7 @@ struct LoyaltyView: View {
                             }
                             .contextMenu {
                                 Button(locale.t("common.delete"), role: .destructive) {
+                                    Haptics.warning()
                                     pendingDelete = card
                                 }
                             }
@@ -105,10 +112,22 @@ struct LoyaltyView: View {
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
             .background(Theme.background)
-            .refreshable { await store.awaitLoyalty(force: true) }
+            .refreshable {
+                // Match Dashboard pattern: light tick on pull, success on
+                // fresh data — gated by `loyaltyError == nil` so a failing
+                // reload doesn't ping a celebratory haptic.
+                Haptics.impact(.light)
+                await store.awaitLoyalty(force: true)
+                if store.loyaltyError == nil {
+                    Haptics.success()
+                }
+            }
             .task { store.ensureLoyalty() }
 
-            Button { showCreate = true } label: {
+            Button {
+                Haptics.impact(.medium)
+                showCreate = true
+            } label: {
                 Image(systemName: "plus")
                     .font(.system(size: 22, weight: .bold))
                     .foregroundColor(Theme.background)
@@ -124,12 +143,15 @@ struct LoyaltyView: View {
             .buttonStyle(.plain)
             .padding(.trailing, Theme.Spacing.md)
             .padding(.bottom, Theme.Spacing.md)
+            .accessibilityLabel(locale.t("loyalty.addCard"))
+            .accessibilityHint(locale.t("loyalty.emptySub"))
         }
         .sheet(isPresented: $showCreate) {
             LoyaltyCreateSheet { body in
                 Task {
                     do {
                         _ = try await LoyaltyRepo.create(body)
+                        // success toast already triggers Haptics.success() via ToastCenter
                         toast.success(locale.t("loyalty.cardAdded"))
                         store.didMutateLoyalty()
                     } catch {
@@ -153,6 +175,10 @@ struct LoyaltyView: View {
         ) { card in
             Button(locale.t("common.cancel"), role: .cancel) {}
             Button(locale.t("common.delete"), role: .destructive) {
+                // Confirm tap → tactile commit feel before the (potentially
+                // slow) network round-trip. Toast fires Haptics.success on
+                // resolve via ToastCenter.
+                Haptics.impact(.medium)
                 Task {
                     do {
                         try await LoyaltyRepo.delete(id: card.id)
@@ -169,8 +195,19 @@ struct LoyaltyView: View {
     }
 
     private func cardRow(_ c: LoyaltyCard) -> some View {
-        HStack(spacing: Theme.Spacing.sm) {
+        // Composed a11y label: "store, member, masked card number" — last 4
+        // are read by VoiceOver as digits, not as a string of bullets.
+        var components: [String] = [c.store]
+        if let member = c.memberName, !member.isEmpty { components.append(member) }
+        if let n = c.cardNumber, !n.isEmpty {
+            // Read the last 4 digits explicitly instead of "bullet bullet bullet bullet".
+            let last4 = String(n.suffix(4))
+            components.append("\(locale.t("loyalty.cardNumber")) \(last4)")
+        }
+        let composed = components.joined(separator: ", ")
+        return HStack(spacing: Theme.Spacing.sm) {
             NBIconBadge(systemImage: "creditcard.fill")
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(c.store)
                     .font(AppFont.bodyMedium)
@@ -190,9 +227,14 @@ struct LoyaltyView: View {
             Image(systemName: "barcode")
                 .font(.system(size: 18))
                 .foregroundColor(Theme.foreground)
+                .accessibilityHidden(true)
         }
         .padding(Theme.Spacing.sm)
         .nbCard(radius: Theme.Radius.md, shadow: Theme.Shadow.sm)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(composed)
+        .accessibilityHint(locale.t("loyalty.openCardHint"))
+        .accessibilityAddTraits(.isButton)
     }
 
     /// Last 4 digits masked display: "•••• 1234".
@@ -214,20 +256,10 @@ struct LoyaltyCreateSheet: View {
     @State private var store = ""
     @State private var cardNumber = ""
     @State private var memberName = ""
-    @State private var notes = ""
-    @State private var selectedColor: String? = nil
-
-    private var palette: [(name: String, hex: String)] {
-        [
-            (locale.t("loyalty.colorRed"), "#ef4444"),
-            (locale.t("loyalty.colorAmber"), "#f59e0b"),
-            (locale.t("loyalty.colorEmerald"), "#10b981"),
-            (locale.t("loyalty.colorSky"), "#0ea5e9"),
-            (locale.t("loyalty.colorViolet"), "#8b5cf6"),
-            (locale.t("loyalty.colorPink"), "#ec4899"),
-            (locale.t("loyalty.colorSlate"), "#475569")
-        ]
-    }
+    // FIX: removed `notes` and `selectedColor` State + UI — neither field is
+    // present on `LoyaltyCardCreate` and the API endpoint never read them,
+    // so the picker/text-editor were dead UI that misled the user into
+    // thinking they were saving the values.
 
     var body: some View {
         NavigationStack {
@@ -242,34 +274,6 @@ struct LoyaltyCreateSheet: View {
                         autocapitalization: .never
                     )
                     NBTextField(label: locale.t("loyalty.memberName"), text: $memberName, placeholder: locale.t("common.none"))
-                    VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
-                        Text(locale.t("loyalty.accentColor"))
-                            .font(AppFont.bodyMedium)
-                            .foregroundColor(Theme.foreground)
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: Theme.Spacing.xs) {
-                                colorSwatch(hex: nil, label: locale.t("loyalty.none"))
-                                ForEach(palette, id: \.hex) { c in
-                                    colorSwatch(hex: c.hex, label: c.name)
-                                }
-                            }
-                        }
-                    }
-                    VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
-                        Text(locale.t("loyalty.notes"))
-                            .font(AppFont.bodyMedium)
-                            .foregroundColor(Theme.foreground)
-                        TextEditor(text: $notes)
-                            .font(AppFont.body)
-                            .frame(minHeight: 72)
-                            .padding(8)
-                            .background(Theme.card)
-                            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: Theme.Radius.md)
-                                    .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
-                            )
-                    }
                 }
                 .padding(Theme.Spacing.md)
             }
@@ -297,39 +301,10 @@ struct LoyaltyCreateSheet: View {
                 }
             }
         }
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
     }
 
-    private func colorSwatch(hex: String?, label: String) -> some View {
-        Button {
-            selectedColor = hex
-        } label: {
-            let isSelected = selectedColor == hex
-            Circle()
-                .fill(hex.flatMap(Color.init(hexString:)) ?? Theme.card)
-                .frame(width: 32, height: 32)
-                .overlay(
-                    Circle().stroke(
-                        Theme.foreground,
-                        lineWidth: isSelected ? Theme.Border.width : Theme.Border.widthThin
-                    )
-                )
-                .overlay(
-                    SwiftUI.Group {
-                        if hex == nil {
-                            Image(systemName: "slash.circle")
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundColor(Theme.foreground)
-                        } else if isSelected {
-                            Image(systemName: "checkmark")
-                                .font(.system(size: 12, weight: .bold))
-                                .foregroundColor(.white)
-                        }
-                    }
-                )
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(label)
-    }
 }
 
 // MARK: - Barcode sheet
@@ -354,6 +329,8 @@ struct BarcodeSheet: View {
                                 .foregroundColor(Theme.mutedForeground)
                         }
                     }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityAddTraits(.isHeader)
 
                     if let number = card.cardNumber, !number.isEmpty {
                         barcodeArea(number: number)
@@ -363,6 +340,9 @@ struct BarcodeSheet: View {
                             .multilineTextAlignment(.center)
                             .textSelection(.enabled)
                         Button {
+                            // Selection tick on tap; success toast follows
+                            // and triggers Haptics.success via ToastCenter.
+                            Haptics.selection()
                             UIPasteboard.general.string = number
                             toast.success(locale.t("loyalty.numberCopied"))
                         } label: {
@@ -377,6 +357,7 @@ struct BarcodeSheet: View {
 
                     VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
                         NBEyebrow(text: locale.t("loyalty.details"))
+                            .accessibilityAddTraits(.isHeader)
                         detailRow(locale.t("loyalty.store"), value: card.store)
                         if let member = card.memberName { detailRow(locale.t("loyalty.member"), value: member) }
                         if let last = card.lastUsed { detailRow(locale.t("loyalty.lastUsed"), value: Fmt.date(last)) }
@@ -397,6 +378,9 @@ struct BarcodeSheet: View {
                 ToolbarItem(placement: .confirmationAction) { Button(locale.t("common.done")) { dismiss() } }
             }
         }
+        // Barcode needs full screen for cashier scan — large only.
+        .presentationDetents([.large])
+        .presentationDragIndicator(.visible)
     }
 
     /// Auto-detect barcode format from card number. EAN13 if exactly 13
@@ -419,6 +403,9 @@ struct BarcodeSheet: View {
                             .stroke(Theme.border, lineWidth: Theme.Border.width)
                     )
                     .nbShadow(Theme.Shadow.md)
+                    // Barcode is for the cashier's scanner — VoiceOver users
+                    // get the digits on the line just below.
+                    .accessibilityHidden(true)
             } else {
                 Text(number)
                     .font(AppFont.mono(22))
@@ -452,6 +439,7 @@ struct BarcodeSheet: View {
                 .font(AppFont.bodyMedium)
                 .foregroundColor(Theme.foreground)
         }
+        .accessibilityElement(children: .combine)
     }
 }
 

@@ -2,6 +2,10 @@ import SwiftUI
 
 struct RootView: View {
     @EnvironmentObject private var session: SessionStore
+    /// Persists across launches — WelcomeOnboarding only shows once per
+    /// device install. `@AppStorage` reads UserDefaults synchronously so
+    /// there's no flash of login before the carousel kicks in.
+    @AppStorage("solvio.seenWelcome") private var seenWelcome: Bool = false
 
     var body: some View {
         ZStack {
@@ -10,11 +14,17 @@ struct RootView: View {
                 SplashView()
             } else if session.isAuthenticated {
                 MainTabView()
+            } else if !seenWelcome {
+                WelcomeOnboardingView(onContinue: { seenWelcome = true })
+                    .transition(.opacity)
             } else {
                 LoginView()
+                    .transition(.opacity)
             }
             ToastOverlay()
         }
+        .animation(.easeInOut(duration: 0.25), value: seenWelcome)
+        .animation(.easeInOut(duration: 0.25), value: session.isAuthenticated)
     }
 }
 

@@ -3,6 +3,16 @@ import { auth } from '@/lib/auth-compat'
 import { db } from '@/lib/db'
 import { groups, groupMembers, paymentRequests } from '@/lib/db/schema'
 import { eq, and } from 'drizzle-orm'
+import { recordAudit } from '@/lib/audit-log'
+import { z } from 'zod'
+
+// SECURITY (round 2 / A2): bound the PUT body. `action` is an enum, `settledBy`
+// is a 1-of-2 string. Without this, an attacker could send arbitrary JSON
+// and cause downstream branches to misbehave.
+const SettlementActionSchema = z.object({
+  action: z.enum(['settle', 'decline']),
+  settledBy: z.enum(['creditor', 'debtor']).optional(),
+})
 
 const MEMBER_COLORS = [
   '#6366f1', '#ec4899', '#f59e0b', '#10b981',
@@ -20,12 +30,22 @@ export async function GET(
   try {
     const { id: groupId, requestId } = await params
 
-    // Verify group access
+    // SECURITY (round 2 / A2): allow group MEMBERS access, not just creator.
+    // Mirrors the pattern in `/api/groups/[id]` and `/api/groups/[id]/settlements`.
     const [group] = await db
       .select()
       .from(groups)
-      .where(and(eq(groups.id, groupId), eq(groups.createdBy, userId)))
+      .where(eq(groups.id, groupId))
     if (!group) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
+    if (group.createdBy !== userId) {
+      const [membership] = await db
+        .select({ id: groupMembers.id })
+        .from(groupMembers)
+        .where(and(eq(groupMembers.groupId, groupId), eq(groupMembers.userId, userId)))
+        .limit(1)
+      if (!membership) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    }
 
     const [request] = await db
       .select()
@@ -74,15 +94,35 @@ export async function PUT(
 
   try {
     const { id: groupId, requestId } = await params
-    const body = await req.json()
-    const { action, settledBy } = body // action: 'settle' | 'decline'
 
-    // Verify group access
+    const rawBody = await req.json().catch(() => null)
+    if (!rawBody) return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
+
+    const parsed = SettlementActionSchema.safeParse(rawBody)
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: 'Invalid input', details: parsed.error.flatten().fieldErrors },
+        { status: 400 },
+      )
+    }
+    const { action, settledBy } = parsed.data
+
+    // SECURITY (round 2 / A2): allow group MEMBERS to settle/decline requests,
+    // not just the creator. Mirrors the broader members-vs-creator policy.
     const [group] = await db
       .select()
       .from(groups)
-      .where(and(eq(groups.id, groupId), eq(groups.createdBy, userId)))
+      .where(eq(groups.id, groupId))
     if (!group) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
+    if (group.createdBy !== userId) {
+      const [membership] = await db
+        .select({ id: groupMembers.id })
+        .from(groupMembers)
+        .where(and(eq(groupMembers.groupId, groupId), eq(groupMembers.userId, userId)))
+        .limit(1)
+      if (!membership) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    }
 
     const [request] = await db
       .select()
@@ -99,11 +139,27 @@ export async function PUT(
           settledBy: settledBy || 'creditor',
         })
         .where(eq(paymentRequests.id, requestId))
+
+      void recordAudit({
+        userId,
+        action: 'payment_request.settle',
+        entityType: 'payment_request',
+        entityId: requestId,
+        payload: { groupId, settledBy: settledBy || 'creditor', channel: 'group_member' },
+      })
     } else if (action === 'decline') {
       await db
         .update(paymentRequests)
         .set({ status: 'declined' })
         .where(eq(paymentRequests.id, requestId))
+
+      void recordAudit({
+        userId,
+        action: 'payment_request.decline',
+        entityType: 'payment_request',
+        entityId: requestId,
+        payload: { groupId },
+      })
     }
 
     return NextResponse.json({ ok: true })

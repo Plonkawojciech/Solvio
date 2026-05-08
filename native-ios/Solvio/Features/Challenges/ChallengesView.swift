@@ -25,9 +25,12 @@ struct ChallengesView: View {
     private var completedChallenges: [Challenge] {
         challenges.filter { $0.isCompleted == true }
     }
-    /// Sum of current progress across all challenges — best-effort "saved" KPI.
+    /// Sum of current progress across **active + completed** challenges
+    /// only. Was previously summing across all challenges — that double-
+    /// counted archived/inactive ones and inflated the KPI.
     private var totalSaved: Double {
-        challenges.reduce(0) { $0 + ($1.currentProgress?.double ?? 0) }
+        let relevant = activeChallenges + completedChallenges
+        return relevant.reduce(0) { $0 + ($1.currentProgress?.double ?? 0) }
     }
 
     var body: some View {
@@ -39,6 +42,8 @@ struct ChallengesView: View {
                         title: locale.t("challenges.headerTitle"),
                         subtitle: "\(activeChallenges.count) \(locale.t("challenges.active").lowercased()) · \(completedChallenges.count) \(locale.t("challenges.completed").lowercased())"
                     )
+                    .accessibilityElement(children: .combine)
+                    .accessibilityAddTraits(.isHeader)
 
                     if isLoading && challenges.isEmpty {
                         NBSkeletonList(rows: 4)
@@ -71,10 +76,17 @@ struct ChallengesView: View {
                 .padding(.top, Theme.Spacing.md)
             }
             .background(Theme.background)
-            .refreshable { await store.awaitChallenges(force: true) }
+            .refreshable {
+                Haptics.impact(.light)
+                await store.awaitChallenges(force: true)
+                if store.challengesError == nil { Haptics.success() }
+            }
             .task { store.ensureChallenges() }
 
-            Button { showCreate = true } label: {
+            Button {
+                Haptics.impact(.medium)
+                showCreate = true
+            } label: {
                 Image(systemName: "plus")
                     .font(.system(size: 22, weight: .bold))
                     .foregroundColor(Theme.background)
@@ -87,12 +99,15 @@ struct ChallengesView: View {
             .buttonStyle(.plain)
             .padding(.trailing, Theme.Spacing.md)
             .padding(.bottom, Theme.Spacing.md)
+            .accessibilityLabel(locale.t("challenges.new"))
+            .accessibilityHint(locale.t("challenges.newHint"))
         }
         .sheet(isPresented: $showCreate) {
             ChallengeCreateSheet { body in
                 Task {
                     do {
                         _ = try await ChallengesRepo.create(body)
+                        // success toast triggers Haptics.success() via ToastCenter
                         toast.success(locale.t("challenges.created"))
                         store.didMutateChallenges()
                     } catch {
@@ -148,6 +163,7 @@ struct ChallengesView: View {
                         RoundedRectangle(cornerRadius: Theme.Radius.sm)
                             .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
                     )
+                    .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(c.name)
                         .font(AppFont.bodyMedium)
@@ -175,6 +191,8 @@ struct ChallengesView: View {
             }
             if target > 0 {
                 NBProgressBar(value: pct, over: pct > 1)
+                    .accessibilityLabel(locale.t("goals.progress"))
+                    .accessibilityValue("\(Int(min(100, pct * 100)))%")
                 HStack {
                     Text("\(Fmt.amount(progress, currency: currency)) / \(Fmt.amount(target, currency: currency))")
                         .font(AppFont.caption)
@@ -194,6 +212,30 @@ struct ChallengesView: View {
         }
         .padding(Theme.Spacing.sm)
         .nbCard(radius: Theme.Radius.md, shadow: Theme.Shadow.sm)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(activeCardA11y(c, target: target, progress: progress, pct: pct, daysLeft: daysLeft))
+    }
+
+    /// Composed VoiceOver utterance: "{name}, {type}, {pct}%, {progress} of {target} {currency}, {days} dni left".
+    /// Replaces 5+ separate elements (emoji, name, tag, days, progress bar, amounts) with one
+    /// scannable read so VoiceOver users can sweep the list quickly.
+    private func activeCardA11y(
+        _ c: Challenge,
+        target: Double,
+        progress: Double,
+        pct: Double,
+        daysLeft: Int?
+    ) -> String {
+        var parts: [String] = [c.name, c.type]
+        if target > 0 {
+            parts.append("\(Int(min(100, pct * 100)))%")
+            parts.append("\(Fmt.amount(progress, currency: currency)) / \(Fmt.amount(target, currency: currency))")
+        }
+        if let days = daysLeft {
+            let unit = days == 1 ? locale.t("challenges.dayLeft") : locale.t("challenges.daysLeft")
+            parts.append("\(days) \(unit)")
+        }
+        return parts.joined(separator: ", ")
     }
 
     // MARK: - Completed collapsible
@@ -201,23 +243,27 @@ struct ChallengesView: View {
     private var completedSection: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
             Button {
+                Haptics.selection()
                 showCompleted.toggle()
             } label: {
                 HStack {
                     Image(systemName: "checkmark.seal.fill")
                         .foregroundColor(Theme.success)
+                        .accessibilityHidden(true)
                     Text(String(format: locale.t("challenges.completedCountFmt"), completedChallenges.count))
                         .font(AppFont.bodyMedium)
                         .foregroundColor(Theme.foreground)
                     Spacer()
                     Image(systemName: showCompleted ? "chevron.up" : "chevron.down")
                         .foregroundColor(Theme.mutedForeground)
+                        .accessibilityHidden(true)
                 }
                 .padding(Theme.Spacing.sm)
                 .frame(maxWidth: .infinity)
                 .nbCard(radius: Theme.Radius.md, shadow: Theme.Shadow.sm)
             }
             .buttonStyle(.plain)
+            .accessibilityHint(locale.t(showCompleted ? "challenges.collapseHint" : "challenges.expandHint"))
 
             if showCompleted {
                 ForEach(completedChallenges) { c in
@@ -229,8 +275,11 @@ struct ChallengesView: View {
     }
 
     private func completedRow(_ c: Challenge) -> some View {
-        HStack(spacing: Theme.Spacing.sm) {
-            Text(c.emoji ?? "🏆").font(.title2)
+        let amountStr = c.targetAmount.map { Fmt.amount($0, currency: currency) } ?? ""
+        return HStack(spacing: Theme.Spacing.sm) {
+            Text(c.emoji ?? "🏆")
+                .font(.title2)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(c.name)
                     .font(AppFont.bodyMedium)
@@ -244,9 +293,12 @@ struct ChallengesView: View {
             Spacer()
             Image(systemName: "checkmark.seal.fill")
                 .foregroundColor(Theme.success)
+                .accessibilityHidden(true)
         }
         .padding(Theme.Spacing.sm)
         .nbCard(radius: Theme.Radius.sm, shadow: Theme.Shadow.sm)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(c.name), \(locale.t("challenges.completed").lowercased())\(amountStr.isEmpty ? "" : ", \(amountStr)")")
     }
 
     // MARK: - Helpers
@@ -299,6 +351,7 @@ struct ChallengeCreateSheet: View {
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 52), spacing: 6)], spacing: 6) {
                             ForEach(emojiChoices, id: \.self) { e in
                                 Button {
+                                    Haptics.selection()
                                     emoji = e
                                 } label: {
                                     Text(e)
@@ -313,6 +366,8 @@ struct ChallengeCreateSheet: View {
                                         )
                                 }
                                 .buttonStyle(.plain)
+                                .accessibilityLabel(e)
+                                .accessibilityAddTraits(emoji == e ? [.isButton, .isSelected] : .isButton)
                             }
                         }
                     }
@@ -324,6 +379,7 @@ struct ChallengeCreateSheet: View {
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 100), spacing: 6)], spacing: 6) {
                             ForEach(typeChoices, id: \.id) { opt in
                                 Button {
+                                    Haptics.selection()
                                     type = opt.id
                                 } label: {
                                     Text(opt.label)
@@ -340,11 +396,13 @@ struct ChallengeCreateSheet: View {
                                         )
                                 }
                                 .buttonStyle(.plain)
+                                .accessibilityLabel(opt.label)
+                                .accessibilityAddTraits(type == opt.id ? [.isButton, .isSelected] : .isButton)
                             }
                         }
                     }
 
-                    NBTextField(label: locale.t("challenges.categoryLabel"), text: $targetCategory, placeholder: "Food")
+                    NBTextField(label: locale.t("challenges.categoryLabel"), text: $targetCategory, placeholder: locale.t("challenges.categoryPlaceholder"))
                     NBTextField(label: locale.t("challenges.targetLabel"), text: $targetAmount, placeholder: "0.00", keyboardType: .decimalPad)
 
                     VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
@@ -369,9 +427,17 @@ struct ChallengeCreateSheet: View {
             .navigationTitle(locale.t("challenges.new"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button(locale.t("common.cancel")) { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(locale.t("common.cancel")) {
+                        Haptics.selection()
+                        dismiss()
+                    }
+                }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(locale.t("common.save")) {
+                        // Money-shaped commit (target amount + binding window)
+                        // — same medium impact pattern as goals/expenses save.
+                        Haptics.impact(.medium)
                         let df = DateFormatter(); df.dateFormat = "yyyy-MM-dd"
                         let body = ChallengeCreate(
                             name: name,
@@ -386,8 +452,11 @@ struct ChallengeCreateSheet: View {
                         dismiss()
                     }
                     .disabled(name.isEmpty)
+                    .accessibilityHint(locale.t("challenges.saveHint"))
                 }
             }
         }
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
     }
 }

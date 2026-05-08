@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server'
 import { db, expenses, receipts, categories } from '@/lib/db'
 import { eq, gte, and, desc } from 'drizzle-orm'
 import { getAIClient, getAIClientForWebSearch } from '@/lib/ai-client'
-import { rateLimit } from '@/lib/rate-limit'
+import { rateLimitPersistent } from '@/lib/rate-limit'
 import { GROCERY_STORES } from '@/lib/stores'
 import { readAnyIntel, readIntel, writeIntel } from '@/lib/store-intel'
 import crypto from 'crypto'
@@ -65,7 +65,7 @@ export async function POST(request: Request) {
   }
 
   // Rate-limit only on cache miss. 5 requests / hour / userId.
-  const rl = rateLimit(`ai:audit:${userId}`, { maxRequests: 5, windowMs: 60 * 60 * 1000 })
+  const rl = await rateLimitPersistent(`ai:audit:${userId}`, { maxRequests: 5, windowMs: 60 * 60 * 1000 })
   if (!rl.allowed) {
     return NextResponse.json(
       { error: 'Rate limit exceeded. Try again later.' },
@@ -172,10 +172,13 @@ export async function POST(request: Request) {
     .slice(0, 5)
     .map(([store, amount]) => ({ store, amount }))
 
-  // Build the search query
+  // Build the search query.
+  // Prompt-token frugality: declare the currency once in the prompt
+  // header rather than per-line. Saves ~6-12 chars × 10 lines = ~80
+  // tokens per audit run.
   const productListForSearch = topProducts
     .slice(0, 10)
-    .map(p => `- ${p.name} (zapłacono: ${p.avgPrice.toFixed(2)} ${currency}/${isPolish ? 'szt' : 'unit'})`)
+    .map(p => `- ${p.name} (${isPolish ? 'zapł.' : 'paid'} ${p.avgPrice.toFixed(2)}/${isPolish ? 'szt' : 'unit'})`)
     .join('\n')
 
   const topStoreNames = topStores.map(s => s.store).join(', ')
@@ -183,7 +186,7 @@ export async function POST(request: Request) {
   const searchPrompt = isPolish
     ? `Jesteś ekspertem od cen w polskich supermarketach. Użytkownik kupił następujące produkty w sklepach: ${topStoreNames}.
 
-ZAKUPIONE PRODUKTY (z cenami które zapłacił):
+ZAKUPIONE PRODUKTY [waluta: ${currency}] (z cenami które zapłacił):
 ${productListForSearch}
 
 Odpowiedz TYLKO w formacie JSON (bez markdown, bez backticks):
@@ -207,7 +210,7 @@ Odpowiedz TYLKO w formacie JSON (bez markdown, bez backticks):
 }`
     : `You are a pricing expert for Polish supermarkets. A user bought the following products at: ${topStoreNames}.
 
-PURCHASED PRODUCTS (with prices paid):
+PURCHASED PRODUCTS [currency: ${currency}] (with prices paid):
 ${productListForSearch}
 
 Respond ONLY in JSON format (no markdown, no backticks):

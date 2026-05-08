@@ -1,7 +1,7 @@
 import { auth } from '@/lib/auth-compat'
 import { NextResponse } from 'next/server'
 import { getAIClient, getAIClientForWebSearch } from '@/lib/ai-client'
-import { rateLimit } from '@/lib/rate-limit'
+import { rateLimitPersistent } from '@/lib/rate-limit'
 import { GROCERY_STORES } from '@/lib/stores'
 import { freshOrRefresh } from '@/lib/store-intel'
 import crypto from 'crypto'
@@ -140,7 +140,7 @@ export async function POST(request: Request) {
   // count them. We can't easily tell up front whether the call will be
   // a cache hit, so we always count and accept that legitimate users
   // doing 11+ unique lists in an hour will hit the wall.
-  const rl = rateLimit(`ai:shopping-optimize:${userId}`, { maxRequests: 10, windowMs: 60 * 60 * 1000 })
+  const rl = await rateLimitPersistent(`ai:shopping-optimize:${userId}`, { maxRequests: 10, windowMs: 60 * 60 * 1000 })
   if (!rl.allowed) {
     return NextResponse.json(
       { error: 'rate_limited', message: isPolish ? 'Za dużo zapytań. Spróbuj za chwilę.' : 'Too many requests. Try again shortly.' },

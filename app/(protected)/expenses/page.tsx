@@ -343,7 +343,7 @@ export default function ExpensesPage() {
     setError(null)
     try {
       const res = await fetch('/api/data/expenses', { signal })
-      if (!res.ok) { setError(t('errors.fetchExpenses')); setLoading(false); return }
+      if (!res.ok) { setError(t('errors.fetchExpenses')); setLoading(false); return undefined }
       const data = await res.json()
       const exps: Expense[] = data.expenses || []
       setExpenses(exps)
@@ -361,9 +361,10 @@ export default function ExpensesPage() {
       return exps
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
-      if (err.name === 'AbortError') return
+      if (err.name === 'AbortError') return undefined
       setError(t('errors.fetchExpenses'))
       setLoading(false)
+      return undefined
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])

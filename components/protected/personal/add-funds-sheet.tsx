@@ -28,7 +28,18 @@ interface AddFundsSheetProps {
   currency: string
 }
 
-const QUICK_AMOUNTS = [50, 100, 200, 500]
+// Round to a "human-friendly" denomination so the quick amount buttons
+// always show clean numbers regardless of how big the goal is.
+function roundQuick(n: number): number {
+  if (n <= 0) return 0
+  if (n < 10) return Math.max(1, Math.round(n))
+  if (n < 100) return Math.round(n / 5) * 5
+  if (n < 1000) return Math.round(n / 10) * 10
+  if (n < 10000) return Math.round(n / 50) * 50
+  return Math.round(n / 100) * 100
+}
+
+const FALLBACK_QUICK_AMOUNTS = [50, 100, 200, 500]
 
 export function AddFundsSheet({ open, onOpenChange, goal, onDeposited, currency }: AddFundsSheetProps) {
   const { t } = useTranslation()
@@ -49,6 +60,25 @@ export function AddFundsSheet({ open, onOpenChange, goal, onDeposited, currency 
   const displayCurrency = g.currency || currency
   const color = g.color || '#6366f1'
 
+  // Smart quick amounts: 5% / 10% / 25% / 50% of remaining, deduped + rounded.
+  // Falls back to fixed values when the goal is missing target data.
+  const quickAmounts: number[] = (() => {
+    const remaining = target - current
+    if (!(remaining > 0)) return FALLBACK_QUICK_AMOUNTS
+    const raw = [remaining * 0.05, remaining * 0.1, remaining * 0.25, remaining * 0.5]
+      .map(roundQuick)
+      .filter(v => v > 0)
+    const unique = Array.from(new Set(raw))
+    if (unique.length < 4) {
+      // Top up with fallback values that don't duplicate
+      for (const v of FALLBACK_QUICK_AMOUNTS) {
+        if (!unique.includes(v)) unique.push(v)
+        if (unique.length >= 4) break
+      }
+    }
+    return unique.sort((a, b) => a - b).slice(0, 4)
+  })()
+
   async function handleDeposit(e: React.FormEvent) {
     e.preventDefault()
     if (!amount || depositAmount <= 0) return
@@ -67,8 +97,8 @@ export function AddFundsSheet({ open, onOpenChange, goal, onDeposited, currency 
       if (data.completed) {
         toast.success(t('goals.celebration'), { description: g.name })
       } else {
-        toast.success(t('goals.addFunds'), {
-          description: `+${depositAmount.toFixed(2)} ${displayCurrency}`,
+        toast.success(t('goals.depositSuccess'), {
+          description: `+${depositAmount.toFixed(2)} ${displayCurrency} — ${g.name}`,
         })
       }
 
@@ -137,11 +167,11 @@ export function AddFundsSheet({ open, onOpenChange, goal, onDeposited, currency 
             />
           </div>
 
-          {/* Quick amounts */}
+          {/* Quick amounts — scaled to remaining goal */}
           <div className="space-y-2">
             <Label>{t('goals.quickAmounts')}</Label>
             <div className="grid grid-cols-4 gap-2">
-              {QUICK_AMOUNTS.map(qa => (
+              {quickAmounts.map(qa => (
                 <Button
                   key={qa}
                   type="button"
@@ -151,7 +181,7 @@ export function AddFundsSheet({ open, onOpenChange, goal, onDeposited, currency 
                     amount === String(qa) ? 'border-primary bg-primary/10' : ''
                   }`}
                 >
-                  +{qa}
+                  +{qa.toLocaleString('pl-PL')}
                 </Button>
               ))}
             </div>

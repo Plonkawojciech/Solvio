@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import Image from 'next/image'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription,
@@ -169,9 +170,12 @@ export function ConnectBankSheet({
                         className="w-full flex items-center gap-3 p-3 rounded-xl border hover:bg-muted/50 hover:border-primary/30 transition-all text-left"
                       >
                         {inst.logo ? (
-                          <img
+                          <Image
                             src={inst.logo}
                             alt={inst.name}
+                            width={40}
+                            height={40}
+                            unoptimized
                             className="h-10 w-10 rounded-lg object-contain bg-white p-1 border"
                           />
                         ) : (
@@ -209,9 +213,12 @@ export function ConnectBankSheet({
                 {/* Bank Logo */}
                 <div className="flex flex-col items-center gap-3 py-4">
                   {selectedBank.logo ? (
-                    <img
+                    <Image
                       src={selectedBank.logo}
                       alt={selectedBank.name}
+                      width={80}
+                      height={80}
+                      unoptimized
                       className="h-20 w-20 rounded-2xl object-contain bg-white p-2 border shadow-lg"
                     />
                   ) : (

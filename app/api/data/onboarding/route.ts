@@ -1,10 +1,21 @@
 import { NextResponse } from 'next/server'
 import { auth } from '@/lib/auth-compat'
 import { getSession, SESSION_COOKIE, buildSignedSession } from '@/lib/session'
-import { setProductType, type ProductType } from '@/lib/product-type'
+import { setProductType } from '@/lib/product-type'
 import { db, companies, companyMembers } from '@/lib/db'
 import { eq } from 'drizzle-orm'
 import { seedBusinessCategories } from '@/lib/db/seed-user'
+import { z } from 'zod'
+
+// SECURITY FIX: Zod schema with strict bounds + enum on productType.
+// Caps NIP / companyName lengths to defend against payload-bloat / DOS
+// and against attempts to overflow downstream string columns.
+const OnboardingSchema = z.object({
+  productType: z.enum(['personal', 'business']),
+  companyName: z.string().max(200).optional().nullable(),
+  // Polish NIP is 10 digits but accept arbitrary 10-20 chars to be permissive
+  nip: z.string().max(20).optional().nullable(),
+})
 
 export async function POST(req: Request) {
   const { userId } = await auth()
@@ -13,21 +24,22 @@ export async function POST(req: Request) {
   }
 
   try {
-    const body = await req.json()
-    const { productType, companyName, nip } = body as {
-      productType: ProductType
-      companyName?: string
-      nip?: string
+    const rawBody = await req.json().catch(() => null)
+    if (!rawBody) {
+      return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
     }
-
-    if (!productType || !['personal', 'business'].includes(productType)) {
-      return NextResponse.json({ error: 'Invalid productType' }, { status: 400 })
+    const parsed = OnboardingSchema.safeParse(rawBody)
+    if (!parsed.success) {
+      return NextResponse.json({ error: 'Invalid input', details: parsed.error.flatten().fieldErrors }, { status: 400 })
     }
+    const { productType, companyName, nip } = parsed.data
 
     const session = await getSession()
 
     // Set the product type and mark onboarding as complete
-    await setProductType(userId, productType, companyName, nip)
+    // (Zod returns string | null | undefined — pass `?? undefined` to satisfy
+    // setProductType's optional-string signature without changing semantics.)
+    await setProductType(userId, productType, companyName ?? undefined, nip ?? undefined)
 
     // For business: create company + owner membership + seed business categories
     if (productType === 'business') {

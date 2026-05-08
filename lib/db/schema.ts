@@ -95,6 +95,10 @@ export const expenses = pgTable('expenses', {
   index('idx_expenses_category_id').on(t.categoryId),
   index('idx_expenses_receipt_id').on(t.receiptId),
   index('idx_expenses_vendor').on(t.userId, t.vendor),
+  // Bank-match auto-link query filters `bank_transaction_id IS NULL`
+  // so it only considers expenses not yet attached to a transaction.
+  // Without this index, every match request seq-scans the whole table.
+  index('idx_expenses_bank_txn_id').on(t.bankTransactionId),
 ])
 
 export const categoryBudgets = pgTable('category_budgets', {
@@ -187,6 +191,12 @@ export const expenseSplits = pgTable('expense_splits', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
 }, (t) => [
   index('idx_expense_splits_group_id').on(t.groupId),
+  // Cascade-delete sweep when an expense or receipt is removed needs
+  // these to avoid a seq scan over every row in the table.
+  index('idx_expense_splits_expense_id').on(t.expenseId),
+  index('idx_expense_splits_receipt_id').on(t.receiptId),
+  // Settlement sheet groups by payer to figure out who paid what.
+  index('idx_expense_splits_paid_by').on(t.paidByMemberId),
 ])
 
 // ── Receipt Item Assignments (group splitting per item) ───────────────────
@@ -228,6 +238,14 @@ export const paymentRequests = pgTable('payment_requests', {
 }, (t) => [
   index('idx_payment_requests_split_id').on(t.splitId),
   index('idx_payment_requests_group_id').on(t.groupId),
+  // Per-member settlement views ("what do I owe / what's owed to me")
+  // filter by from/to member id. Without these, a settlement page on
+  // a busy group walks every payment_requests row in the table.
+  index('idx_payment_requests_from_member').on(t.fromMemberId),
+  index('idx_payment_requests_to_member').on(t.toMemberId),
+  // Public share-link lookup needs O(log n) on the token. Settlement
+  // pages otherwise seq-scan the table to validate share_token=eq.
+  index('idx_payment_requests_share_token').on(t.shareToken),
 ])
 
 // ── Price Comparisons ──────────────────────────────────────────────────────────
@@ -569,6 +587,11 @@ export const invoices = pgTable('invoices', {
 }, (t) => [
   index('idx_invoices_user_id').on(t.userId),
   index('idx_invoices_user_issue_date').on(t.userId, t.issueDate),
+  // /api/business/invoices filters by userId+status and orders by
+  // createdAt desc. Both the status filter and the order-by benefit
+  // from a covering index.
+  index('idx_invoices_user_status').on(t.userId, t.status),
+  index('idx_invoices_user_created').on(t.userId, t.createdAt),
 ])
 
 export const expenseApprovals = pgTable('expense_approvals', {
@@ -652,4 +675,59 @@ export const vatEntries = pgTable('vat_entries', {
 }, (t) => [
   index('idx_vat_entries_user_id').on(t.userId),
   index('idx_vat_entries_company_id').on(t.companyId),
+  // VAT register list filters by companyId+period (KPiR + JPK
+  // generation walk a single period). This composite makes the
+  // company → period lookup an index range scan instead of a seq scan.
+  index('idx_vat_entries_company_period').on(t.companyId, t.period),
+])
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Audit Log — append-only trail for sensitive mutations
+// ══════════════════════════════════════════════════════════════════════════════
+//
+// Tracks the actions an attacker would touch first: session create/destroy,
+// expense delete, group delete, group-member remove, payment-request settle,
+// demo reset. Lightweight on purpose — every row is a single insert, we
+// never UPDATE or DELETE existing rows (truly append-only). Old rows can be
+// pruned by a future cron job once we have retention policies; for now
+// volume is low (mutations only, not reads).
+//
+// `payload` (jsonb) is best-effort context: pre-delete row counts, target
+// member ids, IP/UA for session events. NEVER store secrets, full request
+// bodies, or unbounded user input. Keep it small.
+// `entityType` is a free-text discriminator ("expense", "group", "session",
+// "payment_request"). `entityId` may be null for pre-creation actions
+// (e.g. login event before userId is bound).
+export const auditLog = pgTable('audit_log', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: text('user_id'),
+  action: varchar('action', { length: 64 }).notNull(),
+  entityType: varchar('entity_type', { length: 32 }),
+  entityId: text('entity_id'),
+  payload: jsonb('payload'),
+  ip: text('ip'),
+  userAgent: text('user_agent'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  index('idx_audit_log_user_id').on(t.userId),
+  index('idx_audit_log_user_action').on(t.userId, t.action),
+  index('idx_audit_log_created_at').on(t.createdAt),
+])
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Rate Limit Buckets — persistent per-key counters for serverless safety
+// ══════════════════════════════════════════════════════════════════════════════
+//
+// Unlike the in-memory limiter, this table survives Vercel cold starts and
+// multi-instance scale-out. One row per logical bucket (hashed key), updated
+// in-place with the current count + reset ceiling.
+export const rateLimitBuckets = pgTable('rate_limit_buckets', {
+  bucketKey: varchar('bucket_key', { length: 64 }).primaryKey(),
+  count: integer('count').notNull().default(1),
+  resetAt: timestamp('reset_at', { withTimezone: true }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  index('idx_rate_limit_buckets_reset_at').on(t.resetAt),
+  index('idx_rate_limit_buckets_updated_at').on(t.updatedAt),
 ])

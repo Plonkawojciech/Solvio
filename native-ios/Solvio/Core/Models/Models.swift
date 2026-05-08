@@ -51,7 +51,6 @@ struct Expense: Codable, Identifiable, Hashable {
     let receiptId: String?
     let notes: String?
     let tags: [String]?
-    let isRecurring: Bool?
     /// Populated by dashboard endpoint only; null elsewhere.
     let exchangeRate: MoneyString?
     let createdAt: String?
@@ -89,6 +88,11 @@ struct ExpenseUpdate: Encodable {
     let vendor: String?
     let notes: String?
     let tags: [String]?
+    /// Optional link to a scanned receipt. Mirrors `ExpenseCreate.receiptId`
+    /// so an existing manual expense can be re-linked to (or unlinked from)
+    /// a receipt without going through delete + recreate. The backend
+    /// `UpdateExpenseSchema` accepts this and persists it.
+    let receiptId: String?
 }
 
 struct ExpenseDelete: Encodable {

@@ -3,6 +3,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { expenseApprovals, expenses, companyMembers } from '@/lib/db/schema'
 import { eq, and } from 'drizzle-orm'
+import { z } from 'zod'
+
+// SECURITY (round 2 / A2): bound the approval-action body.
+const ApprovalActionSchema = z.object({
+  action: z.enum(['approve', 'reject']),
+  notes: z.string().max(2000).optional().nullable(),
+}).strict()
 
 export async function PUT(
   req: NextRequest,
@@ -14,11 +21,17 @@ export async function PUT(
   const { id } = await params
 
   try {
-    const body = await req.json()
+    const rawBody = await req.json().catch(() => null)
+    if (!rawBody) return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
 
-    if (!body.action || !['approve', 'reject'].includes(body.action)) {
-      return NextResponse.json({ error: 'action must be "approve" or "reject"' }, { status: 400 })
+    const parsed = ApprovalActionSchema.safeParse(rawBody)
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: 'Invalid input', details: parsed.error.flatten().fieldErrors },
+        { status: 400 },
+      )
     }
+    const body = parsed.data
 
     // Get current user's role
     const memberResult = await db.select({

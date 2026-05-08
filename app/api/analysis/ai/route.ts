@@ -4,7 +4,7 @@ import { db } from '@/lib/db'
 import { expenses, categories, bankTransactions, bankAccounts } from '@/lib/db/schema'
 import { eq, gte, and, asc } from 'drizzle-orm'
 import { getAIClient } from '@/lib/ai-client'
-import { rateLimit } from '@/lib/rate-limit'
+import { rateLimitPersistent } from '@/lib/rate-limit'
 import { z } from 'zod'
 
 const AnalysisRequestSchema = z.object({
@@ -16,7 +16,7 @@ export async function POST(request: Request) {
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const rl = rateLimit(`ai:analysis:${userId}`, { maxRequests: 10, windowMs: 60 * 60 * 1000 })
+  const rl = await rateLimitPersistent(`ai:analysis:${userId}`, { maxRequests: 10, windowMs: 60 * 60 * 1000 })
   if (!rl.allowed) {
     return NextResponse.json(
       { error: 'Rate limit exceeded. Try again later.' },
@@ -115,6 +115,9 @@ export async function POST(request: Request) {
     ? 'Odpowiadaj WYŁĄCZNIE po polsku. Używaj naturalnego, przyjaznego języka.'
     : 'Respond ONLY in English. Use natural, friendly language.'
 
+  // Compact JSON (no whitespace) — every byte costs tokens. Pretty-
+  // printing with `null, 2` was inflating the prompt by ~30% for
+  // accounts with many categories or months.
   const prompt = `You are a personal finance AI analyst. Analyze this user's expense data from the last 90 days.
 
 ${langInstruction}
@@ -122,9 +125,9 @@ ${langInstruction}
 DATA:
 - Total spent: ${totalSpend.toFixed(2)} ${currency}
 - Number of transactions: ${rows.length}
-- Spending by category: ${JSON.stringify(byCategory, null, 2)}
-- Monthly totals: ${JSON.stringify(byMonth, null, 2)}
-- Recent transactions (last 10): ${JSON.stringify(rows.slice(-10), null, 2)}
+- Spending by category: ${JSON.stringify(byCategory)}
+- Monthly totals: ${JSON.stringify(byMonth)}
+- Recent transactions (last 10): ${JSON.stringify(rows.slice(-10))}
 - Bank accounts: ${bankAccs.length > 0 ? JSON.stringify(bankAccs.map(a => ({ name: a.accountName, balance: a.balance, currency: a.currency }))) : 'none connected'}
 - Bank transactions (last 365 days): ${bankTxns.length} total (${bankDebits.length} debits, ${bankCredits.length} credits)
 - Bank total debited (365 days): ${bankTotalDebit.toFixed(2)} ${currency}

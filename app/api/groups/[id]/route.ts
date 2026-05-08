@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth-compat'
 import { db } from '@/lib/db'
 import { groups, groupMembers, expenseSplits } from '@/lib/db/schema'
 import { eq, and } from 'drizzle-orm'
+import { recordAudit } from '@/lib/audit-log'
 import { z } from 'zod'
 
 function normalizeMember(m: { id: string; displayName: string; email?: string | null; [key: string]: unknown }) {
@@ -60,8 +61,10 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
       if (!membership) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     }
 
-    // PERF FIX: parallel execution with Promise.all
-    const [members, splits] = await Promise.all([
+    // Round-4 perf: 2 parallel selects → 1 pipelined `db.batch` HTTP RTT.
+    // Members + splits are independent reads inside one transaction snapshot —
+    // halving HTTP overhead on every group detail load.
+    const [members, splits] = await db.batch([
       db.select().from(groupMembers).where(eq(groupMembers.groupId, id)),
       db.select().from(expenseSplits).where(eq(expenseSplits.groupId, id)),
     ])
@@ -105,7 +108,33 @@ export async function DELETE(_: NextRequest, { params }: { params: Promise<{ id:
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   try {
     const { id } = await params
-    await db.delete(groups).where(and(eq(groups.id, id), eq(groups.createdBy, userId)))
+    // Snapshot a few attributes BEFORE delete for the audit trail.
+    // After the DELETE the row is gone and we'd lose attribution of
+    // who owned the group / what its name was.
+    const [snapshot] = await db
+      .select({ name: groups.name, createdBy: groups.createdBy, mode: groups.mode })
+      .from(groups)
+      .where(and(eq(groups.id, id), eq(groups.createdBy, userId)))
+      .limit(1)
+
+    const result = await db
+      .delete(groups)
+      .where(and(eq(groups.id, id), eq(groups.createdBy, userId)))
+      .returning({ id: groups.id })
+
+    // SECURITY (round 2 / A2): only audit when the DELETE actually hit.
+    // If `result.length === 0` the group either didn't exist or didn't
+    // belong to the user — no row was removed, no audit needed.
+    if (result.length > 0 && snapshot) {
+      void recordAudit({
+        userId,
+        action: 'group.delete',
+        entityType: 'group',
+        entityId: id,
+        payload: { name: snapshot.name, mode: snapshot.mode },
+      })
+    }
+
     return NextResponse.json({ ok: true })
   } catch (err) {
     console.error('[groups/:id DELETE]', err)

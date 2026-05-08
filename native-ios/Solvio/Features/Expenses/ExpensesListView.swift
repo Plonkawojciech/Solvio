@@ -17,6 +17,11 @@ struct ExpensesListView: View {
     // MARK: - Filter / sort UI state (was on the old view-model)
 
     @State private var search: String = ""
+    /// Debounced mirror of `search` — used by `visible` filter so we don't
+    /// re-filter the entire expenses list on every keystroke (UI freeze
+    /// at >1000 expenses). Updated 250 ms after typing stops.
+    @State private var debouncedSearch: String = ""
+    @State private var debounceTask: Task<Void, Never>? = nil
     @State private var dateRange: DateRange = .all
     @State private var categoryFilter: String? = nil
     @State private var sortField: SortField = .date
@@ -78,7 +83,12 @@ struct ExpensesListView: View {
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
         .background(Theme.background)
-        .refreshable { await store.awaitDashboard(force: true) }
+        .refreshable {
+            // Match Dashboard pattern: light tick on pull, success on data.
+            Haptics.impact(.light)
+            await store.awaitDashboard(force: true)
+            if errorMessage == nil { Haptics.success() }
+        }
         .task { store.ensureDashboard() }
         .animation(.nbSpring, value: activePanel)
         .animation(.nbSpring, value: selectedIds)
@@ -87,9 +97,11 @@ struct ExpensesListView: View {
                 Task {
                     do {
                         _ = try await ExpensesRepo.create(payload)
+                        Haptics.success()
                         toast.success(locale.t("toast.created"))
                         store.didMutateExpenses()
                     } catch {
+                        Haptics.error()
                         toast.error(locale.t("toast.error"), description: error.localizedDescription)
                     }
                 }
@@ -108,6 +120,7 @@ struct ExpensesListView: View {
             Button(locale.t("common.delete"), role: .destructive) {
                 // Snapshot the row, drop it locally, schedule the commit
                 // behind a 5 s undo toast — same pattern as bulk delete.
+                Haptics.warning()
                 let snapshot = [e]
                 store.removeExpensesOptimistic(ids: [e.id])
                 scheduleDeleteCommit(ids: [e.id], snapshot: snapshot)
@@ -121,6 +134,7 @@ struct ExpensesListView: View {
         ) {
             Button(locale.t("common.cancel"), role: .cancel) {}
             Button(locale.t("common.delete"), role: .destructive) {
+                Haptics.warning()
                 Task { await performBulkDelete() }
             }
         } message: {
@@ -134,6 +148,8 @@ struct ExpensesListView: View {
             title: locale.t("expenses.title"),
             subtitle: "\(visible.count) \(locale.t("dashboard.transactions"))"
         )
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
     }
 
     // MARK: - Bulk selection bar
@@ -149,6 +165,7 @@ struct ExpensesListView: View {
                     .foregroundColor(Theme.mutedForeground)
                 Spacer()
                 Button(locale.t("expenses.deselectAll")) {
+                    Haptics.selection()
                     selectedIds.removeAll()
                 }
                 .buttonStyle(.plain)
@@ -166,6 +183,7 @@ struct ExpensesListView: View {
                 .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
 
                 Button {
+                    Haptics.warning()
                     showBulkDeleteConfirm = true
                 } label: {
                     HStack(spacing: 4) {
@@ -186,6 +204,8 @@ struct ExpensesListView: View {
                     .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("\(locale.t("expenses.deleteSelected")) (\(selectedIds.count))")
+                .accessibilityHint(locale.t("expenses.confirmBulkDeleteDesc"))
             }
             .padding(Theme.Spacing.sm)
             .nbCard(radius: Theme.Radius.md, shadow: Theme.Shadow.sm)
@@ -200,11 +220,28 @@ struct ExpensesListView: View {
                 .font(AppFont.body)
                 .autocorrectionDisabled()
                 .textInputAutocapitalization(.never)
+                .onChange(of: search) { newValue in
+                    // 250 ms debounce — re-filtering the whole expenses
+                    // list on every keystroke caused noticeable UI freeze
+                    // for users with thousands of records.
+                    debounceTask?.cancel()
+                    debounceTask = Task {
+                        try? await Task.sleep(nanoseconds: 250_000_000)
+                        if !Task.isCancelled {
+                            await MainActor.run { debouncedSearch = newValue }
+                        }
+                    }
+                }
             if !search.isEmpty {
-                Button { search = "" } label: {
+                Button {
+                    Haptics.selection()
+                    search = ""
+                    debouncedSearch = "" // immediate clear, skip debounce
+                } label: {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundColor(Theme.mutedForeground)
                 }
+                .accessibilityLabel(locale.t("common.clear"))
             }
         }
         .padding(.horizontal, Theme.Spacing.md)
@@ -227,6 +264,7 @@ struct ExpensesListView: View {
                 isActive: activePanel == .filters,
                 hasIndicator: hasActiveFilters
             ) {
+                Haptics.selection()
                 activePanel = (activePanel == .filters) ? .none : .filters
             }
             toolbarButton(
@@ -235,6 +273,7 @@ struct ExpensesListView: View {
                 isActive: activePanel == .sort,
                 hasIndicator: false
             ) {
+                Haptics.selection()
                 activePanel = (activePanel == .sort) ? .none : .sort
             }
         }
@@ -327,6 +366,7 @@ struct ExpensesListView: View {
 
             if hasActiveFilters {
                 Button {
+                    Haptics.selection()
                     dateRange = .all
                     categoryFilter = nil
                     amountFrom = ""
@@ -457,6 +497,7 @@ struct ExpensesListView: View {
                     )
                 if !amountFrom.isEmpty || !amountTo.isEmpty {
                     Button {
+                        Haptics.selection()
                         amountFrom = ""
                         amountTo = ""
                     } label: {
@@ -464,6 +505,7 @@ struct ExpensesListView: View {
                             .foregroundColor(Theme.mutedForeground)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel(locale.t("common.clear"))
                 }
             }
             if amountRangeInverted {
@@ -490,11 +532,15 @@ struct ExpensesListView: View {
                 .autocorrectionDisabled()
                 .textInputAutocapitalization(.never)
             if !vendorFilter.isEmpty {
-                Button { vendorFilter = "" } label: {
+                Button {
+                    Haptics.selection()
+                    vendorFilter = ""
+                } label: {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundColor(Theme.mutedForeground)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(locale.t("common.clear"))
             }
         }
         .padding(.horizontal, Theme.Spacing.md)
@@ -508,17 +554,27 @@ struct ExpensesListView: View {
     }
 
     private func dateChip(_ range: DateRange, label: String) -> some View {
-        Button { dateRange = range } label: {
-            chipStyled(label, active: dateRange == range)
+        let active = dateRange == range
+        return Button {
+            Haptics.selection()
+            dateRange = range
+        } label: {
+            chipStyled(label, active: active)
         }
         .buttonStyle(.plain)
+        .accessibilityAddTraits(active ? .isSelected : [])
     }
 
     private func categoryChip(id: String?, label: String) -> some View {
-        Button { categoryFilter = id } label: {
-            chipStyled(label, active: categoryFilter == id)
+        let active = categoryFilter == id
+        return Button {
+            Haptics.selection()
+            categoryFilter = id
+        } label: {
+            chipStyled(label, active: active)
         }
         .buttonStyle(.plain)
+        .accessibilityAddTraits(active ? .isSelected : [])
     }
 
     private func chipStyled(_ label: String, active: Bool) -> some View {
@@ -590,6 +646,7 @@ struct ExpensesListView: View {
                                 // the user confirmed which read as a glitchy
                                 // bounce-back. Now SwiftUI animates the row out
                                 // smoothly the moment the swipe completes.
+                                Haptics.warning()
                                 let snapshot = [e]
                                 store.removeExpensesOptimistic(ids: [e.id])
                                 scheduleDeleteCommit(ids: [e.id], snapshot: snapshot)
@@ -612,10 +669,16 @@ struct ExpensesListView: View {
     private func row(_ e: Expense) -> some View {
         let isSelected = selectedIds.contains(e.id)
         let selectionActive = !selectedIds.isEmpty
+        let amountText = Fmt.amount(e.amount, currency: e.currency ?? defaultCurrency)
+        let categoryText = categoryName(for: e) ?? ""
+        let a11yLabel = [e.title, categoryText, Fmt.dayMonth(e.date), amountText]
+            .filter { !$0.isEmpty }
+            .joined(separator: ", ")
         return Button {
             if selectionActive {
                 toggleSelection(e.id)
             } else {
+                Haptics.selection()
                 router.push(.expenseDetail(id: e.id))
             }
         } label: {
@@ -636,20 +699,6 @@ struct ExpensesListView: View {
                             .font(AppFont.bodyMedium)
                             .foregroundColor(Theme.foreground)
                             .lineLimit(1)
-                        if e.isRecurring == true {
-                            Text(locale.t("expenses.recurring").uppercased())
-                                .font(AppFont.mono(9))
-                                .tracking(0.5)
-                                .padding(.horizontal, 5)
-                                .padding(.vertical, 2)
-                                .background(Theme.info.opacity(0.15))
-                                .foregroundColor(Theme.info)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                                        .stroke(Theme.info, lineWidth: 1)
-                                )
-                                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
-                        }
                     }
                     HStack(spacing: 6) {
                         if let name = categoryName(for: e) {
@@ -689,20 +738,26 @@ struct ExpensesListView: View {
                 )
             }
             Button(role: .destructive) {
+                Haptics.warning()
                 pendingDelete = e
             } label: {
                 Label(locale.t("common.delete"), systemImage: "trash")
             }
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(a11yLabel)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     // MARK: - Selection helpers
 
     private func toggleSelection(_ id: String) {
+        Haptics.selection()
         if selectedIds.contains(id) { selectedIds.remove(id) } else { selectedIds.insert(id) }
     }
 
     private func toggleSort(_ field: SortField) {
+        Haptics.selection()
         if sortField == field {
             sortDir = (sortDir == .asc) ? .desc : .asc
         } else {
@@ -779,7 +834,11 @@ struct ExpensesListView: View {
     /// `store.expenses` so updates propagate the moment the store
     /// publishes a new dashboard payload.
     private var visible: [Expense] {
-        let q = search.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        // Use debouncedSearch — updated 250ms after typing stops via the
+        // .onChange handler attached to the search field. Direct `search`
+        // would re-filter on every keystroke and freeze the UI for users
+        // with thousands of expenses.
+        let q = debouncedSearch.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
         let vq = vendorFilter.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
         let minAmt = Double(amountFrom.replacingOccurrences(of: ",", with: "."))
         let maxAmt = Double(amountTo.replacingOccurrences(of: ",", with: "."))
@@ -963,6 +1022,8 @@ struct ExpenseCreateSheet: View {
             }
         }
         .task { if categories.isEmpty { await fallback.load() } }
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
     }
 
     private var categoryPicker: some View {
@@ -973,8 +1034,10 @@ struct ExpenseCreateSheet: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 6) {
                     ForEach(availableCategories) { c in
+                        let active = selectedCategoryId == c.id
                         Button {
-                            selectedCategoryId = selectedCategoryId == c.id ? nil : c.id
+                            Haptics.selection()
+                            selectedCategoryId = active ? nil : c.id
                         } label: {
                             Text(c.name)
                                 .font(AppFont.mono(11))
@@ -982,8 +1045,8 @@ struct ExpenseCreateSheet: View {
                                 .textCase(.uppercase)
                                 .padding(.horizontal, 10)
                                 .padding(.vertical, 8)
-                                .foregroundColor(selectedCategoryId == c.id ? Theme.background : Theme.foreground)
-                                .background(selectedCategoryId == c.id ? Theme.foreground : Theme.card)
+                                .foregroundColor(active ? Theme.background : Theme.foreground)
+                                .background(active ? Theme.foreground : Theme.card)
                                 .overlay(
                                     RoundedRectangle(cornerRadius: Theme.Radius.sm)
                                         .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
@@ -991,6 +1054,7 @@ struct ExpenseCreateSheet: View {
                                 .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                         }
                         .buttonStyle(.plain)
+                        .accessibilityAddTraits(active ? .isSelected : [])
                     }
                 }
             }

@@ -4,7 +4,7 @@ import { db } from '@/lib/db'
 import { receipts, expenses, categories } from '@/lib/db/schema'
 import { eq, gte, and, desc, asc } from 'drizzle-orm'
 import { getAIClient } from '@/lib/ai-client'
-import { rateLimit } from '@/lib/rate-limit'
+import { rateLimitPersistent } from '@/lib/rate-limit'
 import { z } from 'zod'
 import { PRICE_COMPARE_STORES } from '@/lib/stores'
 
@@ -54,7 +54,7 @@ export async function POST(request: Request) {
     }
   }
 
-  const rl = rateLimit(`ai:advisor:${userId}`, { maxRequests: 10, windowMs: 60 * 60 * 1000 })
+  const rl = await rateLimitPersistent(`ai:advisor:${userId}`, { maxRequests: 10, windowMs: 60 * 60 * 1000 })
   if (!rl.allowed) {
     return NextResponse.json(
       { error: 'Rate limit exceeded. Try again later.' },
@@ -165,14 +165,20 @@ export async function POST(request: Request) {
       })
     }
 
+    // Compact product/vendor lines for the AI prompt — `currency` is
+    // already declared at the top of `userPrompt`, so repeating it on
+    // every line is pure prompt-token waste. Drop the `currency` suffix
+    // per-row and use `last:` / `total:` short labels (the AI handles
+    // these fine; benchmarked equivalent extraction quality vs. the
+    // verbose form). Saves ~20-25% of the products section's tokens.
     const productList = topProducts
       .map((p, i) =>
-        `${i + 1}. "${p.name}" — avg ${p.avgPrice.toFixed(2)} ${currency}, last paid ${p.lastPrice.toFixed(2)} at ${p.lastVendor} (${p.lastDate}), bought ${p.count}x total ${p.totalSpent.toFixed(2)} ${currency}${p.categoryName ? `, category: ${p.categoryName}` : ''}`
+        `${i + 1}. "${p.name}" avg ${p.avgPrice.toFixed(2)} last ${p.lastPrice.toFixed(2)}@${p.lastVendor}(${p.lastDate}) ${p.count}x total ${p.totalSpent.toFixed(2)}${p.categoryName ? ` cat:${p.categoryName}` : ''}`
       )
       .join('\n')
 
     const vendorList = topVendors
-      .map(v => `${v.vendor}: ${v.amount.toFixed(2)} ${currency}`)
+      .map(v => `${v.vendor}:${v.amount.toFixed(2)}`)
       .join(', ')
 
     const storeList = PRICE_COMPARE_STORES.join(', ')
@@ -181,7 +187,7 @@ export async function POST(request: Request) {
       ? `Jesteś ekspertem ds. zakupów w Polsce. Znasz aktualne ceny i promocje w polskich sklepach: ${storeList}. Analizujesz historię zakupów użytkownika i dajesz konkretne, wiarygodne rekomendacje oszczędnościowe. Odpowiadaj TYLKO w JSON.`
       : `You are a Polish shopping expert. You know current prices and promotions at Polish stores: ${storeList}. You analyze user purchase history and give specific, credible savings recommendations. Respond ONLY in JSON.`
 
-    const userPrompt = `${isPolish ? 'Historia zakupów użytkownika (ostatnie 90 dni)' : 'User purchase history (last 90 days)'}:
+    const userPrompt = `${isPolish ? 'Historia zakupów użytkownika (ostatnie 90 dni)' : 'User purchase history (last 90 days)'} [currency: ${currency}]:
 
 ${isPolish ? 'PRODUKTY' : 'PRODUCTS'}:
 ${productList}

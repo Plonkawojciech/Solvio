@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { SESSION_COOKIE, buildSignedSession } from '@/lib/session'
-import { rateLimit } from '@/lib/rate-limit'
+import { rateLimitPersistent } from '@/lib/rate-limit'
 import { z } from 'zod'
 
 const MagicLoginSchema = z.object({
@@ -14,7 +14,7 @@ export async function POST(req: NextRequest) {
   const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
              req.headers.get('x-real-ip') ??
              'unknown'
-  const rl = rateLimit(`auth:magic:${ip}`, { maxRequests: 5, windowMs: 10 * 60 * 1000 })
+  const rl = await rateLimitPersistent(`auth:magic:${ip}`, { maxRequests: 5, windowMs: 10 * 60 * 1000 })
   if (!rl.allowed) {
     return NextResponse.json(
       { error: 'Too many requests. Try again later.' },

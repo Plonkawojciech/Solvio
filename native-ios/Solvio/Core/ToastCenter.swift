@@ -58,6 +58,15 @@ final class ToastCenter: ObservableObject {
 
     private func show(_ toast: Toast) {
         current = toast
+        // Sync haptic feedback per toast kind — body should feel what the
+        // banner is communicating. Undoable info toasts get a `.warning`
+        // pulse because they're tied to destructive operations.
+        switch toast.kind {
+        case .success: Haptics.success()
+        case .error:   Haptics.error()
+        case .warning: Haptics.warning()
+        case .info:    if toast.undo != nil { Haptics.warning() } else { Haptics.impact(.light) }
+        }
         // Undo toasts get the longer 5 s window so the user has time to act.
         let isUndoOrError = toast.kind == .error || toast.undo != nil
         let displayNs: UInt64 = isUndoOrError ? 5_000_000_000 : 3_200_000_000

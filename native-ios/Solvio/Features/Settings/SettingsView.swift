@@ -45,7 +45,8 @@ struct SettingsView: View {
                     budgetsCard
                     merchantRulesCard
                     exportDataCard
-                    signOutButton
+                    aboutCard
+                    dangerZone
                 }
                 Spacer(minLength: Theme.Spacing.xl)
             }
@@ -62,6 +63,7 @@ struct SettingsView: View {
                         try await SettingsRepo.addCategory(
                             .init(name: name, icon: icon, color: color, isDefault: false)
                         )
+                        Haptics.success()
                         toast.success(locale.t("toast.created"))
                         await vm.load(locale: locale)
                         store.didMutateCategoriesOrBudgetsOrSettings()
@@ -70,6 +72,8 @@ struct SettingsView: View {
                     }
                 }
             }
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
         }
         .sheet(item: $editingCategory) { cat in
             CategoryEditorSheet(mode: .edit(cat)) { name, icon, _ in
@@ -78,6 +82,7 @@ struct SettingsView: View {
                         try await CategoriesRepo.update(
                             .init(id: cat.id, name: name, icon: icon)
                         )
+                        Haptics.success()
                         toast.success(locale.t("toast.updated"))
                         await vm.load(locale: locale)
                         store.didMutateCategoriesOrBudgetsOrSettings()
@@ -86,6 +91,8 @@ struct SettingsView: View {
                     }
                 }
             }
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $showAddBudget) {
             BudgetEditorSheet(
@@ -98,6 +105,7 @@ struct SettingsView: View {
                         try await SettingsRepo.upsertBudget(
                             .init(categoryId: categoryId, amount: amount, period: "monthly")
                         )
+                        Haptics.success()
                         toast.success(locale.t("toast.saved"))
                         await vm.load(locale: locale)
                         // Budget changes ripple into dashboard breakdown
@@ -110,6 +118,8 @@ struct SettingsView: View {
                     }
                 }
             }
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
         }
         .sheet(item: $editingBudget) { b in
             BudgetEditorSheet(
@@ -122,6 +132,7 @@ struct SettingsView: View {
                         try await SettingsRepo.upsertBudget(
                             .init(categoryId: categoryId, amount: amount, period: "monthly")
                         )
+                        Haptics.success()
                         toast.success(locale.t("toast.updated"))
                         await vm.load(locale: locale)
                         store.didMutateBudget()
@@ -131,6 +142,8 @@ struct SettingsView: View {
                     }
                 }
             }
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
         }
         .alert(
             locale.t("settings.deleteCategoryConfirm"),
@@ -145,6 +158,7 @@ struct SettingsView: View {
                     Task {
                         do {
                             try await CategoriesRepo.delete(id: id)
+                            Haptics.success()
                             toast.success(locale.t("toast.deleted"))
                             // (1) Refresh local Settings VM so the deleted
                             //     row disappears here.
@@ -198,6 +212,7 @@ struct SettingsView: View {
             do {
                 try await MerchantRulesRepo.delete(vendor: vendor)
                 vm.merchantRules.removeAll { $0.vendor == vendor }
+                Haptics.success()
                 toast.success(locale.t("settings.ruleDeleted"))
             } catch {
                 toast.error(locale.t("settings.ruleDeleteFailed"), description: error.localizedDescription)
@@ -218,6 +233,7 @@ struct SettingsView: View {
                 let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(filename)
                 try data.write(to: tmp, options: .atomic)
                 presentShareSheet(url: tmp)
+                Haptics.success()
                 toast.success(locale.t("settings.exportSuccess"), description: filename)
             } catch {
                 toast.error(locale.t("settings.exportFailed"), description: error.localizedDescription)
@@ -245,19 +261,34 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
             NBSectionHeader(eyebrow: "// " + locale.t("settings.account").uppercased(),
                             title: locale.t("settings.signedInAs"))
-            HStack(spacing: Theme.Spacing.sm) {
-                NBIconBadge(systemImage: "person.fill")
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(session.currentUser?.email ?? "—")
-                        .font(AppFont.bodyMedium)
-                        .foregroundColor(Theme.foreground)
-                        .textSelection(.enabled)
-                    Text(locale.t("settings.cookieSessionDesc"))
-                        .font(AppFont.caption)
+            Button {
+                if let email = session.currentUser?.email, !email.isEmpty {
+                    Haptics.selection()
+                    UIPasteboard.general.string = email
+                    toast.success(locale.t("settings.emailCopied"))
+                }
+            } label: {
+                HStack(spacing: Theme.Spacing.sm) {
+                    NBIconBadge(systemImage: "person.fill")
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(session.currentUser?.email ?? "—")
+                            .font(AppFont.bodyMedium)
+                            .foregroundColor(Theme.foreground)
+                            .textSelection(.enabled)
+                        Text(locale.t("settings.cookieSessionDesc"))
+                            .font(AppFont.caption)
+                            .foregroundColor(Theme.mutedForeground)
+                            .multilineTextAlignment(.leading)
+                    }
+                    Spacer()
+                    Image(systemName: "doc.on.doc")
+                        .font(.system(size: 12, weight: .semibold))
                         .foregroundColor(Theme.mutedForeground)
                 }
-                Spacer()
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .accessibilityLabel(locale.t("settings.copyEmail"))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(Theme.Spacing.md)
@@ -273,7 +304,13 @@ struct SettingsView: View {
 
             NBSegmented(selection: Binding(
                 get: { appTheme.mode.rawValue },
-                set: { appTheme.mode = AppTheme.Mode(rawValue: $0) ?? .system }
+                set: { newValue in
+                    let next = AppTheme.Mode(rawValue: newValue) ?? .system
+                    if appTheme.mode != next {
+                        Haptics.selection()
+                    }
+                    appTheme.mode = next
+                }
             ), options: [
                 (value: "system",  label: locale.t("settings.themeSystem")),
                 (value: "light",   label: locale.t("settings.themeLight")),
@@ -302,6 +339,9 @@ struct SettingsView: View {
                     get: { locale.language.rawValue },
                     set: { newVal in
                         if let lang = AppLocale.Language(rawValue: newVal) {
+                            if locale.language != lang {
+                                Haptics.selection()
+                            }
                             locale.language = lang
                             vm.language = newVal
                             saveSettings(language: newVal, currency: vm.currency)
@@ -319,24 +359,34 @@ struct SettingsView: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 6) {
                         ForEach(["PLN", "USD", "EUR", "GBP", "CHF", "CZK"], id: \.self) { code in
+                            let isActive = vm.currency == code
                             Button {
+                                guard !isActive else { return }
+                                Haptics.selection()
                                 vm.currency = code
                                 saveSettings(language: vm.language, currency: code)
                             } label: {
-                                Text(code)
-                                    .font(AppFont.monoBold(11))
-                                    .tracking(1)
-                                    .padding(.horizontal, 14)
-                                    .padding(.vertical, 8)
-                                    .foregroundColor(vm.currency == code ? Theme.background : Theme.foreground)
-                                    .background(vm.currency == code ? Theme.foreground : Theme.card)
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                                            .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
-                                    )
-                                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+                                HStack(spacing: 4) {
+                                    if isActive {
+                                        Image(systemName: "checkmark")
+                                            .font(.system(size: 10, weight: .bold))
+                                    }
+                                    Text(code)
+                                        .font(AppFont.monoBold(11))
+                                        .tracking(1)
+                                }
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 8)
+                                .foregroundColor(isActive ? Theme.background : Theme.foreground)
+                                .background(isActive ? Theme.foreground : Theme.card)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                                        .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
+                                )
+                                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                             }
                             .buttonStyle(.plain)
+                            .accessibilityAddTraits(isActive ? .isSelected : [])
                         }
                     }
                 }
@@ -392,7 +442,10 @@ struct SettingsView: View {
                 eyebrow: "// " + locale.t("settings.categories").uppercased(),
                 title: locale.t("settings.yourCategories"),
                 trailing: AnyView(
-                    Button { showAddCategory = true } label: {
+                    Button {
+                        Haptics.selection()
+                        showAddCategory = true
+                    } label: {
                         Label(locale.t("common.add"), systemImage: "plus")
                             .font(AppFont.mono(11))
                             .tracking(1)
@@ -402,9 +455,15 @@ struct SettingsView: View {
                 )
             )
             if vm.categories.isEmpty {
-                Text(locale.t("settings.noCategories"))
-                    .font(AppFont.caption)
-                    .foregroundColor(Theme.mutedForeground)
+                NBEmptyState(
+                    systemImage: "folder",
+                    title: locale.t("settings.noCategoriesTitle"),
+                    subtitle: locale.t("settings.noCategories"),
+                    action: (label: locale.t("settings.addCategory"), run: {
+                        Haptics.selection()
+                        showAddCategory = true
+                    })
+                )
             } else {
                 VStack(spacing: Theme.Spacing.xs) {
                     ForEach(vm.categories) { cat in
@@ -421,14 +480,26 @@ struct SettingsView: View {
                                 }
                             }
                             Spacer()
-                            Button { editingCategory = cat } label: {
+                            Button {
+                                Haptics.selection()
+                                editingCategory = cat
+                            } label: {
                                 Image(systemName: "pencil")
                                     .foregroundColor(Theme.foreground)
+                                    .frame(width: 36, height: 36)
+                                    .contentShape(Rectangle())
                             }
-                            Button { pendingDeleteCategoryId = cat.id } label: {
+                            .accessibilityLabel(locale.t("common.edit"))
+                            Button {
+                                Haptics.warning()
+                                pendingDeleteCategoryId = cat.id
+                            } label: {
                                 Image(systemName: "trash")
                                     .foregroundColor(Theme.destructive)
+                                    .frame(width: 36, height: 36)
+                                    .contentShape(Rectangle())
                             }
+                            .accessibilityLabel(locale.t("common.delete"))
                         }
                         .padding(Theme.Spacing.sm)
                         .nbCard(radius: Theme.Radius.sm, shadow: Theme.Shadow.sm)
@@ -448,7 +519,10 @@ struct SettingsView: View {
                 eyebrow: "// " + locale.t("settings.budgets").uppercased(),
                 title: locale.t("settings.monthlyLimits"),
                 trailing: AnyView(
-                    Button { showAddBudget = true } label: {
+                    Button {
+                        Haptics.selection()
+                        showAddBudget = true
+                    } label: {
                         Label(locale.t("common.add"), systemImage: "plus")
                             .font(AppFont.mono(11))
                             .tracking(1)
@@ -459,13 +533,24 @@ struct SettingsView: View {
                 )
             )
             if vm.budgets.isEmpty {
-                Text(locale.t("settings.noBudgets"))
-                    .font(AppFont.caption)
-                    .foregroundColor(Theme.mutedForeground)
+                NBEmptyState(
+                    systemImage: "chart.pie",
+                    title: locale.t("settings.noBudgetsTitle"),
+                    subtitle: locale.t("settings.noBudgets"),
+                    action: vm.categoriesWithoutBudget.isEmpty
+                        ? nil
+                        : (label: locale.t("settings.addBudget"), run: {
+                            Haptics.selection()
+                            showAddBudget = true
+                        })
+                )
             } else {
                 VStack(spacing: Theme.Spacing.xs) {
                     ForEach(vm.budgets) { b in
-                        Button { editingBudget = b } label: {
+                        Button {
+                            Haptics.selection()
+                            editingBudget = b
+                        } label: {
                             HStack(spacing: Theme.Spacing.sm) {
                                 NBIconBadge(
                                     systemImage: vm.categoryFor(id: b.categoryId)?.icon ?? "folder.fill"
@@ -507,9 +592,12 @@ struct SettingsView: View {
                 .font(AppFont.caption)
                 .foregroundColor(Theme.mutedForeground)
             if vm.merchantRules.isEmpty {
-                Text(locale.t("settings.noRules"))
-                    .font(AppFont.caption)
-                    .foregroundColor(Theme.mutedForeground)
+                NBEmptyState(
+                    systemImage: "building.2",
+                    title: locale.t("settings.noRulesTitle"),
+                    subtitle: locale.t("settings.noRules"),
+                    action: nil
+                )
             } else {
                 VStack(spacing: Theme.Spacing.xs) {
                     ForEach(vm.merchantRules.prefix(10)) { rule in
@@ -548,6 +636,7 @@ struct SettingsView: View {
                             }
                             Spacer()
                             Button {
+                                Haptics.warning()
                                 pendingDeleteRuleVendor = rule.vendor
                             } label: {
                                 if deletingRuleVendor == rule.vendor {
@@ -557,6 +646,8 @@ struct SettingsView: View {
                                         .foregroundColor(Theme.destructive)
                                 }
                             }
+                            .frame(width: 36, height: 36)
+                            .contentShape(Rectangle())
                             .disabled(deletingRuleVendor == rule.vendor)
                             .accessibilityLabel("\(locale.t("settings.clearRule")): \(rule.vendor)")
                         }
@@ -582,6 +673,7 @@ struct SettingsView: View {
                 .font(AppFont.caption)
                 .foregroundColor(Theme.mutedForeground)
             Button {
+                Haptics.impact(.medium)
                 exportData()
             } label: {
                 HStack(spacing: 8) {
@@ -602,13 +694,100 @@ struct SettingsView: View {
         .nbCard(radius: Theme.Radius.md, shadow: Theme.Shadow.sm)
     }
 
-    // MARK: - Sign out
+    // MARK: - About
 
-    private var signOutButton: some View {
-        Button { showSignOutConfirm = true } label: {
-            Label(locale.t("settings.signOut"), systemImage: "rectangle.portrait.and.arrow.right")
+    private var aboutCard: some View {
+        let info = Bundle.main.infoDictionary ?? [:]
+        let version = (info["CFBundleShortVersionString"] as? String) ?? "—"
+        let build = (info["CFBundleVersion"] as? String) ?? "—"
+        let year = Calendar.current.component(.year, from: Date())
+
+        return VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+            NBSectionHeader(
+                eyebrow: locale.t("settings.aboutEyebrow"),
+                title: locale.t("settings.aboutTitle")
+            )
+
+            VStack(spacing: 0) {
+                aboutRow(
+                    icon: "app.badge",
+                    label: locale.t("settings.version"),
+                    value: "\(version) (\(build))"
+                )
+                Divider().padding(.leading, 36)
+                Link(destination: URL(string: "https://solvio-lac.vercel.app/terms")!) {
+                    aboutRow(icon: "doc.plaintext", label: locale.t("settings.terms"), trailing: "chevron.right")
+                }
+                .buttonStyle(.plain)
+                Divider().padding(.leading, 36)
+                Link(destination: URL(string: "https://solvio-lac.vercel.app/privacy")!) {
+                    aboutRow(icon: "lock.shield", label: locale.t("settings.privacy"), trailing: "chevron.right")
+                }
+                .buttonStyle(.plain)
+                Divider().padding(.leading, 36)
+                Link(destination: URL(string: "mailto:support@solvio.app")!) {
+                    aboutRow(icon: "envelope", label: locale.t("settings.support"), trailing: "chevron.right")
+                }
+                .buttonStyle(.plain)
+            }
+
+            Text("© \(String(year)) Programo s.c. — solvio")
+                .font(AppFont.mono(10))
+                .foregroundColor(Theme.mutedForeground)
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.top, Theme.Spacing.xs)
         }
-        .buttonStyle(NBDestructiveButtonStyle())
+        .padding(Theme.Spacing.md)
+        .nbCard(radius: Theme.Radius.md, shadow: Theme.Shadow.sm)
+    }
+
+    @ViewBuilder
+    private func aboutRow(icon: String, label: String, value: String? = nil, trailing: String? = nil) -> some View {
+        HStack(spacing: Theme.Spacing.sm) {
+            Image(systemName: icon)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundColor(Theme.foreground)
+                .frame(width: 24, height: 24)
+            Text(label)
+                .font(AppFont.body)
+                .foregroundColor(Theme.foreground)
+            Spacer()
+            if let value {
+                Text(value)
+                    .font(AppFont.mono(12))
+                    .foregroundColor(Theme.mutedForeground)
+            }
+            if let trailing {
+                Image(systemName: trailing)
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundColor(Theme.mutedForeground)
+            }
+        }
+        .padding(.vertical, Theme.Spacing.xs)
+        .frame(minHeight: 44)
+        .contentShape(Rectangle())
+    }
+
+    // MARK: - Danger zone (sign out)
+    //
+    // Sign-out lives in its own visually-separated section to make
+    // accidental taps less likely. Top eyebrow + extra spacer + tinted
+    // border match Apple's Settings.app pattern.
+
+    private var dangerZone: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+            NBEyebrow(text: locale.t("settings.dangerZone"))
+
+            Button {
+                Haptics.warning()
+                showSignOutConfirm = true
+            } label: {
+                Label(locale.t("settings.signOut"), systemImage: "rectangle.portrait.and.arrow.right")
+                    .frame(maxWidth: .infinity, minHeight: 48)
+            }
+            .buttonStyle(NBDestructiveButtonStyle())
+        }
+        .padding(.top, Theme.Spacing.sm)
     }
 }
 

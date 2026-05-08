@@ -1,11 +1,21 @@
 'use client'
 
 import * as React from 'react'
+import dynamic from 'next/dynamic'
 import { Button } from '@/components/ui/button'
 import { PlusCircle } from 'lucide-react'
-import { AddExpenseSheet } from './add-expense-sheet'
 import { useRouter } from 'next/navigation'
 import { useTranslation } from '@/lib/i18n'
+
+/* Round-3 (A1): AddExpenseSheet is ~846 lines (form, validation, multiple
+ * Radix dialogs, framer-motion). It only mounts when the user opens the
+ * "+ Add" sheet — lazy-loading parallels the ScanReceiptSheet pattern in
+ * scan-receipt-button.tsx and shaves the trigger's initial cost on every
+ * page that renders it (dashboard, expenses list, mobile bottom nav). */
+const AddExpenseSheet = dynamic(
+  () => import('./add-expense-sheet').then(m => ({ default: m.AddExpenseSheet })),
+  { ssr: false }
+)
 
 interface ExpenseForSuggestion {
   vendor: string | null

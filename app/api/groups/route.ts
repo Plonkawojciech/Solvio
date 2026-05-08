@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import crypto from 'crypto'
 import { auth } from '@/lib/auth-compat'
 import { db } from '@/lib/db'
 import { groups, groupMembers, expenseSplits } from '@/lib/db/schema'
@@ -71,8 +72,9 @@ export async function GET() {
 
     const groupIds = userGroups.map((g) => g.id)
 
-    // Batch-fetch all members and splits in 2 queries instead of 2N
-    const [allMembers, allSplits] = await Promise.all([
+    // Round-4 perf: 2 parallel selects → 1 pipelined `db.batch` HTTP RTT
+    // (was already 2 queries instead of 2N — now also 1 RTT instead of 2).
+    const [allMembers, allSplits] = await db.batch([
       db.select().from(groupMembers).where(inArray(groupMembers.groupId, groupIds)),
       db.select().from(expenseSplits).where(inArray(expenseSplits.groupId, groupIds)),
     ])
@@ -120,7 +122,67 @@ export async function POST(req: NextRequest) {
   const data = parsed.data
 
   try {
-    const [group] = await db.insert(groups).values({
+    // SECURITY (round 3 / A2): defensively ensure the group's creator is
+    // ALWAYS in `groupMembers`, even when the client (e.g. a non-iOS
+    // client or a future API consumer) doesn't include themselves in the
+    // members payload.
+    //
+    // Previously this handler relied entirely on the iOS client sending
+    // `members: [{userId: caller, ...}]` — the moment a different client
+    // forgets, you get a group whose creator can't see their own group
+    // (since `GET /api/groups` joins via `groupMembers.userId = caller`),
+    // and the audit-log breadcrumbs for the implicit "creator joined"
+    // event go missing. Defensive merge fixes both at once.
+    //
+    // Atomicity: the receipts route already uses `db.batch([...])` because
+    // Neon-HTTP doesn't support `db.transaction(...)`. We do the same here
+    // — group + member-rows commit together or roll back together.
+    const clientMembers = data.members ?? []
+    const callerHasOwnRow = clientMembers.some((m) => m.userId === userId)
+
+    // Generate the group id client-side so the second insert can reference
+    // it inside the same `db.batch([...])` call (the batch runs server-side
+    // as one transaction, so neither statement sees a partial result if
+    // the other fails).
+    const newGroupId = crypto.randomUUID()
+
+    const memberRows: Array<{
+      groupId: string
+      displayName: string
+      email: string | null
+      userId: string | null
+      color: string
+    }> = []
+
+    // Always insert the creator first (defense-in-depth: even if
+    // `clientMembers` is empty or omits the caller, the creator row is
+    // guaranteed). When the caller IS in the payload we honour their
+    // displayName/email/color, otherwise we use safe defaults.
+    if (!callerHasOwnRow) {
+      memberRows.push({
+        groupId: newGroupId,
+        displayName: 'You',
+        email: null,
+        userId,
+        color: '#6366f1',
+      })
+    }
+
+    for (const m of clientMembers) {
+      memberRows.push({
+        groupId: newGroupId,
+        displayName: m.displayName || m.name || '',
+        email: m.email ?? null,
+        userId: m.userId ?? null,
+        color: m.color || '#6366f1',
+      })
+    }
+
+    // Build the batch. We always include the group insert; the member
+    // insert is only added when there's at least one row (no empty
+    // INSERTs).
+    const groupInsert = db.insert(groups).values({
+      id: newGroupId,
       name: data.name,
       description: data.description ?? null,
       currency: data.currency,
@@ -131,19 +193,25 @@ export async function POST(req: NextRequest) {
       createdBy: userId,
     }).returning()
 
-    // Add creator as first member
-    if (data.members?.length) {
-      await db.insert(groupMembers).values(
-        data.members.map((m) => ({
-          groupId: group.id,
-          displayName: m.displayName || m.name || '',
-          email: m.email ?? null,
-          userId: m.userId ?? null,
-          color: m.color || '#6366f1',
-        }))
-      )
+    if (memberRows.length > 0) {
+      // Drizzle/neon-http `db.batch([...])` requires a tuple of statements
+      // whose return types it can infer. We discard the inserted-member
+      // rows and re-fetch via the SELECT below for the response shape.
+      await db.batch([
+        groupInsert,
+        db.insert(groupMembers).values(memberRows),
+      ])
+    } else {
+      await db.batch([groupInsert])
     }
 
+    // Re-read what we just wrote, scoped by the freshly-minted id.
+    const [group] = await db.select().from(groups).where(eq(groups.id, newGroupId))
+    if (!group) {
+      // Should be unreachable — batch would have thrown — but treat as a
+      // 500 rather than crash on the destructure below.
+      return NextResponse.json({ error: 'Failed to create group' }, { status: 500 })
+    }
     const allMembers = await db.select().from(groupMembers).where(eq(groupMembers.groupId, group.id))
     return NextResponse.json({ ...group, members: allMembers.map(normalizeMember) })
   } catch (err) {

@@ -15,6 +15,11 @@ struct ReceiptDetailView: View {
     @StateObject private var vm = ReceiptDetailViewModel()
     @State private var confirmingDelete = false
     @State private var showShareSheet = false
+    /// QR code is cached so we don't re-render CIImage on every body
+    /// re-evaluation (was previously regenerated each redraw, audible
+    /// scroll lag on older devices).
+    @State private var cachedQR: UIImage?
+    @State private var cachedQRForUrl: String?
 
     private func categoryName(for id: String) -> String? {
         store.categories.first(where: { $0.id == id })?.name
@@ -60,19 +65,31 @@ struct ReceiptDetailView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 if vm.receipt != nil {
                     Button {
+                        Haptics.impact(.light)
                         showShareSheet = true
                     } label: {
                         Image(systemName: "square.and.arrow.up")
                             .font(.system(size: 16, weight: .semibold))
                             .foregroundColor(Theme.foreground)
                     }
+                    .accessibilityLabel(locale.t("receiptDetail.shareReceipt"))
                 }
             }
         }
         .task { await vm.load(id: receiptId) }
-        .refreshable { await vm.load(id: receiptId) }
+        .refreshable {
+            // Match list / Dashboard pattern: light tick on pull, success on
+            // fresh data — gated by `errorMessage == nil` so a failing reload
+            // doesn't ping a celebratory haptic.
+            Haptics.impact(.light)
+            await vm.load(id: receiptId)
+            if vm.errorMessage == nil {
+                Haptics.success()
+            }
+        }
         .confirmationDialog(locale.t("receiptDetail.deleteTitle"), isPresented: $confirmingDelete, titleVisibility: .visible) {
             Button(locale.t("common.delete"), role: .destructive) {
+                Haptics.success()
                 Task { await vm.delete(store: store, locale: locale, toast: toast) { router.popToRoot() } }
             }
             Button(locale.t("common.cancel"), role: .cancel) {}
@@ -81,15 +98,27 @@ struct ReceiptDetailView: View {
         }
         .sheet(isPresented: $showShareSheet) {
             ShareSheet(items: [URL(string: publicUrl) ?? publicUrl])
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
         }
     }
 
     // MARK: - Hero
 
     private func hero(_ r: Receipt) -> some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
-            NBEyebrow(text: r.vendor ?? locale.t("receiptDetail.receiptFallback"))
-            Text(Fmt.amount(r.total, currency: r.currency ?? "PLN"))
+        // Compose the hero a11y label so VoiceOver reads "vendor, amount, date,
+        // status, item count" as one entry instead of 4 separate stops.
+        let vendorLabel = r.vendor ?? locale.t("receiptDetail.receiptFallback")
+        let amountLabel = Fmt.amount(r.total, currency: r.currency ?? "PLN")
+        var components: [String] = [vendorLabel, amountLabel, Fmt.date(r.date)]
+        if let status = r.status, !status.isEmpty { components.append(status) }
+        if r.displayItemCount > 0 {
+            components.append(String(format: locale.tPlural("receiptDetail.itemsCount", count: r.displayItemCount), r.displayItemCount))
+        }
+        let composed = components.joined(separator: ", ")
+        return VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+            NBEyebrow(text: vendorLabel)
+            Text(amountLabel)
                 .font(AppFont.black(34))
                 .foregroundColor(Theme.foreground)
             HStack(spacing: 8) {
@@ -100,7 +129,7 @@ struct ReceiptDetailView: View {
                     NBTag(text: status)
                 }
                 if r.displayItemCount > 0 {
-                    Text("· \(String(format: locale.t("receiptDetail.itemsCount"), r.displayItemCount))")
+                    Text("· \(String(format: locale.tPlural("receiptDetail.itemsCount", count: r.displayItemCount), r.displayItemCount))")
                         .font(AppFont.caption)
                         .foregroundColor(Theme.mutedForeground)
                 }
@@ -109,6 +138,9 @@ struct ReceiptDetailView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(Theme.Spacing.md)
         .nbCard(radius: Theme.Radius.lg, shadow: Theme.Shadow.lg)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(composed)
+        .accessibilityAddTraits(.isHeader)
     }
 
     // MARK: - E-receipt card (copy / open / share)
@@ -119,6 +151,8 @@ struct ReceiptDetailView: View {
                 eyebrow: locale.t("receiptDetail.eReceiptEyebrow"),
                 title: locale.t("receiptDetail.eReceiptTitle")
             )
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(.isHeader)
             Text(locale.t("receiptDetail.eReceiptHint"))
                 .font(AppFont.caption)
                 .foregroundColor(Theme.mutedForeground)
@@ -147,6 +181,7 @@ struct ReceiptDetailView: View {
             HStack(spacing: Theme.Spacing.sm) {
                 // Copy link
                 Button {
+                    Haptics.selection()
                     UIPasteboard.general.string = publicUrl
                     toast.success(locale.t("receiptDetail.linkCopied"))
                 } label: {
@@ -163,6 +198,7 @@ struct ReceiptDetailView: View {
 
                 // Open in browser
                 Button {
+                    Haptics.selection()
                     if let url = URL(string: publicUrl) {
                         UIApplication.shared.open(url)
                     }
@@ -184,6 +220,7 @@ struct ReceiptDetailView: View {
 
                 // Share
                 Button {
+                    Haptics.impact(.light)
                     showShareSheet = true
                 } label: {
                     Label(locale.t("common.share"), systemImage: "square.and.arrow.up")
@@ -234,6 +271,9 @@ struct ReceiptDetailView: View {
                 RoundedRectangle(cornerRadius: Theme.Radius.md)
                     .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
             )
+            // Receipt photo is decorative — line items below are the
+            // accessible representation of the receipt's content.
+            .accessibilityHidden(true)
         }
     }
 
@@ -242,6 +282,8 @@ struct ReceiptDetailView: View {
     private func itemsList(_ r: Receipt) -> some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
             NBSectionHeader(eyebrow: locale.t("receiptDetail.itemsEyebrow"), title: locale.t("receiptDetail.lineItems"))
+                .accessibilityElement(children: .combine)
+                .accessibilityAddTraits(.isHeader)
             let items = r.items ?? []
             if items.isEmpty {
                 Text(locale.t("receiptDetail.noLineItems"))
@@ -290,14 +332,21 @@ struct ReceiptDetailView: View {
         .padding(Theme.Spacing.sm)
         .frame(maxWidth: .infinity, alignment: .leading)
         .nbCard(radius: Theme.Radius.sm, shadow: Theme.Shadow.sm)
+        .accessibilityElement(children: .combine)
     }
 
     // MARK: - QR
 
     private var qrCard: some View {
-        let qrImage = BarcodeImage.make(from: publicUrl, type: "qr")
+        // Use cached QR if URL hasn't changed; otherwise regenerate once.
+        let qrImage: UIImage? = {
+            if cachedQRForUrl == publicUrl, let img = cachedQR { return img }
+            return BarcodeImage.make(from: publicUrl, type: "qr")
+        }()
         return VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
             NBSectionHeader(eyebrow: locale.t("receiptDetail.shareEyebrow"), title: locale.t("receiptDetail.publicLink"))
+                .accessibilityElement(children: .combine)
+                .accessibilityAddTraits(.isHeader)
             HStack(alignment: .top, spacing: Theme.Spacing.md) {
                 if let qr = qrImage {
                     Image(uiImage: qr)
@@ -309,6 +358,9 @@ struct ReceiptDetailView: View {
                             RoundedRectangle(cornerRadius: Theme.Radius.sm)
                                 .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
                         )
+                        // QR is decorative — the URL text just below is the
+                        // accessible representation.
+                        .accessibilityHidden(true)
                 }
                 VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
                     Text(locale.t("receiptDetail.scanHint"))
@@ -326,6 +378,12 @@ struct ReceiptDetailView: View {
         .padding(Theme.Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
         .nbCard(radius: Theme.Radius.md, shadow: Theme.Shadow.sm)
+        .onAppear {
+            if cachedQRForUrl != publicUrl {
+                cachedQR = qrImage
+                cachedQRForUrl = publicUrl
+            }
+        }
     }
 
     // MARK: - Converter
@@ -352,6 +410,7 @@ struct ReceiptDetailView: View {
 
     private var deleteButton: some View {
         Button {
+            Haptics.warning()
             confirmingDelete = true
         } label: {
             Text(locale.t("receiptDetail.deleteButton"))

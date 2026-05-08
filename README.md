@@ -1,109 +1,180 @@
-<a href="https://demo-nextjs-with-supabase.vercel.app/">
-  <img alt="Next.js and Supabase Starter Kit - the fastest way to build apps with Next.js and Supabase" src="https://demo-nextjs-with-supabase.vercel.app/opengraph-image.png">
-  <h1 align="center">Next.js and Supabase Starter Kit</h1>
-</a>
+# Solvio
 
-<p align="center">
- The fastest way to build apps with Next.js and Supabase
-</p>
+AI-powered expense tracking SaaS — receipt OCR, group splitting, price comparison, financial reports. Bilingual PL/EN. iOS-first product with Next.js backend + landing.
 
-<p align="center">
-  <a href="#features"><strong>Features</strong></a> ·
-  <a href="#demo"><strong>Demo</strong></a> ·
-  <a href="#deploy-to-vercel"><strong>Deploy to Vercel</strong></a> ·
-  <a href="#clone-and-run-locally"><strong>Clone and run locally</strong></a> ·
-  <a href="#feedback-and-issues"><strong>Feedback and issues</strong></a>
-  <a href="#more-supabase-examples"><strong>More Examples</strong></a>
-</p>
-<br/>
+**Production:** [https://solvio-lac.vercel.app](https://solvio-lac.vercel.app)
+
+> 100% AI codebase — built and maintained by Claude (opus / sonnet) via Claude Code. Update [`progress.md`](./progress.md) after every change.
+
+---
+
+## Surfaces
+
+- **iOS app** (`native-ios/Solvio/`) — SwiftUI, primary product surface. Distributed via TestFlight / App Store.
+- **Next.js app** (`app/`) — backend API + marketing landing page. Web is **not** the product UX surface.
+- **Backend services** — Neon Postgres + Drizzle, Vercel Blob (reports/receipts), Azure OpenAI (categorization/analysis), Azure Document Intelligence (OCR), GoCardless (PSD2 bank import).
+
+For full architecture see [`docs/architecture.md`](./docs/architecture.md).
+
+---
 
 ## Features
 
-- Works across the entire [Next.js](https://nextjs.org) stack
-  - App Router
-  - Pages Router
-  - Middleware
-  - Client
-  - Server
-  - It just works!
-- supabase-ssr. A package to configure Supabase Auth to use cookies
-- Password-based authentication block installed via the [Supabase UI Library](https://supabase.com/ui/docs/nextjs/password-based-auth)
-- Styling with [Tailwind CSS](https://tailwindcss.com)
-- Components with [shadcn/ui](https://ui.shadcn.com/)
-- Optional deployment with [Supabase Vercel Integration and Vercel deploy](#deploy-your-own)
-  - Environment variables automatically assigned to Vercel project
+- **Receipt scanning (OCR)** — Azure Document Intelligence extracts vendor, total, line items. iOS supports multi-image background queue.
+- **Manual + virtual receipts** — quick-entry forms for cash purchases without paper paragon.
+- **Categories & budgets** — per-user categories with hash-based color palette, monthly category budgets.
+- **Expense list & analysis** — filter, search, AI-powered spending analysis (Recharts).
+- **Shopping audit** — periodic AI audit of where the user could have saved (web search + AI).
+- **Price comparison** — AI suggests where the same product is cheaper.
+- **Reports** — generate CSV / PDF / DOCX over arbitrary date ranges, stored in Vercel Blob.
+- **Groups & splits** — multi-member expense splitting with payment requests and settlement tracking.
+- **Goals** — savings goals with deposit tracking and deadline-aware monthly-needed projections.
+- **Bilingual** — full PL/EN coverage, every user-facing string goes through `useTranslation()` (`lib/i18n.ts`).
 
-## Demo
+For competitor positioning see [`docs/competitor-matrix.md`](./docs/competitor-matrix.md).
+For 2026 best-in-class research see [`docs/research-round1.md`](./docs/research-round1.md).
 
-You can view a fully working demo at [demo-nextjs-with-supabase.vercel.app](https://demo-nextjs-with-supabase.vercel.app/).
+---
 
-## Deploy to Vercel
+## Tech stack
 
-Vercel deployment will guide you through creating a Supabase account and project.
+| Layer | Technology |
+|---|---|
+| iOS app | SwiftUI + Combine, Swift 5.10, iOS 17+ target |
+| Web framework | Next.js 15.5.8, React 19, TypeScript (strict) |
+| Styling | Tailwind CSS v4, framer-motion v12, shadcn/ui (Radix primitives) |
+| Database | Neon (serverless PostgreSQL, eu-central-1) |
+| ORM | Drizzle ORM + drizzle-kit |
+| Auth | Custom cookie-based session (`solvio_session`, sha256 email→userId) |
+| File storage | Vercel Blob (`@vercel/blob`) |
+| AI | Azure OpenAI (primary) with OpenAI fallback, unified via `lib/ai-client.ts` |
+| OCR | Azure Document Intelligence |
+| Bank import | GoCardless Bank Account Data (Nordigen, PSD2) |
+| Reports | pdf-lib, pdfkit, docx |
 
-After installation of the Supabase integration, all relevant environment variables will be assigned to the project so the deployment is fully functioning.
+---
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fvercel%2Fnext.js%2Ftree%2Fcanary%2Fexamples%2Fwith-supabase&project-name=nextjs-with-supabase&repository-name=nextjs-with-supabase&demo-title=nextjs-with-supabase&demo-description=This+starter+configures+Supabase+Auth+to+use+cookies%2C+making+the+user%27s+session+available+throughout+the+entire+Next.js+app+-+Client+Components%2C+Server+Components%2C+Route+Handlers%2C+Server+Actions+and+Middleware.&demo-url=https%3A%2F%2Fdemo-nextjs-with-supabase.vercel.app%2F&external-id=https%3A%2F%2Fgithub.com%2Fvercel%2Fnext.js%2Ftree%2Fcanary%2Fexamples%2Fwith-supabase&demo-image=https%3A%2F%2Fdemo-nextjs-with-supabase.vercel.app%2Fopengraph-image.png)
+## Quick start
 
-The above will also clone the Starter kit to your GitHub, you can clone that locally and develop locally.
+```bash
+npm install
 
-If you wish to just develop locally and not deploy to Vercel, [follow the steps below](#clone-and-run-locally).
+cp .env.example .env.local       # fill in values — see Environment variables below
+npm run db:push                  # push Drizzle schema to Neon
 
-## Clone and run locally
+npm run dev                      # http://localhost:3000
+npm run build                    # production build
+npm run db:studio                # open Drizzle Studio
+```
 
-1. You'll first need a Supabase project which can be made [via the Supabase dashboard](https://database.new)
+For the iOS app:
 
-2. Create a Next.js app using the Supabase Starter template npx command
+```bash
+cd native-ios/Solvio
+xcodebuild -project Solvio.xcodeproj -scheme Solvio -destination generic/platform=iOS
+# Or open Solvio.xcodeproj in Xcode 26+ and Cmd+R
+```
 
-   ```bash
-   npx create-next-app --example with-supabase with-supabase-app
-   ```
+---
 
-   ```bash
-   yarn create next-app --example with-supabase with-supabase-app
-   ```
+## Environment variables
 
-   ```bash
-   pnpm create next-app --example with-supabase with-supabase-app
-   ```
+Required in `.env.local`:
 
-3. Use `cd` to change into the app's directory
+| Variable | Purpose |
+|---|---|
+| `DATABASE_URL` | Neon PostgreSQL connection string |
+| `SESSION_SECRET` | 32+ char random string for HMAC-signing session cookies (required in prod) |
+| `AZURE_OPENAI_ENDPOINT` | Azure OpenAI resource endpoint (`https://<resource>.openai.azure.com/`) |
+| `AZURE_OPENAI_API_KEY` | Azure OpenAI resource key |
+| `AZURE_OPENAI_DEPLOYMENT` | Deployment name (e.g. `gpt-4o-mini`) |
+| `AZURE_OPENAI_API_VERSION` | Optional, defaults to `2024-10-21` |
+| `OPENAI_API_KEY` | Fallback — only used if Azure OpenAI vars are not set |
+| `AZURE_OCR_ENDPOINT` | Azure Document Intelligence endpoint |
+| `AZURE_OCR_KEY` | Azure Document Intelligence key |
+| `BLOB_READ_WRITE_TOKEN` | Vercel Blob token (reports + receipts storage) |
+| `GOCARDLESS_SECRET_ID` | GoCardless Bank Account Data secret ID |
+| `GOCARDLESS_SECRET_KEY` | GoCardless Bank Account Data secret key |
 
-   ```bash
-   cd with-supabase-app
-   ```
+Optional:
 
-4. Rename `.env.example` to `.env.local` and update the following:
+| Variable | Purpose |
+|---|---|
+| `NEXT_PUBLIC_APP_URL` | App base URL (falls back to `VERCEL_URL`) |
+| `HUB_INTEGRATION_SECRET` | Shared secret for Programo Hub server-to-server API calls |
+| `PKO_ENCRYPTION_KEY` | Legacy — used for direct PSD2, kept for backward compat |
 
-  ```env
-  NEXT_PUBLIC_SUPABASE_URL=[INSERT SUPABASE PROJECT URL]
-  NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=[INSERT SUPABASE PROJECT API PUBLISHABLE OR ANON KEY]
-  ```
-  > [!NOTE]
-  > This example uses `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, which refers to Supabase's new **publishable** key format.
-  > Both legacy **anon** keys and new **publishable** keys can be used with this variable name during the transition period. Supabase's dashboard may show `NEXT_PUBLIC_SUPABASE_ANON_KEY`; its value can be used in this example.
-  > See the [full announcement](https://github.com/orgs/supabase/discussions/29260) for more information.
+---
 
-  Both `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` can be found in [your Supabase project's API settings](https://supabase.com/dashboard/project/_?showConnect=true)
+## Project structure
 
-5. You can now run the Next.js local development server:
+```
+app/                              # Next.js App Router
+  (auth)/                         # Login + auth error pages
+  (marketing)/                    # Landing page route group
+  (protected)/                    # Authenticated app — server-side session check
+    dashboard/                    # Financial dashboard
+    expenses/                     # Expense list + CRUD
+    analysis/                     # AI spending analysis
+    audit/                        # Shopping audit
+    reports/                      # Report generation
+    settings/                     # User settings, categories, budgets
+    groups/[id]/                  # Group expense splitting
+    prices/                       # Price comparison
+  api/                            # API routes (see CLAUDE.md for full list)
+components/
+  ui/                             # shadcn/ui primitives
+  protected/                      # Authenticated app components (sidebar, dashboard, charts...)
+  landing_page/                   # Marketing landing
+lib/
+  db/                             # Drizzle schema + lazy Neon singleton
+  i18n.ts                         # PL/EN translations (~1050 lines)
+  session.ts / auth-compat.ts     # Cookie session helpers
+  ai-client.ts                    # Azure OpenAI / OpenAI unified client
+native-ios/Solvio/                # iOS app (SwiftUI) — primary product
+  Features/                       # One folder per screen domain
+  Core/                           # Shared services (ApiClient, ToastCenter, L10n, ...)
+docs/                             # Architecture, competitor matrix, research notes
+```
 
-   ```bash
-   npm run dev
-   ```
+For the full database schema (11 tables) and complete API route list, see [`CLAUDE.md`](./CLAUDE.md).
 
-   The starter kit should now be running on [localhost:3000](http://localhost:3000/).
+---
 
-6. This template comes with the default shadcn/ui style initialized. If you instead want other ui.shadcn styles, delete `components.json` and [re-install shadcn/ui](https://ui.shadcn.com/docs/installation/next)
+## Deployment
 
-> Check out [the docs for Local Development](https://supabase.com/docs/guides/getting-started/local-development) to also run Supabase locally.
+- **Web**: Vercel project `solvio` (team `plonkawojciechs-projects`).
+- **DB**: Neon project `solvio` (`still-surf-97743103`), region `aws-eu-central-1`.
+- **Blob**: store `solvio-reports` (`store_AvSDzhNckgVnFOs2`).
+- **iOS**: TestFlight via App Store Connect (build via WiFi to Wojtek's iPhone — see `progress.md` for ECID).
+- **Function timeout**: 60s (Vercel Hobby) or 300s (Vercel Pro).
 
-## Feedback and issues
+---
 
-Please file feedback and issues over on the [Supabase GitHub org](https://github.com/supabase/supabase/issues/new/choose).
+## Documentation
 
-## More Supabase examples
+| File | Purpose |
+|---|---|
+| [`CLAUDE.md`](./CLAUDE.md) | Authoritative codebase guide for AI agents |
+| [`progress.md`](./progress.md) | Semantic changelog — every change documented |
+| [`docs/architecture.md`](./docs/architecture.md) | iOS ↔ Next.js API architecture |
+| [`docs/competitor-matrix.md`](./docs/competitor-matrix.md) | Solvio vs Copilot/Monarch/YNAB/Splitwise/etc. |
+| [`docs/research-round1.md`](./docs/research-round1.md) | 2026 best-in-class research + prioritized backlog |
+| [`docs/research-round2.md`](./docs/research-round2.md) | PL fintech taxonomy, OCR benchmark, Solvio Agent design |
+| [`docs/research-round3.md`](./docs/research-round3.md) | Subscription detection, landing SEO/a11y, receipt-line splitting |
+| [`docs/research-round4.md`](./docs/research-round4.md) | Apple Watch + Vision Pro, push notifications, GDPR/RODO export+deletion+Privacy Manifest |
+| [`docs/watch-vision-roadmap.md`](./docs/watch-vision-roadmap.md) | 5-day Watch app v1 plan + Live Activity pattern + Vision Pro defer reasoning |
+| [`docs/push-strategy.md`](./docs/push-strategy.md) | iOS push notifications: provisional auth, interruption levels, APNs payload |
+| [`docs/gdpr-export-deletion.md`](./docs/gdpr-export-deletion.md) | RODO/GDPR export + account deletion + `PrivacyInfo.xcprivacy` template |
+| [`AUDIT_REPORT.md`](./AUDIT_REPORT.md), [`audit-report.md`](./audit-report.md) | Past code audits |
+| [`security-report.md`](./security-report.md) | Security audit |
+| [`perf-report.md`](./perf-report.md) | Performance audit |
+| [`ux-report.md`](./ux-report.md) | UX audit |
+| [`multiuser-report.md`](./multiuser-report.md) | Multi-user isolation audit |
+| [`research-phase1.md`](./research-phase1.md) | Earlier security/dependency research |
 
-- [Next.js Subscription Payments Starter](https://github.com/vercel/nextjs-subscription-payments)
-- [Cookie-based Auth and the Next.js 13 App Router (free course)](https://youtube.com/playlist?list=PL5S4mPUpp4OtMhpnp93EFSo42iQ40XjbF)
-- [Supabase Auth and the Next.js App Router](https://github.com/supabase/supabase/tree/master/examples/auth/nextjs)
+---
+
+## Ownership
+
+Programo s.c. — equal partnership between **Wojciech Płonka** (`Plonkawojciech`) and **Bartosz Kolaj** (`bkolaj`). Both have full admin rights to code, infra, and product decisions.

@@ -3,14 +3,28 @@ import { NextResponse } from 'next/server'
 import { db, expenses, monthlyBudgets, savingsGoals } from '@/lib/db'
 import { eq, and, gte, lte, sql } from 'drizzle-orm'
 import { getAIClient } from '@/lib/ai-client'
-import { rateLimit } from '@/lib/rate-limit'
+import { rateLimitPersistent } from '@/lib/rate-limit'
+import { z } from 'zod'
+
+// SECURITY (round 2 / A2): bound the body. Caps `item` length to keep AI
+// prompt size predictable; price is constrained to a positive number.
+const AffordRequestSchema = z.object({
+  item: z.string().min(1).max(200),
+  price: z.union([
+    z.number().positive().max(9_999_999_999.99),
+    z.string().regex(/^\d+([.,]\d+)?$/).transform((s) => parseFloat(s.replace(',', '.'))),
+  ]),
+  currency: z.string().length(3).optional().default('PLN'),
+  lang: z.enum(['pl', 'en']).optional().default('pl'),
+  month: z.string().regex(/^\d{4}-\d{2}$/).optional(),
+})
 
 export async function POST(request: Request) {
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   // SECURITY FIX: Rate limiting for OpenAI-powered endpoint
-  const rl = rateLimit(`ai:afford:${userId}`, { maxRequests: 20, windowMs: 60 * 60 * 1000 })
+  const rl = await rateLimitPersistent(`ai:afford:${userId}`, { maxRequests: 20, windowMs: 60 * 60 * 1000 })
   if (!rl.allowed) {
     return NextResponse.json(
       { error: 'Rate limit exceeded. Try again later.' },
@@ -23,19 +37,17 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'AI service not configured' }, { status: 503 })
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let body: any
-  try {
-    body = await request.json()
-  } catch {
-    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
-  }
+  const rawBody = await request.json().catch(() => null)
+  if (!rawBody) return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
 
-  const { item, price, currency = 'PLN', lang = 'pl', month } = body
-
-  if (!item || !price) {
-    return NextResponse.json({ error: 'Item and price are required' }, { status: 400 })
+  const parsed = AffordRequestSchema.safeParse(rawBody)
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: 'Invalid input', details: parsed.error.flatten().fieldErrors },
+      { status: 400 },
+    )
   }
+  const { item, price, currency, lang, month } = parsed.data
 
   const currentMonth = month || new Date().toISOString().slice(0, 7)
   const isPolish = lang === 'pl'

@@ -165,6 +165,7 @@ struct IncomesView: View {
         VStack(spacing: Theme.Spacing.xs) {
             ForEach(incomes) { inc in
                 Button {
+                    Haptics.impact(.light)
                     editing = inc
                 } label: {
                     HStack(spacing: Theme.Spacing.sm) {
@@ -209,6 +210,7 @@ struct IncomesView: View {
                 .buttonStyle(.plain)
                 .contextMenu {
                     Button(role: .destructive) {
+                        Haptics.warning()
                         pendingDelete = inc
                     } label: {
                         Label(locale.t("common.delete"), systemImage: "trash")
@@ -262,6 +264,7 @@ struct IncomesView: View {
                 period: body.period,
                 emoji: body.emoji
             ))
+            Haptics.success()
             toast.success(locale.t("toast.created"))
             await load()
         } catch {
@@ -279,6 +282,7 @@ struct IncomesView: View {
                 emoji: body.emoji,
                 isActive: nil
             ))
+            Haptics.success()
             toast.success(locale.t("toast.updated"))
             await load()
         } catch {
@@ -386,6 +390,8 @@ struct IncomeEditorSheet: View {
             }
             .onAppear(perform: prefill)
         }
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
     }
 
     private var isEditMode: Bool {

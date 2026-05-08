@@ -74,6 +74,7 @@ struct QuickSplitStandaloneSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(isSubmitting ? locale.t("common.loading") : locale.t("common.save")) {
+                        Haptics.success()
                         Task { await submit() }
                     }
                     .disabled(!isValid || isSubmitting)
@@ -131,6 +132,7 @@ struct QuickSplitStandaloneSheet: View {
                     .foregroundColor(Theme.foreground)
                 Spacer()
                 Button {
+                    Haptics.selection()
                     participants.append(Participant(name: ""))
                 } label: {
                     Label(locale.t("quickSplit.addParticipant"), systemImage: "plus")
@@ -166,6 +168,7 @@ struct QuickSplitStandaloneSheet: View {
                 .disabled(participants[idx].isMe)
             if !participants[idx].isMe {
                 Button {
+                    Haptics.selection()
                     remove(at: idx)
                 } label: {
                     Image(systemName: "minus.circle")
@@ -186,7 +189,10 @@ struct QuickSplitStandaloneSheet: View {
                     ForEach(validParticipants.indices, id: \.self) { i in
                         let p = validParticipants[i]
                         let originalIdx = participants.firstIndex(where: { $0.id == p.id }) ?? 0
-                        Button { paidByIndex = originalIdx } label: {
+                        Button {
+                            Haptics.selection()
+                            paidByIndex = originalIdx
+                        } label: {
                             HStack(spacing: 6) {
                                 Circle()
                                     .fill(Color(hex: Self.colors[originalIdx % Self.colors.count]) ?? Theme.muted)

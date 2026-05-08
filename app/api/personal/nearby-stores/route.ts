@@ -1,6 +1,6 @@
 import { auth } from '@/lib/auth-compat'
 import { NextResponse } from 'next/server'
-import { rateLimit } from '@/lib/rate-limit'
+import { rateLimitPersistent } from '@/lib/rate-limit'
 import { STORE_PATTERNS, ALL_POLISH_STORES } from '@/lib/stores'
 import { z } from 'zod'
 
@@ -40,7 +40,7 @@ export async function POST(request: Request) {
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const rl = rateLimit(`nearby:${userId}`, { maxRequests: 30, windowMs: 60 * 60 * 1000 })
+  const rl = await rateLimitPersistent(`nearby:${userId}`, { maxRequests: 30, windowMs: 60 * 60 * 1000 })
   if (!rl.allowed) {
     return NextResponse.json(
       { error: 'Rate limit exceeded. Try again later.' },

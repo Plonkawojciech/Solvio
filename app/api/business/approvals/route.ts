@@ -3,6 +3,15 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { expenseApprovals, expenses, companyMembers, categories, receipts, userSettings } from '@/lib/db/schema'
 import { eq, and, desc, inArray } from 'drizzle-orm'
+import { z } from 'zod'
+
+// SECURITY (round 2 / A2): bound the create-approval body. Rejects unknown
+// fields outright (.strict) so the client can't sneak a `submittedBy` into
+// the payload to spoof attribution.
+const CreateApprovalSchema = z.object({
+  expenseId: z.string().uuid(),
+  notes: z.string().max(2000).optional().nullable(),
+}).strict()
 
 export async function GET(req: NextRequest) {
   const { userId } = await auth()
@@ -167,17 +176,17 @@ export async function POST(req: NextRequest) {
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   try {
-    const body = await req.json()
+    const rawBody = await req.json().catch(() => null)
+    if (!rawBody) return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
 
-    if (!body.expenseId) {
-      return NextResponse.json({ error: 'expenseId required' }, { status: 400 })
+    const parsed = CreateApprovalSchema.safeParse(rawBody)
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: 'Invalid input', details: parsed.error.flatten().fieldErrors },
+        { status: 400 },
+      )
     }
-
-    // Validate UUID format
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-    if (!uuidRegex.test(body.expenseId)) {
-      return NextResponse.json({ error: 'Invalid expenseId format' }, { status: 400 })
-    }
+    const body = parsed.data
 
     // Get user's company
     const memberResult = await db.select({ companyId: companyMembers.companyId })

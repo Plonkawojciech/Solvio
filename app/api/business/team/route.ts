@@ -3,6 +3,21 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { companies, companyMembers, departments, expenses, userSettings } from '@/lib/db/schema'
 import { eq, and, desc, sql, inArray } from 'drizzle-orm'
+import { z } from 'zod'
+import { recordAudit } from '@/lib/audit-log'
+
+// SECURITY (round 2 / A2): validate the invite payload. Email shape, role
+// enum, and bounded display name protect downstream columns + audit trail.
+const InviteMemberSchema = z.object({
+  email: z.string().email('Valid email is required'),
+  role: z.enum(['admin', 'manager', 'employee']).optional().default('employee'),
+  displayName: z.string().min(1).max(255).optional(),
+  departmentId: z.string().uuid().optional().nullable(),
+  spendingLimit: z.union([
+    z.number().nonnegative().max(9_999_999_999.99),
+    z.string().regex(/^\d+(\.\d+)?$/),
+  ]).optional().nullable(),
+})
 
 export async function GET() {
   const { userId } = await auth()
@@ -99,11 +114,17 @@ export async function POST(req: NextRequest) {
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   try {
-    const body = await req.json()
+    const rawBody = await req.json().catch(() => null)
+    if (!rawBody) return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
 
-    if (!body.email) {
-      return NextResponse.json({ error: 'Email required' }, { status: 400 })
+    const parsed = InviteMemberSchema.safeParse(rawBody)
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: 'Invalid input', details: parsed.error.flatten().fieldErrors },
+        { status: 400 },
+      )
     }
+    const body = parsed.data
 
     // Get user's company and verify role
     const memberResult = await db.select({
@@ -142,13 +163,27 @@ export async function POST(req: NextRequest) {
     const [member] = await db.insert(companyMembers).values({
       companyId,
       userId: '', // Will be set when user accepts invitation
-      role: body.role || 'employee',
+      role: body.role,
       displayName: body.displayName || body.email.split('@')[0],
       email: body.email,
       departmentId: body.departmentId || null,
-      spendingLimit: body.spendingLimit ? String(body.spendingLimit) : null,
+      spendingLimit: body.spendingLimit != null ? String(body.spendingLimit) : null,
       isActive: false, // Pending invitation
     }).returning()
+
+    // SECURITY (round 2 / A2): audit team-invite — admins / owners taking
+    // permissioning actions need a forensic trail.
+    void recordAudit({
+      userId,
+      action: 'group.member.add',
+      entityType: 'company_member',
+      entityId: member.id,
+      payload: {
+        companyId,
+        invitedRole: body.role,
+        invitedEmail: body.email.slice(0, 256),
+      },
+    })
 
     return NextResponse.json({ member })
   } catch (err) {

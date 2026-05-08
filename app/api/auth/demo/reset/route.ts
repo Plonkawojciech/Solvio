@@ -10,6 +10,8 @@ import {
 import { eq } from 'drizzle-orm'
 import { ensureUserSeeded } from '@/lib/db/seed-user'
 import { emailToUserId } from '@/lib/session'
+import { recordAudit } from '@/lib/audit-log'
+import { rateLimitPersistent } from '@/lib/rate-limit'
 
 // SECURITY FIX: Only allow demo account to be reset — prevent any user's data from being wiped
 const DEMO_USER_ID = emailToUserId('demo@solvio.app')
@@ -18,15 +20,23 @@ export async function POST() {
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+  const rl = await rateLimitPersistent(`auth:demo-reset:${userId}`, { maxRequests: 5, windowMs: 15 * 60 * 1000 })
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { error: 'Too many reset attempts. Try again later.' },
+      { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } },
+    )
+  }
+
   // SECURITY FIX: Restrict reset to demo account only
   if (userId !== DEMO_USER_ID) {
     return NextResponse.json({ error: 'Only demo account can be reset' }, { status: 403 })
   }
 
   try {
-    // Delete all user data in correct order (respecting FK constraints)
-    await db.delete(receiptItems).where(eq(receiptItems.receiptId, ''))
-      .catch((err) => console.error('Failed to delete receipt items during demo reset:', err)) // receiptItems may have FK issues, clean via receipts
+    // Delete child rows first. `receipt_items` is keyed by `userId`, so
+    // deleting it explicitly avoids orphan rows during repeated demo resets.
+    await db.delete(receiptItems).where(eq(receiptItems.userId, userId))
 
     // Delete data tables (no FK dependencies first)
     await Promise.all([
@@ -60,6 +70,15 @@ export async function POST() {
       language: 'pl',
       onboardingComplete: true,
     }).where(eq(userSettings.userId, userId))
+
+    // SECURITY (round 2 / A2): record demo-account wipe so we can spot
+    // anyone hammering this endpoint to brute-force the demo experience.
+    void recordAudit({
+      userId,
+      action: 'session.demo_reset',
+      entityType: 'session',
+      entityId: userId,
+    })
 
     return NextResponse.json({
       success: true,

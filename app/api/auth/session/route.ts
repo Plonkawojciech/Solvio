@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { emailToUserId, SESSION_COOKIE, buildSignedSession } from '@/lib/session'
+import { cookies } from 'next/headers'
+import crypto from 'crypto'
+import { emailToUserId, getSession, SESSION_COOKIE, buildSignedSession } from '@/lib/session'
 import { db } from '@/lib/db'
 import { userSettings } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
-import { rateLimit } from '@/lib/rate-limit'
+import { rateLimitPersistent } from '@/lib/rate-limit'
 import { ensureUserSeeded } from '@/lib/db/seed-user'
+import { recordAudit, extractRequestMeta } from '@/lib/audit-log'
 import { z } from 'zod'
 
 const SessionLoginSchema = z.object({
@@ -16,7 +19,8 @@ export async function POST(req: NextRequest) {
   const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
              req.headers.get('x-real-ip') ??
              'unknown'
-  const rl = rateLimit(`auth:login:${ip}`, { maxRequests: 10, windowMs: 15 * 60 * 1000 })
+  // Per-IP throttle — prevents one bad host hammering the endpoint.
+  const rl = await rateLimitPersistent(`auth:login:${ip}`, { maxRequests: 10, windowMs: 15 * 60 * 1000 })
   if (!rl.allowed) {
     return NextResponse.json(
       { error: 'Too many login attempts. Try again later.' },
@@ -30,6 +34,21 @@ export async function POST(req: NextRequest) {
   const parsed = SessionLoginSchema.safeParse(body)
   if (!parsed.success) {
     return NextResponse.json({ error: 'Invalid input', details: parsed.error.flatten().fieldErrors }, { status: 400 })
+  }
+
+  // Round 4 / A2 Security: per-email throttle on top of per-IP. This
+  // blocks credential-spray + email-enumeration: a botnet rotating
+  // through residential IPs can still target one inbox at most 5
+  // times per minute. We hash the email so the rate-limiter key
+  // doesn't leak PII into logs / dashboards if the Map ever surfaces.
+  const emailKey = parsed.data.email.trim().toLowerCase()
+  const emailHash = crypto.createHash('sha256').update(emailKey).digest('hex').slice(0, 16)
+  const emailRl = await rateLimitPersistent(`auth:login:email:${emailHash}`, { maxRequests: 5, windowMs: 60 * 1000 })
+  if (!emailRl.allowed) {
+    return NextResponse.json(
+      { error: 'Too many login attempts. Try again later.' },
+      { status: 429, headers: { 'Retry-After': String(emailRl.retryAfter) } },
+    )
   }
 
   try {
@@ -74,6 +93,20 @@ export async function POST(req: NextRequest) {
       console.error('[session POST] ensureUserSeeded failed:', err)
     })
 
+    // SECURITY (round 2 / A2): append-only audit trail for session create.
+    // Records userId + IP + UA so we can spot brute-forced sessions or
+    // sudden geo-shifts after the fact. Fire-and-forget — never blocks login.
+    const { ip, userAgent } = extractRequestMeta(req)
+    void recordAudit({
+      userId,
+      action: 'session.create',
+      entityType: 'session',
+      entityId: userId,
+      payload: { productType, channel: 'email' },
+      ip,
+      userAgent,
+    })
+
     return res
   } catch {
     return NextResponse.json({ error: 'Invalid request' }, { status: 400 })
@@ -81,7 +114,40 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE() {
-  const res = NextResponse.json({ ok: true })
-  res.cookies.set(SESSION_COOKIE, '', { maxAge: 0, path: '/' })
-  return res
+  // SECURITY (round 2 / A2): record session.destroy BEFORE clearing the
+  // cookie, so we can attribute the logout to the user that owned the
+  // session. After the cookie is cleared `getSession()` would return null.
+  let userId: string | null = null
+  try {
+    const session = await getSession()
+    userId = session?.userId ?? null
+  } catch {
+    // ignore — invalid cookies shouldn't block logout
+  }
+
+  // SECURITY (round 3 / A2): clear with the SAME attribute set used at
+  // login (httpOnly + secure + sameSite=lax) so the deletion cookie
+  // matches the original cookie's attributes. A few user-agents reject
+  // a Set-Cookie with `Max-Age=0` if the attributes don't match the
+  // original (treating it as a different cookie altogether). Mirroring
+  // attributes guarantees the original cookie is overwritten.
+  const cookieStore = await cookies()
+  cookieStore.set(SESSION_COOKIE, '', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    maxAge: 0,
+    path: '/',
+  })
+
+  if (userId) {
+    void recordAudit({
+      userId,
+      action: 'session.destroy',
+      entityType: 'session',
+      entityId: userId,
+    })
+  }
+
+  return NextResponse.json({ ok: true })
 }

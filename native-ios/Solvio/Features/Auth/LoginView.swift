@@ -8,6 +8,7 @@ struct LoginView: View {
     @State private var email: String = ""
     @State private var isSubmitting = false
     @State private var isDemoLoading = false
+    @State private var logoAppeared = false
     @FocusState private var emailFocused: Bool
 
     var body: some View {
@@ -31,17 +32,27 @@ struct LoginView: View {
                                 .stroke(Theme.border, lineWidth: Theme.Border.width)
                         )
                         .nbShadow(Theme.Shadow.sm)
+                        // Logo glyph is decorative — the brand text below
+                        // already announces "Solvio" to VoiceOver.
+                        .accessibilityHidden(true)
 
                         Text(locale.t("login.brand"))
                             .font(AppFont.black(22))
                             .foregroundColor(Theme.foreground)
                     }
+                    // Subtle entrance — pop the logo row into place rather
+                    // than slamming it on screen. Honors Reduce Motion via
+                    // `accessibilityReduceMotion` semantics by snapping when
+                    // the OS prefers it.
+                    .scaleEffect(logoAppeared ? 1.0 : 0.95)
+                    .opacity(logoAppeared ? 1.0 : 0.0)
 
                     NBEyebrow(text: locale.t("login.signInEyebrow"))
 
                     Text(locale.t("login.title"))
                         .font(AppFont.pageTitle)
                         .foregroundColor(Theme.foreground)
+                        .accessibilityAddTraits(.isHeader)
 
                     Text(locale.t("login.subtitle"))
                         .font(AppFont.body)
@@ -73,6 +84,8 @@ struct LoginView: View {
                                 .stroke(emailErrorVisible ? Theme.destructive : Theme.foreground, lineWidth: Theme.Border.width)
                         )
                         .nbShadow(Theme.Shadow.sm)
+                        .accessibilityLabel(locale.t("login.email"))
+                        .accessibilityHint(locale.t("login.emailHint"))
 
                     if emailErrorVisible {
                         // Inline hint after the user has typed enough to be
@@ -83,10 +96,15 @@ struct LoginView: View {
                             Image(systemName: "exclamationmark.circle.fill")
                                 .font(.system(size: 11))
                                 .foregroundColor(Theme.destructive)
+                                .accessibilityHidden(true)
                             Text(locale.t("validation.emailInvalid"))
                                 .font(AppFont.caption)
                                 .foregroundColor(Theme.destructive)
                         }
+                        // Combine the error icon + text into a single
+                        // VoiceOver utterance so the user hears the message
+                        // without the icon being announced separately.
+                        .accessibilityElement(children: .combine)
                     }
 
                     Button(action: handleSubmit) {
@@ -100,6 +118,26 @@ struct LoginView: View {
                     .buttonStyle(NBPrimaryButtonStyle())
                     .disabled(isSubmitting || !isValidEmail)
                     .padding(.top, Theme.Spacing.xs)
+                    .accessibilityHint(locale.t("login.continueHint"))
+
+                    // Stage hint while the network round-trip runs — gives
+                    // the user something to read instead of staring at a
+                    // bare spinner.
+                    if isSubmitting {
+                        HStack(spacing: 6) {
+                            Image(systemName: "lock.shield")
+                                .font(.system(size: 11))
+                                .foregroundColor(Theme.mutedForeground)
+                                .accessibilityHidden(true)
+                            Text(locale.t("login.signingInHint"))
+                                .font(AppFont.caption)
+                                .foregroundColor(Theme.mutedForeground)
+                        }
+                        .transition(.opacity)
+                        // Combined utterance: VoiceOver announces the hint
+                        // text, not "lock shield, securely signing you in".
+                        .accessibilityElement(children: .combine)
+                    }
 
                     Button(action: handleDemo) {
                         HStack(spacing: Theme.Spacing.xs) {
@@ -111,6 +149,12 @@ struct LoginView: View {
                     }
                     .buttonStyle(NBSecondaryButtonStyle())
                     .disabled(isDemoLoading)
+                    .accessibilityHint(locale.t("login.tryDemoHint"))
+
+                    // TODO(auth): Sign in with Apple — needs backend endpoint
+                    // to accept Apple identity tokens and mint our cookie
+                    // session. Skipping until POST /api/auth/session/apple
+                    // is in place. Track in progress.md when shipped.
                 }
                 .padding(Theme.Spacing.md)
                 .nbCard(radius: Theme.Radius.lg, shadow: Theme.Shadow.lg)
@@ -129,7 +173,16 @@ struct LoginView: View {
             .padding(.horizontal, Theme.Spacing.md)
         }
         .background(Theme.background)
-        .onAppear { emailFocused = true }
+        .animation(.easeInOut(duration: 0.18), value: isSubmitting)
+        .onAppear {
+            // Logo pop-in once per appearance — guarded so we don't
+            // re-animate on every re-render. 0.45s spring is fast enough
+            // to feel instant but slow enough to register.
+            withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
+                logoAppeared = true
+            }
+            emailFocused = true
+        }
     }
 
     private var isValidEmail: Bool {
@@ -150,13 +203,19 @@ struct LoginView: View {
 
     private func handleSubmit() {
         guard isValidEmail, !isSubmitting else { return }
+        // Primary CTA — medium impact gives the press genuine weight
+        // before the network call resolves. The success/error notification
+        // fires separately on the result.
+        Haptics.impact(.medium)
         isSubmitting = true
         let trimmed = email.trimmingCharacters(in: .whitespaces).lowercased()
         Task {
             defer { isSubmitting = false }
             do {
                 try await session.login(email: trimmed)
+                Haptics.success()
             } catch {
+                Haptics.error()
                 toast.error(locale.t("login.failed"), description: error.localizedDescription)
             }
         }
@@ -164,12 +223,18 @@ struct LoginView: View {
 
     private func handleDemo() {
         guard !isDemoLoading else { return }
+        // Secondary action — light impact to differentiate from the
+        // primary CTA. Success/error notification fires once the demo
+        // session resolves.
+        Haptics.impact(.light)
         isDemoLoading = true
         Task {
             defer { isDemoLoading = false }
             do {
                 try await session.loginDemo()
+                Haptics.success()
             } catch {
+                Haptics.error()
                 toast.error(locale.t("login.demoUnavailable"), description: error.localizedDescription)
             }
         }

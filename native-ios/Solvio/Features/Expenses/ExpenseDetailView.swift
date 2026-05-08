@@ -86,8 +86,11 @@ struct ExpenseDetailView: View {
             await maybeLoadReceiptItems()
         }
         .refreshable {
+            // Match Dashboard pattern: light tick on pull, success on data.
+            Haptics.impact(.light)
             await store.awaitDashboard(force: true)
             await maybeLoadReceiptItems(force: true)
+            if !notFound { Haptics.success() }
         }
         .onChange(of: expense?.receiptId) { _ in
             Task { await maybeLoadReceiptItems() }
@@ -95,11 +98,13 @@ struct ExpenseDetailView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
+                    Haptics.selection()
                     showEdit = true
                 } label: {
                     Image(systemName: "pencil").foregroundColor(Theme.foreground)
                 }
                 .disabled(expense == nil)
+                .accessibilityLabel(locale.t("common.edit"))
             }
         }
         .sheet(isPresented: $showEdit) {
@@ -108,9 +113,11 @@ struct ExpenseDetailView: View {
                     Task {
                         do {
                             try await ExpensesRepo.update(payload)
+                            Haptics.success()
                             toast.success(locale.t("toast.updated"))
                             store.didMutateExpenses()
                         } catch {
+                            Haptics.error()
                             toast.error(locale.t("toast.error"), description: error.localizedDescription)
                         }
                     }
@@ -129,6 +136,7 @@ struct ExpenseDetailView: View {
                 //      no chance of a "not found" flash.
                 //   3. Optimistic remove from store (list view updates).
                 //   4. Network DELETE; on failure, rollback via didMutateExpenses().
+                Haptics.warning()
                 isDeleting = true
                 router.popToRoot()
                 Task {
@@ -178,9 +186,20 @@ struct ExpenseDetailView: View {
     // MARK: - Sections
 
     private func hero(_ e: Expense) -> some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+        let amountText = Fmt.amount(e.amount, currency: e.currency ?? defaultCurrency)
+        let categoryText = categoryName(for: e) ?? ""
+        let a11y = [
+            locale.t("expenseDetail.amount"),
+            amountText,
+            e.title,
+            categoryText,
+            Fmt.date(e.date)
+        ]
+            .filter { !$0.isEmpty }
+            .joined(separator: ", ")
+        return VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
             NBEyebrow(text: locale.t("expenseDetail.amount").uppercased())
-            Text(Fmt.amount(e.amount, currency: e.currency ?? defaultCurrency))
+            Text(amountText)
                 .font(AppFont.black(34))
                 .foregroundColor(Theme.foreground)
             Text(e.title)
@@ -198,6 +217,9 @@ struct ExpenseDetailView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(Theme.Spacing.md)
         .nbCard(radius: Theme.Radius.lg, shadow: Theme.Shadow.lg)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(a11y)
+        .accessibilityAddTraits(.isHeader)
     }
 
     private func metaCard(_ e: Expense) -> some View {
@@ -340,7 +362,10 @@ struct ExpenseDetailView: View {
             openLabel: locale.t("receiptDetail.openInBrowser"),
             copyLabel: locale.t("receiptDetail.copyLink"),
             scanHint: locale.t("receiptDetail.scanHint"),
-            onCopied: { toast.success(locale.t("receiptDetail.linkCopied")) }
+            onCopied: {
+                Haptics.selection()
+                toast.success(locale.t("receiptDetail.linkCopied"))
+            }
         )
     }
 
@@ -371,13 +396,19 @@ struct ExpenseDetailView: View {
 
     private var actionsCard: some View {
         VStack(spacing: Theme.Spacing.xs) {
-            Button { showEdit = true } label: {
+            Button {
+                Haptics.selection()
+                showEdit = true
+            } label: {
                 Label(locale.t("common.edit"), systemImage: "pencil")
             }
             .buttonStyle(NBSecondaryButtonStyle())
             .disabled(expense == nil)
 
-            Button { showDelete = true } label: {
+            Button {
+                Haptics.warning()
+                showDelete = true
+            } label: {
                 Label(locale.t("common.delete"), systemImage: "trash")
             }
             .buttonStyle(NBDestructiveButtonStyle())
@@ -448,8 +479,10 @@ struct ExpenseEditSheet: View {
                             ScrollView(.horizontal, showsIndicators: false) {
                                 HStack(spacing: 6) {
                                     ForEach(categories) { c in
+                                        let active = categoryId == c.id
                                         Button {
-                                            categoryId = categoryId == c.id ? nil : c.id
+                                            Haptics.selection()
+                                            categoryId = active ? nil : c.id
                                         } label: {
                                             Text(c.name)
                                                 .font(AppFont.mono(11))
@@ -457,8 +490,8 @@ struct ExpenseEditSheet: View {
                                                 .textCase(.uppercase)
                                                 .padding(.horizontal, 10)
                                                 .padding(.vertical, 8)
-                                                .foregroundColor(categoryId == c.id ? Theme.background : Theme.foreground)
-                                                .background(categoryId == c.id ? Theme.foreground : Theme.card)
+                                                .foregroundColor(active ? Theme.background : Theme.foreground)
+                                                .background(active ? Theme.foreground : Theme.card)
                                                 .overlay(
                                                     RoundedRectangle(cornerRadius: Theme.Radius.sm)
                                                         .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
@@ -466,6 +499,7 @@ struct ExpenseEditSheet: View {
                                                 .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                                         }
                                         .buttonStyle(.plain)
+                                        .accessibilityAddTraits(active ? .isSelected : [])
                                     }
                                 }
                             }
@@ -521,7 +555,8 @@ struct ExpenseEditSheet: View {
                             categoryId: categoryId,
                             vendor: vendor.isEmpty ? nil : vendor,
                             notes: notes.isEmpty ? nil : notes,
-                            tags: tags.isEmpty ? nil : tags
+                            tags: tags.isEmpty ? nil : tags,
+                            receiptId: nil
                         ))
                         dismiss()
                     }
@@ -532,5 +567,7 @@ struct ExpenseEditSheet: View {
                 }
             }
         }
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
     }
 }

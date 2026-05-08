@@ -37,13 +37,24 @@ export async function GET() {
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   try {
-    const [cats, settings, budgets] = await Promise.all([
+    // Round-4 perf: 3 parallel selects → 1 pipelined `db.batch` HTTP RTT.
+    // Same data, same shape, ~3× fewer round-trips on Settings page load.
+    const [cats, settings, budgets] = await db.batch([
       db.select().from(categories).where(eq(categories.userId, userId)),
       db.select().from(userSettings).where(eq(userSettings.userId, userId)).limit(1),
       db.select().from(categoryBudgets).where(eq(categoryBudgets.userId, userId)),
     ])
 
-    return NextResponse.json({ categories: cats, settings: settings[0] || null, budgets })
+    return NextResponse.json(
+      { categories: cats, settings: settings[0] || null, budgets },
+      {
+        headers: {
+          // Settings change rarely (per-user). 30s SWR window cuts
+          // the constant settings refetch by Settings page tabs.
+          'Cache-Control': 'private, max-age=30, must-revalidate',
+        },
+      },
+    )
   } catch (err) {
     console.error('[settings GET]', err)
     return NextResponse.json({ error: 'Failed to fetch settings' }, { status: 500 })

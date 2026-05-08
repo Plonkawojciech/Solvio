@@ -110,7 +110,10 @@ struct DailyStackedChartCard: View {
     private var rangeSegmented: some View {
         HStack(spacing: 6) {
             ForEach(Range.allCases, id: \.self) { r in
-                Button { range = r } label: {
+                Button {
+                    if range != r { Haptics.selection() }
+                    range = r
+                } label: {
                     Text(r.label)
                         .font(AppFont.mono(11))
                         .tracking(1)
@@ -177,6 +180,7 @@ struct DailyStackedChartCard: View {
                 ForEach(legendEntries, id: \.id) { entry in
                     let isHidden = hiddenCategoryIds.contains(entry.id)
                     Button {
+                        Haptics.selection()
                         if isHidden {
                             hiddenCategoryIds.remove(entry.id)
                         } else {
@@ -263,6 +267,7 @@ struct DailyStackedChartCard: View {
         guard relativeX >= 0, relativeX <= plotFrame.width,
               let date: Date = proxy.value(atX: relativeX) else { return }
         let cal = Calendar.current
+        Haptics.impact(.light)
         selectedDay = cal.startOfDay(for: date)
     }
 
@@ -345,7 +350,7 @@ struct DayBreakdownSheet: View {
             Text(Fmt.amount(total, currency: currency))
                 .font(AppFont.hero)
                 .foregroundColor(Theme.foreground)
-            Text(String(format: locale.t("dashboard.dayBreakdownTxns"), expenses.count))
+            Text(String(format: locale.tPlural("dashboard.dayBreakdownTxns", count: expenses.count), expenses.count))
                 .font(AppFont.caption)
                 .foregroundColor(Theme.mutedForeground)
         }
@@ -394,6 +399,7 @@ struct DayBreakdownSheet: View {
             VStack(spacing: 6) {
                 ForEach(expenses) { e in
                     Button {
+                        Haptics.selection()
                         dismiss()
                         router.push(.expenseDetail(id: e.expenseId))
                     } label: {

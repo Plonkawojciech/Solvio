@@ -39,6 +39,8 @@ struct ReceiptsListView: View {
                         title: locale.t("receipts.title"),
                         subtitle: store.receipts.isEmpty ? locale.t("receipts.getStarted") : "\(store.receipts.count) \(locale.t("receipts.savedSuffix"))"
                     )
+                    .accessibilityElement(children: .combine)
+                    .accessibilityAddTraits(.isHeader)
                     ctaRow
                 }
                 .padding(.horizontal, Theme.Spacing.md)
@@ -63,7 +65,15 @@ struct ReceiptsListView: View {
         .background(Theme.background)
         .navigationTitle(locale.t("receipts.title"))
         .navigationBarTitleDisplayMode(.inline)
-        .refreshable { await store.awaitReceipts(force: true) }
+        .refreshable {
+            // Match Dashboard pattern: light tick on pull, success on data
+            // (only when fresh data actually landed without an error).
+            Haptics.impact(.light)
+            await store.awaitReceipts(force: true)
+            if store.receiptsError == nil {
+                Haptics.success()
+            }
+        }
         .task { store.ensureReceipts() }
         .confirmationDialog(locale.t("receipts.chooseSource"), isPresented: $showSourcePicker, titleVisibility: .visible) {
             if UIImagePickerController.isSourceTypeAvailable(.camera) {
@@ -121,7 +131,7 @@ struct ReceiptsListView: View {
                     if images.count == 1 {
                         toast.success(locale.t("scanQueue.batchSavedSingle"))
                     } else {
-                        toast.success(String(format: locale.t("scanQueue.batchSaved"), images.count))
+                        toast.success(String(format: locale.tPlural("scanQueue.batchSaved", count: images.count), images.count))
                     }
                 }
                 if failures > 0 {
@@ -141,6 +151,7 @@ struct ReceiptsListView: View {
         ) {
             Button(locale.t("common.delete"), role: .destructive) {
                 if let r = pendingDelete {
+                    Haptics.success()
                     scheduleReceiptDelete(r)
                 }
                 pendingDelete = nil
@@ -160,13 +171,19 @@ struct ReceiptsListView: View {
                 title: locale.t("receipts.takePhoto"),
                 subtitle: locale.t("receipts.scanMultipleSubtitle"),
                 primary: true
-            ) { showSourcePicker = true }
+            ) {
+                Haptics.impact(.medium)
+                showSourcePicker = true
+            }
             ctaTile(
                 icon: "square.and.pencil",
                 title: locale.t("virtualReceipt.eyebrow").capitalized,
                 subtitle: locale.t("receipts.virtualSubtitle"),
                 primary: false
-            ) { showCreateVirtual = true }
+            ) {
+                Haptics.impact(.medium)
+                showCreateVirtual = true
+            }
         }
     }
 
@@ -217,6 +234,7 @@ struct ReceiptsListView: View {
                         RoundedRectangle(cornerRadius: Theme.Radius.sm)
                             .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
                     )
+                    .accessibilityHidden(true)
                 Text(title)
                     .font(AppFont.cardTitle)
                     .foregroundColor(Theme.foreground)
@@ -236,6 +254,9 @@ struct ReceiptsListView: View {
             .nbShadow(Theme.Shadow.md)
         }
         .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(title)
+        .accessibilityHint(subtitle)
     }
 
     // MARK: - Content
@@ -295,6 +316,7 @@ struct ReceiptsListView: View {
                         ))
                         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                             Button(role: .destructive) {
+                                Haptics.warning()
                                 pendingDelete = r
                             } label: {
                                 Label(locale.t("common.delete"), systemImage: "trash")
@@ -306,26 +328,34 @@ struct ReceiptsListView: View {
     }
 
     private func receiptRow(_ r: Receipt) -> some View {
-        Button {
+        // Composed a11y label: "vendor, date, item count, total" — VoiceOver
+        // reads the row as one cohesive unit instead of 4 disjointed labels.
+        let vendorLabel = r.vendor ?? locale.t("receipts.unknownVendor")
+        let itemsLabel = "\(r.displayItemCount) \(locale.t("receipts.itemsSuffix"))"
+        let amountLabel = Fmt.amount(r.total, currency: r.currency ?? "PLN")
+        let composed = "\(vendorLabel), \(Fmt.date(r.date)), \(itemsLabel), \(amountLabel)"
+        return Button {
+            Haptics.selection()
             router.push(.receiptDetail(id: r.id))
         } label: {
             HStack(spacing: Theme.Spacing.sm) {
                 thumbnail(for: r)
+                    .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(r.vendor ?? locale.t("receipts.unknownVendor"))
+                    Text(vendorLabel)
                         .font(AppFont.bodyMedium)
                         .foregroundColor(Theme.foreground)
                         .lineLimit(1)
                     HStack(spacing: 6) {
                         Text(Fmt.date(r.date))
                         Text("·")
-                        Text("\(r.displayItemCount) \(locale.t("receipts.itemsSuffix"))")
+                        Text(itemsLabel)
                     }
                     .font(AppFont.caption)
                     .foregroundColor(Theme.mutedForeground)
                 }
                 Spacer()
-                Text(Fmt.amount(r.total, currency: r.currency ?? "PLN"))
+                Text(amountLabel)
                     .font(AppFont.bodyMedium)
                     .foregroundColor(Theme.foreground)
             }
@@ -333,8 +363,13 @@ struct ReceiptsListView: View {
             .nbCard(radius: Theme.Radius.md, shadow: Theme.Shadow.sm)
         }
         .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(composed)
+        .accessibilityHint(locale.t("receipts.openReceiptHint"))
+        .accessibilityAddTraits(.isButton)
         .contextMenu {
             Button(role: .destructive) {
+                Haptics.warning()
                 pendingDelete = r
             } label: {
                 Label(locale.t("common.delete"), systemImage: "trash")
@@ -443,6 +478,7 @@ struct OcrConfirmSheet: View {
                             NBEyebrow(text: "\(locale.t("ocrConfirm.itemsEyebrow")) (\(items.count))")
                             Spacer()
                             Button {
+                                Haptics.selection()
                                 items.append(EditableItem())
                             } label: {
                                 Label(locale.t("ocrConfirm.add"), systemImage: "plus")
@@ -521,6 +557,7 @@ struct OcrConfirmSheet: View {
     private func categoryChip(id: String?, label: String, icon: String) -> some View {
         let isSelected = assignedCategoryId == id
         return Button {
+            Haptics.selection()
             assignedCategoryId = id
         } label: {
             HStack(spacing: 6) {
@@ -566,6 +603,7 @@ struct OcrConfirmSheet: View {
                     .textInputAutocapitalization(.sentences)
                 Spacer()
                 Button(role: .destructive) {
+                    Haptics.warning()
                     if let idx = items.firstIndex(where: { $0.id == item.wrappedValue.id }) {
                         items.remove(at: idx)
                     }
@@ -608,6 +646,7 @@ struct OcrConfirmSheet: View {
     private func itemCategoryChip(item: Binding<EditableItem>, catId: String?, label: String, icon: String) -> some View {
         let isSelected = item.wrappedValue.categoryId == catId
         return Button {
+            Haptics.selection()
             item.wrappedValue.categoryId = catId
         } label: {
             HStack(spacing: 4) {
@@ -636,6 +675,10 @@ struct OcrConfirmSheet: View {
         defer { isSaving = false }
         do {
             let refreshed = try await persistEdits()
+            // Success haptic before handing back to the parent — the parent
+            // may not always fire a toast (e.g. when chaining straight into
+            // a detail screen), so we ensure the "saved" feel is consistent.
+            Haptics.success()
             onConfirm(refreshed)
             dismiss()
         } catch {
@@ -649,6 +692,7 @@ struct OcrConfirmSheet: View {
         defer { isSavingAndSplitting = false }
         do {
             let refreshed = try await persistEdits()
+            Haptics.success()
             onSplit(refreshed)
             dismiss()
         } catch {
@@ -738,6 +782,10 @@ struct CameraPicker: UIViewControllerRepresentable {
         init(onImage: @escaping (UIImage) -> Void) { self.onImage = onImage }
         func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]) {
             if let image = info[.originalImage] as? UIImage {
+                // Medium impact ≈ "shutter click" confirmation. The native
+                // camera UI doesn't fire haptics on capture, so we add a
+                // tactile cue at the moment the photo lands in our pipeline.
+                Task { @MainActor in Haptics.impact(.medium) }
                 onImage(image)
             }
             picker.dismiss(animated: true)

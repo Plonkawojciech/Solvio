@@ -25,6 +25,11 @@ struct SavingsHubView: View {
                 header
                 topKpiStrip
                 aiTipBanner
+                // Goals preview — surfaces the 2-3 closest goals directly
+                // in Savings hub so the user doesn't have to dig through
+                // "More → Cele" to see them. Tapping a goal pushes onto
+                // the savings nav stack via `.more(.goals)`.
+                goalsPreviewSection
                 // Tab picker is intentionally hidden — Products / Stores
                 // / Deals moved to the new bottom-nav `Deals` tab. The
                 // planner is the only thing this hub renders now.
@@ -41,14 +46,10 @@ struct SavingsHubView: View {
             vm.bind(store: store, locale: locale)
             if vm.needsInitialLoad { await vm.loadAll() }
         }
-        // Watch for store-side updates so the planner reflects fresh budget
-        // / health / promotion payloads as soon as the prefetch lands.
+        // Watch for store-side updates so the planner reflects fresh
+        // budget / health payloads as soon as the prefetch lands.
         .onChange(of: store.budgetLoadedAt) { _ in vm.syncFromStore() }
         .onChange(of: store.financialHealthLoadedAt) { _ in vm.syncFromStore() }
-        .onChange(of: store.promotionsLoadedAt) { _ in vm.syncFromStore() }
-        // Goals are still mirrored even though there's no Goals tab here —
-        // the planner uses `monthlyNeeded` from active goals as a sanity
-        // check on the user's savings target.
         .onChange(of: store.goals) { _ in vm.syncFromStore() }
         .sheet(isPresented: $showBudgetEdit) {
             BudgetEditSheet(
@@ -58,6 +59,7 @@ struct SavingsHubView: View {
                 Task {
                     do {
                         _ = try await BudgetRepo.upsert(body)
+                        Haptics.success()
                         toast.success(locale.t("savings.budgetSaved"))
                         store.didMutateBudget()
                     } catch {
@@ -66,6 +68,8 @@ struct SavingsHubView: View {
                 }
             }
             .environmentObject(locale)
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
         }
     }
 
@@ -81,9 +85,11 @@ struct SavingsHubView: View {
 
     // MARK: - Top KPI strip (planner-focused)
 
-    /// Four-tile grid:
-    ///   - Spent this month / Budget remaining
-    ///   - Health score (or savings target) / Potential savings from deals
+    /// 2×2 grid (or 4-up): Spent / Remaining / Health (or Savings target) /
+    /// Total saved across goals. Removed `potentialDealSavings` tile —
+    /// promotions live in the dedicated Deals tab now, surfacing them here
+    /// duplicated information and pinned a $0 placeholder for users
+    /// without scanned receipts.
     private var topKpiStrip: some View {
         LazyVGrid(columns: [
             GridItem(.flexible(), spacing: Theme.Spacing.xs),
@@ -106,8 +112,8 @@ struct SavingsHubView: View {
                 )
             }
             NBStatTile(
-                label: locale.t("savings.potentialSavingsTile"),
-                value: Fmt.amount(vm.potentialDealSavings, currency: vm.currency)
+                label: locale.t("savings.totalSavedTile"),
+                value: Fmt.amount(vm.totalSavedAcrossGoals, currency: vm.currency)
             )
         }
     }
@@ -152,19 +158,198 @@ struct SavingsHubView: View {
         return Theme.destructive
     }
 
-    // MARK: - AI tip banner
+    // MARK: - Smart hero insight banner
+    //
+    // Replaces the previous static "firstTip" banner. Computes a single
+    // data-driven insight from the user's actual budget + goals state.
+    // Priority: overspending category (>=90%) > goal nearly done (>=80%) >
+    // overdue goal > generic encouragement. Returns nothing when there's
+    // nothing useful to say (so we never fake "AI advice").
+
+    private enum InsightTone { case warn, good, info }
+    private struct HeroInsight {
+        let tone: InsightTone
+        let emoji: String
+        let title: String
+        let body: String
+    }
+
+    private var heroInsight: HeroInsight? {
+        // 1) Overspending category (>=90% of budget)
+        if let b = vm.budget {
+            let heavy = b.categoryBreakdown
+                .filter { $0.budgeted > 0 }
+                .map { (row: $0, pct: $0.spent / $0.budgeted) }
+                .sorted { $0.pct > $1.pct }
+                .first
+            if let h = heavy, h.pct >= 0.9 {
+                return HeroInsight(
+                    tone: .warn,
+                    emoji: "⚠️",
+                    title: locale.t("savings.insightOverBudget").replacingOccurrences(of: "{cat}", with: h.row.name),
+                    body: locale.t("savings.insightOverBudgetBody")
+                        .replacingOccurrences(of: "{pct}", with: "\(Int((h.pct * 100).rounded()))")
+                        .replacingOccurrences(of: "{cat}", with: h.row.name)
+                )
+            }
+        }
+        // 2) Goal nearly complete (>=80%, not yet completed)
+        let activeGoals = vm.goals.filter { $0.isCompleted != true }
+        let close = activeGoals
+            .map { (g: $0, pct: $0.targetAmount.double > 0 ? $0.currentAmount.double / $0.targetAmount.double : 0) }
+            .filter { $0.pct >= 0.8 && $0.pct < 1 }
+            .sorted { $0.pct > $1.pct }
+            .first
+        if let c = close {
+            return HeroInsight(
+                tone: .good,
+                emoji: c.g.emoji ?? "🎯",
+                title: locale.t("savings.insightNearGoal").replacingOccurrences(of: "{name}", with: c.g.name),
+                body: locale.t("savings.insightNearGoalBody")
+                    .replacingOccurrences(of: "{pct}", with: "\(Int((c.pct * 100).rounded()))")
+            )
+        }
+        // 3) Overdue goal — use startOfDay comparison so a goal with
+        // today's date isn't flagged as overdue (matches `hubDeadlineStatus`
+        // which uses the same calendar logic for consistency).
+        if let overdue = activeGoals.first(where: { g in
+            guard let iso = g.deadline,
+                  let deadline = SavingsHubView.parseIsoDay(iso) else { return false }
+            let cal = Calendar.current
+            let today = cal.startOfDay(for: Date())
+            let dl = cal.startOfDay(for: deadline)
+            return dl < today
+        }) {
+            return HeroInsight(
+                tone: .warn,
+                emoji: overdue.emoji ?? "⏰",
+                title: locale.t("savings.insightOverdue").replacingOccurrences(of: "{name}", with: overdue.name),
+                body: locale.t("savings.insightOverdueBody")
+            )
+        }
+        // 4) Generic encouragement (only if there are active goals)
+        if !activeGoals.isEmpty {
+            let monthly = monthlyNeededForActive(activeGoals)
+            if monthly > 0 {
+                return HeroInsight(
+                    tone: .info,
+                    emoji: "💪",
+                    title: locale.t("savings.insightOnTrack"),
+                    body: locale.t("savings.insightOnTrackBody")
+                        .replacingOccurrences(of: "{amount}", with: Fmt.amount(monthly, currency: vm.currency))
+                )
+            }
+        }
+        // 5) No-data fallback — always show *something* so the user can
+        // see this banner exists and what it does. Picks the right CTA
+        // based on what's missing: budget vs goals vs both.
+        // FIX: parens around the `??` operand — `?? 0 > 0` would have
+        // been parsed as `?? (0 > 0)` (Comparison binds tighter than
+        // NilCoalescing), which would type-mismatch `Double?` vs `Bool`.
+        let hasBudget = ((vm.budget?.budget?.totalBudget).flatMap(Double.init) ?? 0) > 0
+        if !hasBudget && activeGoals.isEmpty {
+            return HeroInsight(
+                tone: .info,
+                emoji: "💡",
+                title: locale.t("savings.insightSetupTitle"),
+                body: locale.t("savings.insightSetupBody")
+            )
+        }
+        if !hasBudget {
+            return HeroInsight(
+                tone: .info,
+                emoji: "💡",
+                title: locale.t("savings.insightAddBudgetTitle"),
+                body: locale.t("savings.insightAddBudgetBody")
+            )
+        }
+        if activeGoals.isEmpty {
+            return HeroInsight(
+                tone: .info,
+                emoji: "🎯",
+                title: locale.t("savings.insightAddGoalTitle"),
+                body: locale.t("savings.insightAddGoalBody")
+            )
+        }
+        return nil
+    }
+
+    private static func parseIsoDay(_ s: String) -> Date? {
+        // UTC + POSIX locale — same rationale as GoalsListView's parser:
+        // backend stores deadlines as `yyyy-MM-dd` so we need an absolute
+        // anchor or different timezones flip "today" to "yesterday".
+        let df = DateFormatter()
+        df.calendar = Calendar(identifier: .gregorian)
+        df.locale = Locale(identifier: "en_US_POSIX")
+        df.timeZone = TimeZone(identifier: "UTC")
+        df.dateFormat = "yyyy-MM-dd"
+        return df.date(from: String(s.prefix(10)))
+    }
+
+    /// Sum of remaining-amount divided by months-left across all active
+    /// goals. Skip overdue goals — they're surfaced separately by the
+    /// hero insight (priority 3) and dumping the whole remaining into
+    /// "this month" inflates the figure misleadingly.
+    private func monthlyNeededForActive(_ goals: [SavingsGoal]) -> Double {
+        let cal = Calendar.current
+        let today = cal.startOfDay(for: Date())
+        return goals.reduce(0) { sum, g in
+            let target = g.targetAmount.double
+            let current = g.currentAmount.double
+            let remaining = target - current
+            guard remaining > 0 else { return sum }
+            if let iso = g.deadline,
+               let deadline = SavingsHubView.parseIsoDay(iso) {
+                let dl = cal.startOfDay(for: deadline)
+                if dl < today { return sum } // overdue — handled elsewhere
+                let days = cal.dateComponents([.day], from: today, to: dl).day ?? 0
+                let months = max(1, Int(ceil(Double(days) / 30.0)))
+                return sum + remaining / Double(months)
+            }
+            return sum + remaining / 12
+        }
+    }
 
     @ViewBuilder
     private var aiTipBanner: some View {
-        if let tip = vm.firstTip {
+        if let insight = heroInsight {
+            let bg: Color = {
+                switch insight.tone {
+                case .warn: return Theme.warning.opacity(0.10)
+                case .good: return Theme.success.opacity(0.10)
+                case .info: return Theme.muted
+                }
+            }()
+            let stroke: Color = {
+                switch insight.tone {
+                case .warn: return Theme.warning
+                case .good: return Theme.success
+                case .info: return Theme.foreground
+                }
+            }()
+            let titleColor: Color = {
+                switch insight.tone {
+                case .warn: return Theme.warning
+                case .good: return Theme.success
+                case .info: return Theme.foreground
+                }
+            }()
             HStack(alignment: .top, spacing: Theme.Spacing.sm) {
-                NBIconBadge(systemImage: "sparkles", tint: Theme.foreground, background: Theme.muted, size: 32)
+                Text(insight.emoji)
+                    .font(.system(size: 22))
+                    .frame(width: 36, height: 36)
+                    .background(bg)
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                            .stroke(stroke.opacity(0.5), lineWidth: Theme.Border.widthThin)
+                    )
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(locale.t("savings.aiTip"))
-                        .font(AppFont.mono(10))
-                        .tracking(1.2)
-                        .foregroundColor(Theme.mutedForeground)
-                    Text(tip)
+                    Text(insight.title)
+                        .font(AppFont.bodyMedium)
+                        .foregroundColor(titleColor)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(insight.body)
                         .font(AppFont.body)
                         .foregroundColor(Theme.foreground)
                         .fixedSize(horizontal: false, vertical: true)
@@ -173,25 +358,184 @@ struct SavingsHubView: View {
             }
             .padding(Theme.Spacing.sm)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .nbCard(radius: Theme.Radius.md, shadow: Theme.Shadow.sm)
+            .background(bg)
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.Radius.md)
+                    .stroke(stroke.opacity(0.3), lineWidth: Theme.Border.widthThin)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
         }
     }
 
-    // MARK: - Tab picker
+    // MARK: - Goals preview section
+    //
+    // Surfaces a compact 2-3 row preview of the user's most relevant active
+    // goals right inside Savings hub. Without this section the user had to
+    // navigate through "More → Cele" to see goals, which made the hub feel
+    // empty and hid the deadline / quick-amount UX changes shipped today.
 
-    private var tabPicker: some View {
-        NBSegmented<SavingsHubViewModel.Tab>(
-            selection: Binding(
-                get: { vm.activeTab },
-                set: { vm.activeTab = $0 }
-            ),
-            options: [
-                (.planner, locale.t("savings.segPlanner")),
-                (.products, locale.t("savings.segProducts")),
-                (.stores, locale.t("savings.segStores")),
-                (.deals, locale.t("savings.segDeals")),
-            ]
-        )
+    @ViewBuilder
+    private var goalsPreviewSection: some View {
+        let active = vm.goals.filter { $0.isCompleted != true }
+        // Sort: closest deadline first, then highest progress. Goals
+        // without deadline fall to the back.
+        let sorted = active.sorted { (a, b) in
+            let da = a.deadline.flatMap(SavingsHubView.parseIsoDay)
+            let db = b.deadline.flatMap(SavingsHubView.parseIsoDay)
+            switch (da, db) {
+            case let (l?, r?): return l < r
+            case (_?, nil): return true
+            case (nil, _?): return false
+            default:
+                let pa = a.targetAmount.double > 0 ? a.currentAmount.double / a.targetAmount.double : 0
+                let pb = b.targetAmount.double > 0 ? b.currentAmount.double / b.targetAmount.double : 0
+                return pa > pb
+            }
+        }
+        let preview = Array(sorted.prefix(3))
+
+        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+            HStack {
+                Text(locale.t("savings.goalsTitle"))
+                    .font(AppFont.sectionTitle)
+                    .foregroundColor(Theme.foreground)
+                Spacer()
+                Button {
+                    Haptics.selection()
+                    router.push(.more(.goals))
+                } label: {
+                    HStack(spacing: 4) {
+                        Text(locale.t("savings.viewAllGoals"))
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 11, weight: .bold))
+                    }
+                    .font(AppFont.caption)
+                    .foregroundColor(Theme.foreground)
+                }
+                .buttonStyle(.plain)
+            }
+
+            if preview.isEmpty {
+                Button {
+                    Haptics.impact(.light)
+                    router.push(.more(.goals))
+                } label: {
+                    HStack(spacing: Theme.Spacing.sm) {
+                        Image(systemName: "target")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundColor(Theme.foreground)
+                            .frame(width: 36, height: 36)
+                            .background(Theme.muted)
+                            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                                    .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
+                            )
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(locale.t("savings.goalsEmptyTitle"))
+                                .font(AppFont.bodyMedium)
+                                .foregroundColor(Theme.foreground)
+                            Text(locale.t("savings.goalsEmptySub"))
+                                .font(AppFont.caption)
+                                .foregroundColor(Theme.mutedForeground)
+                        }
+                        Spacer()
+                        Image(systemName: "plus")
+                            .foregroundColor(Theme.mutedForeground)
+                    }
+                    .padding(Theme.Spacing.sm)
+                    .nbCard(radius: Theme.Radius.md, shadow: Theme.Shadow.sm)
+                }
+                .buttonStyle(.plain)
+            } else {
+                VStack(spacing: Theme.Spacing.xs) {
+                    ForEach(preview) { g in
+                        Button {
+                            Haptics.selection()
+                            router.push(.goalDetail(id: g.id))
+                        } label: {
+                            goalPreviewRow(g)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+    }
+
+    private func goalPreviewRow(_ g: SavingsGoal) -> some View {
+        let pct = g.targetAmount.double > 0 ? g.currentAmount.double / g.targetAmount.double : 0
+        let status = g.deadline.flatMap { hubDeadlineStatus($0) }
+        return HStack(alignment: .top, spacing: Theme.Spacing.sm) {
+            Text(g.emoji ?? "🎯")
+                .font(.system(size: 24))
+                .frame(width: 40, height: 40)
+                .background(Theme.muted)
+                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+                .overlay(
+                    RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                        .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
+                )
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text(g.name)
+                        .font(AppFont.bodyMedium)
+                        .foregroundColor(Theme.foreground)
+                        .lineLimit(1)
+                    Spacer()
+                    Text("\(Int(min(100, pct * 100)))%")
+                        .font(AppFont.mono(11))
+                        .foregroundColor(Theme.mutedForeground)
+                }
+                NBProgressBar(value: pct)
+                HStack {
+                    Text("\(Fmt.amount(g.currentAmount, currency: g.currency)) / \(Fmt.amount(g.targetAmount, currency: g.currency))")
+                        .font(AppFont.caption)
+                        .foregroundColor(Theme.mutedForeground)
+                        .lineLimit(1)
+                    Spacer()
+                    if let status {
+                        switch status {
+                        case .overdue:
+                            Text(locale.t("goals.overdue"))
+                                .font(AppFont.mono(11))
+                                .foregroundColor(Theme.destructive)
+                        case .today:
+                            Text(locale.t("goals.today"))
+                                .font(AppFont.mono(11))
+                                .foregroundColor(Theme.warning)
+                        case .tomorrow:
+                            Text(locale.t("goals.tomorrow"))
+                                .font(AppFont.caption)
+                                .foregroundColor(Theme.mutedForeground)
+                        case .normal:
+                            if let iso = g.deadline {
+                                Text(Fmt.dayMonth(iso))
+                                    .font(AppFont.caption)
+                                    .foregroundColor(Theme.mutedForeground)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .padding(Theme.Spacing.sm)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .nbCard(radius: Theme.Radius.md, shadow: Theme.Shadow.sm)
+    }
+
+    private enum HubDeadlineStatus { case overdue, today, tomorrow, normal }
+
+    private func hubDeadlineStatus(_ iso: String) -> HubDeadlineStatus? {
+        guard let deadline = SavingsHubView.parseIsoDay(iso) else { return nil }
+        let cal = Calendar.current
+        let today = cal.startOfDay(for: Date())
+        let dl = cal.startOfDay(for: deadline)
+        let days = cal.dateComponents([.day], from: today, to: dl).day ?? 0
+        if days < 0 { return .overdue }
+        if days == 0 { return .today }
+        if days == 1 { return .tomorrow }
+        return .normal
     }
 
     // MARK: - Planner tab (month budget plan)
@@ -205,6 +549,7 @@ struct SavingsHubView: View {
                     .foregroundColor(Theme.foreground)
                 Spacer()
                 Button {
+                    Haptics.selection()
                     showBudgetEdit = true
                 } label: {
                     HStack(spacing: 4) {
@@ -221,6 +566,7 @@ struct SavingsHubView: View {
             // was to support several named income streams instead of
             // a single `monthlyBudget.totalIncome` field.
             Button {
+                Haptics.selection()
                 router.push(.more(.incomes))
             } label: {
                 HStack(spacing: Theme.Spacing.sm) {
@@ -269,7 +615,10 @@ struct SavingsHubView: View {
                     systemImage: "dollarsign.circle.fill",
                     title: locale.t("savings.emptyPlanner"),
                     subtitle: locale.t("savings.emptyPlannerSub"),
-                    action: (label: locale.t("savings.setBudget"), run: { showBudgetEdit = true })
+                    action: (label: locale.t("savings.setBudget"), run: {
+                        Haptics.impact(.light)
+                        showBudgetEdit = true
+                    })
                 )
             }
         }
@@ -323,7 +672,7 @@ struct SavingsHubView: View {
                             .fill(onPaceColor)
                             .frame(width: 6, height: 6)
                             .overlay(Circle().stroke(Theme.border, lineWidth: 0.5))
-                        Text("\(Int(b.monthProgress * 100))% \(locale.t("savings.monthLabelFmt").replacingOccurrences(of: ": %@", with: "").lowercased())")
+                        Text("\(Int(b.monthProgress * 100))% \(locale.t("savings.monthShort"))")
                             .font(AppFont.mono(11))
                             .foregroundColor(onPaceColor)
                     }
@@ -404,737 +753,32 @@ struct SavingsHubView: View {
         .nbCard(radius: Theme.Radius.sm, shadow: Theme.Shadow.sm)
     }
 
-    // MARK: - Products tab (AI price comparison)
-
-    @ViewBuilder
-    private var productsTab: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-            HStack {
-                Text(locale.t("savings.productsTitle"))
-                    .font(AppFont.sectionTitle)
-                    .foregroundColor(Theme.foreground)
-                Spacer()
-            }
-            productsRunCard
-            if vm.isPriceLoading && vm.priceResult == nil {
-                NBProgressCard(
-                    title: locale.t("prices.runningTitle"),
-                    stages: [
-                        locale.t("progress.preparingRequest"),
-                        locale.t("progress.scanningWeb"),
-                        locale.t("progress.matchingProducts"),
-                        locale.t("progress.almostDone")
-                    ],
-                    estimatedSeconds: 14
-                )
-            }
-            if let msg = vm.priceError, vm.priceResult == nil {
-                NBErrorCard(message: msg) { Task { await vm.loadPriceComparison(force: true) } }
-            }
-            if let r = vm.priceResult {
-                if let topError = r.error, !topError.isEmpty {
-                    NBEmptyState(
-                        systemImage: "doc.text.magnifyingglass",
-                        title: locale.t("prices.emptyTitle"),
-                        subtitle: r.message ?? topError,
-                        action: nil
-                    )
-                } else {
-                    priceSummaryCard(r)
-                    if !r.comparisons.isEmpty {
-                        priceComparisonsList(r.comparisons, currency: vm.currency)
-                    } else if let msg = r.message, !msg.isEmpty {
-                        NBEmptyState(
-                            systemImage: "doc.text.magnifyingglass",
-                            title: locale.t("prices.emptyTitle"),
-                            subtitle: msg,
-                            action: nil
-                        )
-                    }
-                }
-            }
-        }
-    }
-
-    private var productsRunCard: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-            Text(locale.t("prices.description"))
-                .font(AppFont.body)
-                .foregroundColor(Theme.mutedForeground)
-                .fixedSize(horizontal: false, vertical: true)
-            Button {
-                Task { await vm.loadPriceComparison(force: true) }
-            } label: {
-                HStack {
-                    if vm.isPriceLoading { ProgressView().tint(Theme.background) }
-                    Text(vm.isPriceLoading
-                         ? locale.t("prices.checking")
-                         : (vm.priceResult == nil ? locale.t("prices.compare") : locale.t("prices.recompare")))
-                }
-            }
-            .buttonStyle(NBPrimaryButtonStyle())
-            .disabled(vm.isPriceLoading)
-        }
-        .padding(Theme.Spacing.md)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .nbCard(radius: Theme.Radius.md, shadow: Theme.Shadow.sm)
-    }
-
-    private func priceSummaryCard(_ r: PriceComparisonResponse) -> some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 2) {
-                    NBEyebrow(text: locale.t("prices.totalSavings"))
-                    Text(locale.t("prices.acrossProducts"))
-                        .font(AppFont.caption)
-                        .foregroundColor(Theme.mutedForeground)
-                }
-                Spacer()
-                NBIconBadge(systemImage: "sparkles", tint: Theme.success, size: 36)
-            }
-            Text(Fmt.amount(r.totalPotentialSavings, currency: vm.currency))
-                .font(AppFont.hero)
-                .foregroundColor(Theme.success)
-                .minimumScaleFactor(0.6)
-                .lineLimit(1)
-            HStack(spacing: Theme.Spacing.xs) {
-                if let analyzed = r.productsAnalyzed {
-                    NBTag(text: String(format: locale.t("prices.productsCountFmt"), analyzed))
-                }
-                if r.isEstimated == true {
-                    NBTag(
-                        text: locale.t("prices.estimated"),
-                        background: Theme.warning.opacity(0.15),
-                        foreground: Theme.warning
-                    )
-                }
-            }
-            if let best = r.bestStoreOverall, !best.isEmpty {
-                HStack(spacing: Theme.Spacing.sm) {
-                    NBIconBadge(systemImage: "star.fill", tint: Theme.success)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(locale.t("prices.bestStoreOverall"))
-                            .font(AppFont.caption)
-                            .foregroundColor(Theme.mutedForeground)
-                        Text(best)
-                            .font(AppFont.bodyMedium)
-                            .foregroundColor(Theme.foreground)
-                    }
-                    Spacer()
-                }
-            }
-            if let summary = r.summary, !summary.isEmpty {
-                NBDivider()
-                Text(summary)
-                    .font(AppFont.body)
-                    .foregroundColor(Theme.foreground)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .padding(Theme.Spacing.md)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .nbCard(radius: Theme.Radius.lg, shadow: Theme.Shadow.lg)
-    }
-
-    private func priceComparisonsList(_ items: [PriceComparison], currency: String) -> some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
-            NBSectionHeader(eyebrow: locale.t("prices.productsSection"),
-                            title: String(format: locale.t("prices.comparisonsCountFmt"), items.count))
-            ForEach(items) { c in
-                priceComparisonCard(c, currency: currency)
-            }
-        }
-    }
-
-    private func priceComparisonCard(_ c: PriceComparison, currency: String) -> some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
-            HStack(alignment: .top) {
-                Text(c.productName)
-                    .font(AppFont.bodyMedium)
-                    .foregroundColor(Theme.foreground)
-                    .lineLimit(2)
-                Spacer()
-                if c.buyNow == true {
-                    NBTag(
-                        text: locale.t("prices.buyNow"),
-                        background: Theme.success.opacity(0.15),
-                        foreground: Theme.success
-                    )
-                }
-            }
-            HStack(alignment: .top, spacing: Theme.Spacing.md) {
-                if let price = c.userLastPrice {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(locale.t("prices.youPaid"))
-                            .font(AppFont.mono(10)).tracking(1)
-                            .foregroundColor(Theme.mutedForeground)
-                        Text(Fmt.amount(price, currency: currency))
-                            .font(AppFont.bodyMedium)
-                            .foregroundColor(Theme.foreground)
-                        if let store = c.userLastStore, !store.isEmpty {
-                            Text(store).font(AppFont.caption).foregroundColor(Theme.mutedForeground)
-                        }
-                    }
-                }
-                if let bestPrice = c.bestPrice, let bestStore = c.bestStore {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(locale.t("prices.bestLabel"))
-                            .font(AppFont.mono(10)).tracking(1)
-                            .foregroundColor(Theme.mutedForeground)
-                        Text(Fmt.amount(bestPrice, currency: currency))
-                            .font(AppFont.bodyMedium)
-                            .foregroundColor(Theme.success)
-                        Text(bestStore).font(AppFont.caption).foregroundColor(Theme.success)
-                    }
-                }
-                Spacer(minLength: 0)
-            }
-            if let savings = c.savingsAmount, savings > 0 {
-                HStack(spacing: 6) {
-                    NBTag(
-                        text: String(format: locale.t("prices.saveFmt"), Fmt.amount(savings, currency: currency)),
-                        background: Theme.success.opacity(0.15),
-                        foreground: Theme.success
-                    )
-                    if let pct = c.savingsPercent {
-                        NBTag(
-                            text: String(format: "%.0f%%", pct),
-                            background: Theme.success.opacity(0.15),
-                            foreground: Theme.success
-                        )
-                    }
-                }
-            }
-            if let recommendation = c.recommendation, !recommendation.isEmpty {
-                Text(recommendation)
-                    .font(AppFont.caption)
-                    .foregroundColor(Theme.foreground)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(Theme.Spacing.sm)
-        .nbCard(radius: Theme.Radius.md, shadow: Theme.Shadow.sm)
-    }
-
-    // MARK: - Stores tab (AI shopping audit)
-
-    @ViewBuilder
-    private var storesTab: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-            HStack {
-                Text(locale.t("savings.storesTitle"))
-                    .font(AppFont.sectionTitle)
-                    .foregroundColor(Theme.foreground)
-                Spacer()
-            }
-            storesRunCard
-            if vm.isAuditLoading && vm.auditResult == nil {
-                NBProgressCard(
-                    title: locale.t("audit.runningTitle"),
-                    stages: [
-                        locale.t("progress.preparingRequest"),
-                        locale.t("progress.scanningWeb"),
-                        locale.t("progress.matchingProducts"),
-                        locale.t("progress.findingDeals"),
-                        locale.t("progress.almostDone")
-                    ],
-                    estimatedSeconds: 18
-                )
-            }
-            if let msg = vm.auditError, vm.auditResult == nil {
-                NBErrorCard(message: msg) { Task { await vm.loadAudit(force: true) } }
-            }
-            if let r = vm.auditResult {
-                auditKpiCard(r)
-                if !r.aiSummary.isEmpty {
-                    auditSummaryCard(r.aiSummary)
-                }
-                if let best = r.bestStore, !best.isEmpty {
-                    auditBestStoreCard(best)
-                }
-                if let tip = r.topTip, !tip.isEmpty {
-                    auditTopTipCard(tip)
-                }
-                if !r.topStores.isEmpty {
-                    auditTopStoresSection(r.topStores, currency: r.currency)
-                }
-                if !r.topProducts.isEmpty {
-                    auditTopProductsSection(r.topProducts, currency: r.currency)
-                }
-                if let promotions = r.currentPromotions, !promotions.isEmpty {
-                    auditPromotionsSection(promotions, currency: r.currency)
-                }
-            }
-        }
-    }
-
-    private var storesRunCard: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-            Text(locale.t("audit.description"))
-                .font(AppFont.body)
-                .foregroundColor(Theme.mutedForeground)
-                .fixedSize(horizontal: false, vertical: true)
-            Button {
-                Task { await vm.loadAudit(force: true) }
-            } label: {
-                HStack {
-                    if vm.isAuditLoading { ProgressView().tint(Theme.background) }
-                    Text(vm.isAuditLoading
-                         ? locale.t("audit.auditing")
-                         : (vm.auditResult == nil ? locale.t("audit.generate") : locale.t("audit.regenerate")))
-                }
-            }
-            .buttonStyle(NBPrimaryButtonStyle())
-            .disabled(vm.isAuditLoading)
-        }
-        .padding(Theme.Spacing.md)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .nbCard(radius: Theme.Radius.md, shadow: Theme.Shadow.sm)
-    }
-
-    private func auditKpiCard(_ r: AuditResult) -> some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 2) {
-                    NBEyebrow(text: locale.t("audit.period"))
-                    Text("\(Fmt.date(r.period.from)) – \(Fmt.date(r.period.to))")
-                        .font(AppFont.bodyMedium)
-                        .foregroundColor(Theme.foreground)
-                }
-                Spacer()
-                NBIconBadge(systemImage: "cart.fill", size: 36)
-            }
-            Text(Fmt.amount(r.totalSpent, currency: r.currency))
-                .font(AppFont.hero)
-                .foregroundColor(Theme.foreground)
-                .minimumScaleFactor(0.6)
-                .lineLimit(1)
-            Text(String(format: locale.t("audit.txnsFmt"), r.transactionCount))
-                .font(AppFont.caption)
-                .foregroundColor(Theme.mutedForeground)
-            HStack(spacing: Theme.Spacing.sm) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(locale.t("audit.potentialSavingLabel"))
-                        .font(AppFont.mono(10)).tracking(1)
-                        .foregroundColor(Theme.mutedForeground)
-                    Text(Fmt.amount(r.totalPotentialSaving, currency: r.currency))
-                        .font(AppFont.bold(20))
-                        .foregroundColor(Theme.success)
-                }
-                Spacer()
-                if r.webSearchUsed == true {
-                    NBTag(
-                        text: locale.t("audit.webSearchTag"),
-                        background: Theme.info.opacity(0.15),
-                        foreground: Theme.info
-                    )
-                }
-            }
-            .padding(Theme.Spacing.sm)
-            .background(Theme.success.opacity(0.08))
-            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
-            .overlay(
-                RoundedRectangle(cornerRadius: Theme.Radius.md)
-                    .stroke(Theme.success, lineWidth: Theme.Border.widthThin)
-            )
-        }
-        .padding(Theme.Spacing.md)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .nbCard(radius: Theme.Radius.lg, shadow: Theme.Shadow.lg)
-    }
-
-    private func auditSummaryCard(_ text: String) -> some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
-            NBEyebrow(text: locale.t("audit.aiSummaryEyebrow"))
-            Text(text)
-                .font(AppFont.body)
-                .foregroundColor(Theme.foreground)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(Theme.Spacing.md)
-        .nbCard(radius: Theme.Radius.md, shadow: Theme.Shadow.sm)
-    }
-
-    private func auditBestStoreCard(_ name: String) -> some View {
-        HStack(spacing: Theme.Spacing.sm) {
-            NBIconBadge(systemImage: "star.fill", tint: Theme.success)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(locale.t("audit.bestStoreOverall"))
-                    .font(AppFont.caption)
-                    .foregroundColor(Theme.mutedForeground)
-                Text(name)
-                    .font(AppFont.bodyMedium)
-                    .foregroundColor(Theme.foreground)
-            }
-            Spacer()
-        }
-        .padding(Theme.Spacing.md)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .nbCard(radius: Theme.Radius.md, shadow: Theme.Shadow.sm)
-    }
-
-    private func auditTopTipCard(_ text: String) -> some View {
-        HStack(alignment: .top, spacing: Theme.Spacing.sm) {
-            NBIconBadge(systemImage: "lightbulb.fill", tint: Theme.warning)
-            Text(text)
-                .font(AppFont.body)
-                .foregroundColor(Theme.foreground)
-                .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 0)
-        }
-        .padding(Theme.Spacing.md)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.warning.opacity(0.08))
-        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
-        .overlay(
-            RoundedRectangle(cornerRadius: Theme.Radius.md)
-                .stroke(Theme.warning, lineWidth: Theme.Border.widthThin)
-        )
-    }
-
-    private func auditTopStoresSection(_ stores: [AuditTopStore], currency: String) -> some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
-            NBSectionHeader(eyebrow: locale.t("audit.storesEyebrow"), title: locale.t("audit.topSpendTitle"))
-            ForEach(Array(stores.enumerated()), id: \.element.id) { idx, s in
-                HStack(spacing: Theme.Spacing.sm) {
-                    Text("#\(idx + 1)")
-                        .font(AppFont.mono(12))
-                        .foregroundColor(Theme.mutedForeground)
-                        .frame(width: 28, alignment: .leading)
-                    Text(s.store)
-                        .font(AppFont.bodyMedium)
-                        .foregroundColor(Theme.foreground)
-                    Spacer()
-                    Text(Fmt.amount(s.amount, currency: currency))
-                        .font(AppFont.mono(13))
-                        .foregroundColor(Theme.foreground)
-                }
-                .padding(Theme.Spacing.sm)
-                .nbCard(radius: Theme.Radius.sm, shadow: Theme.Shadow.sm)
-            }
-        }
-    }
-
-    private func auditTopProductsSection(_ products: [AuditTopProduct], currency: String) -> some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
-            NBSectionHeader(eyebrow: locale.t("audit.productsEyebrow"), title: locale.t("audit.topPurchasedTitle"))
-            ForEach(products) { p in
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack {
-                        Text(p.name)
-                            .font(AppFont.bodyMedium)
-                            .foregroundColor(Theme.foreground)
-                            .lineLimit(2)
-                        Spacer()
-                        Text(Fmt.amount(p.totalPaid, currency: currency))
-                            .font(AppFont.mono(12))
-                            .foregroundColor(Theme.foreground)
-                    }
-                    HStack(spacing: 6) {
-                        NBTag(text: String(format: locale.t("audit.timesBoughtFmt"), p.count))
-                        NBTag(text: String(format: locale.t("audit.avgFmt"), Fmt.amount(p.avgPrice, currency: currency)))
-                        if let vendor = p.vendor, !vendor.isEmpty {
-                            NBTag(text: vendor)
-                        }
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(Theme.Spacing.sm)
-                .nbCard(radius: Theme.Radius.sm, shadow: Theme.Shadow.sm)
-            }
-        }
-    }
-
-    private func auditPromotionsSection(_ items: [AuditPromotion], currency: String) -> some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
-            NBSectionHeader(eyebrow: locale.t("audit.promotionsEyebrow"), title: locale.t("audit.activeDeals"))
-            ForEach(Array(items.enumerated()), id: \.offset) { _, promo in
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack {
-                        if let store = promo.store, !store.isEmpty {
-                            Text(store)
-                                .font(AppFont.bodyMedium)
-                                .foregroundColor(Theme.foreground)
-                        }
-                        Spacer()
-                        if let price = promo.price {
-                            Text(Fmt.amount(price, currency: currency))
-                                .font(AppFont.mono(12))
-                                .foregroundColor(Theme.success)
-                        }
-                    }
-                    if let product = promo.product, !product.isEmpty {
-                        Text(product)
-                            .font(AppFont.caption)
-                            .foregroundColor(Theme.mutedForeground)
-                    }
-                    if let desc = promo.description, !desc.isEmpty {
-                        Text(desc)
-                            .font(AppFont.caption)
-                            .foregroundColor(Theme.mutedForeground)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    if let valid = promo.validUntil, !valid.isEmpty {
-                        Text(String(format: locale.t("audit.validUntilFmt"), Fmt.date(valid)))
-                            .font(AppFont.mono(11))
-                            .foregroundColor(Theme.mutedForeground)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(Theme.Spacing.sm)
-                .nbCard(radius: Theme.Radius.sm, shadow: Theme.Shadow.sm)
-            }
-        }
-    }
-
-    // MARK: - Deals tab (personalised promotions — unchanged from old hub)
-
-    @ViewBuilder
-    private var dealsTab: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-            dealsHeader
-
-            if vm.isPromotionsLoading && vm.promotions == nil {
-                NBSkeletonList(rows: 4)
-            } else if let err = vm.promotionsError, vm.promotions == nil {
-                NBErrorCard(message: err) { Task { await vm.loadPromotions(force: true) } }
-            } else if let promos = vm.promotions {
-                if let potential = promos.totalPotentialSavings, potential > 0 {
-                    potentialSavingsTile(potential)
-                }
-                if !promos.personalizedDeals.isEmpty {
-                    NBEyebrow(text: locale.t("savings.personalized"))
-                    ForEach(promos.personalizedDeals) { offer in
-                        dealCard(offer, personalized: true)
-                    }
-                }
-                if !promos.promotions.isEmpty {
-                    NBEyebrow(text: locale.t("savings.allDeals"))
-                    ForEach(promos.promotions) { offer in
-                        dealCard(offer, personalized: false)
-                    }
-                }
-                if promos.personalizedDeals.isEmpty && promos.promotions.isEmpty {
-                    NBEmptyState(
-                        systemImage: "tag.fill",
-                        title: locale.t("savings.emptyDeals"),
-                        subtitle: locale.t("savings.emptyDealsSub")
-                    )
-                }
-                if let summary = promos.weeklySummary {
-                    weeklySummaryCard(summary)
-                }
-            }
-        }
-    }
-
-    private var dealsHeader: some View {
-        HStack {
-            Text(locale.t("savings.personalizedDeals"))
-                .font(AppFont.sectionTitle)
-                .foregroundColor(Theme.foreground)
-            Spacer()
-            Button {
-                Task { await vm.loadPromotions(force: true) }
-            } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: "arrow.clockwise")
-                    Text(locale.t("savings.refresh"))
-                }
-                .font(AppFont.caption)
-            }
-            .buttonStyle(.plain)
-            .foregroundColor(Theme.foreground)
-        }
-    }
-
-    private func potentialSavingsTile(_ value: Double) -> some View {
-        HStack(spacing: Theme.Spacing.sm) {
-            NBIconBadge(systemImage: "sparkles", tint: Theme.foreground, background: Theme.muted, size: 36)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(locale.t("savings.potentialSavings"))
-                    .font(AppFont.mono(10))
-                    .tracking(1.2)
-                    .foregroundColor(Theme.mutedForeground)
-                Text(Fmt.amount(value, currency: vm.currency))
-                    .font(AppFont.bold(22))
-                    .foregroundColor(Theme.success)
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(Theme.Spacing.sm)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .nbCard(radius: Theme.Radius.md, shadow: Theme.Shadow.sm)
-    }
-
-    private func dealCard(_ offer: PromoOffer, personalized: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text(offer.productName ?? offer.store ?? locale.t("savings.offerFallback"))
-                    .font(AppFont.bodyMedium)
-                    .foregroundColor(Theme.foreground)
-                Spacer()
-                if personalized || offer.matchesPurchases == true {
-                    NBTag(text: locale.t("savings.matchTag"), background: Theme.success.opacity(0.15), foreground: Theme.success)
-                }
-            }
-            if let store = offer.store {
-                Text(store)
-                    .font(AppFont.caption)
-                    .foregroundColor(Theme.mutedForeground)
-            }
-            HStack(spacing: 8) {
-                if let promo = offer.promoPrice {
-                    Text(Fmt.amount(promo, currency: offer.currency ?? vm.currency))
-                        .font(AppFont.monoBold(16))
-                        .foregroundColor(Theme.foreground)
-                }
-                if let reg = offer.regularPrice, let promo = offer.promoPrice, reg > promo {
-                    Text(Fmt.amount(reg, currency: offer.currency ?? vm.currency))
-                        .font(AppFont.mono(11))
-                        .strikethrough()
-                        .foregroundColor(Theme.mutedForeground)
-                }
-                if let discount = offer.discount {
-                    NBTag(text: discount)
-                }
-                Spacer()
-            }
-            // Validity row — show "from – until" when both are present
-            // (gives the user the full window the deal applies for),
-            // fall back to "until X" otherwise. The full range matters
-            // because leaflet promotions typically last 7 days; if the
-            // user opens the app on day 5 and only sees "until day 7"
-            // they don't know the price wasn't already that low for
-            // the past 5 days.
-            validityLine(for: offer)
-            // Link buttons for the official chain leaflet and (when AI
-            // provided one) a direct deep-link to the deal page. Tapping
-            // either opens the URL in Safari via the system handler.
-            if offer.leafletUrl != nil || offer.dealUrl != nil {
-                HStack(spacing: 8) {
-                    if let leaflet = offer.leafletUrl, let url = URL(string: leaflet) {
-                        Link(destination: url) {
-                            Label(locale.t("savings.openLeaflet"), systemImage: "newspaper")
-                                .font(AppFont.caption)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 6)
-                                .background(Theme.accent)
-                                .foregroundColor(Theme.foreground)
-                                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
-                        }
-                    }
-                    if let deal = offer.dealUrl, let url = URL(string: deal) {
-                        Link(destination: url) {
-                            Label(locale.t("savings.openDeal"), systemImage: "link")
-                                .font(AppFont.caption)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 6)
-                                .background(Theme.foreground)
-                                .foregroundColor(Theme.background)
-                                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
-                        }
-                    }
-                    Spacer()
-                }
-                .padding(.top, 4)
-            }
-        }
-        .padding(Theme.Spacing.sm)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .nbCard(radius: Theme.Radius.md, shadow: Theme.Shadow.sm)
-    }
-
-    /// Renders the deal validity line. Three cases:
-    /// - both `validFrom` and `validUntil` → "Promocja: 22 kwi – 28 kwi"
-    /// - only `validUntil` → "Ważna do 28 kwi"
-    /// - nothing → empty view (still a valid SwiftUI return type)
-    @ViewBuilder
-    private func validityLine(for offer: PromoOffer) -> some View {
-        if let from = offer.validFrom, let until = offer.validUntil {
-            Text(String(format: locale.t("savings.validRangeFmt"),
-                        Fmt.dayMonth(from),
-                        Fmt.dayMonth(until)))
-                .font(AppFont.caption)
-                .foregroundColor(Theme.mutedForeground)
-        } else if let until = offer.validUntil {
-            Text(String(format: locale.t("savings.validUntilFmt"), Fmt.dayMonth(until)))
-                .font(AppFont.caption)
-                .foregroundColor(Theme.mutedForeground)
-        }
-    }
-
-    private func weeklySummaryCard(_ s: WeeklySummary) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            NBEyebrow(text: locale.t("savings.weeklySummary"))
-            if let start = s.weekStart, let end = s.weekEnd {
-                Text("\(Fmt.dayMonth(start)) – \(Fmt.dayMonth(end))")
-                    .font(AppFont.caption)
-                    .foregroundColor(Theme.mutedForeground)
-            }
-            if let total = s.totalSpent {
-                Text(String(format: locale.t("savings.spentFmt"), Fmt.amount(total, currency: vm.currency)))
-                    .font(AppFont.bodyMedium)
-                    .foregroundColor(Theme.foreground)
-            }
-            if let summary = s.summary {
-                Text(summary)
-                    .font(AppFont.body)
-                    .foregroundColor(Theme.foreground)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            if let top = s.topCategory {
-                Text(String(format: locale.t("savings.topCategoryFmt"), top))
-                    .font(AppFont.caption)
-                    .foregroundColor(Theme.mutedForeground)
-            }
-        }
-        .padding(Theme.Spacing.sm)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .nbCard(radius: Theme.Radius.md, shadow: Theme.Shadow.sm)
-    }
 }
 
 // MARK: - View model
 
+/// Lean planner-only view-model. Was previously a multi-tab roll-up
+/// (planner / products / stores / deals); products and stores moved to the
+/// Deals tab (`OkazjeHubView`), so this VM only owns the planner data
+/// (budget + financial health) plus a goals mirror used by the KPI strip
+/// and the smart hero insight banner.
 @MainActor
 final class SavingsHubViewModel: ObservableObject {
-    enum Tab: Hashable { case planner, products, stores, deals }
-
-    @Published var activeTab: Tab = .planner
-
     weak var store: AppDataStore?
     weak var locale: AppLocale?
 
-    // Goals (mirrored from store; no longer rendered here, but used for
-    // the `monthlyNeeded` sanity-check on the planner KPI strip).
+    // Goals mirror — used by the goals preview row + heroInsight + the
+    // monthlyNeeded calculation behind the planner KPI strip.
     @Published var goals: [SavingsGoal] = []
 
-    // Budget (planner tab)
+    // Budget (planner)
     @Published var budget: BudgetResponse?
     @Published var isBudgetLoading = false
     @Published var budgetError: String?
 
-    // Financial health (top KPI tile)
+    // Financial health score (top KPI tile)
     @Published var healthScore: Int?
     @Published var healthTips: [String] = []
-
-    // Promotions (deals tab)
-    @Published var promotions: PromotionsResponse?
-    @Published var isPromotionsLoading = false
-    @Published var promotionsError: String?
-
-    // Price comparison (products tab) — fetched lazily on first tap
-    @Published var priceResult: PriceComparisonResponse?
-    @Published var isPriceLoading = false
-    @Published var priceError: String?
-
-    // Shopping audit (stores tab) — fetched lazily on first tap
-    @Published var auditResult: AuditResult?
-    @Published var isAuditLoading = false
-    @Published var auditError: String?
 
     @Published private(set) var hasLoadedOnce = false
 
@@ -1164,11 +808,12 @@ final class SavingsHubViewModel: ObservableObject {
         Double(budget?.budget?.savingsTarget ?? "0") ?? 0
     }
 
-    var potentialDealSavings: Double {
-        promotions?.totalPotentialSavings ?? 0
+    /// Sum of `currentAmount` across active goals — drives the "Saved"
+    /// KPI tile that replaced `potentialDealSavings`.
+    var totalSavedAcrossGoals: Double {
+        goals.filter { $0.isCompleted != true }
+            .reduce(0) { $0 + $1.currentAmount.double }
     }
-
-    var firstTip: String? { healthTips.first }
 
     // MARK: - Loaders
 
@@ -1186,32 +831,21 @@ final class SavingsHubViewModel: ObservableObject {
             healthScore = h.score
             healthTips = h.tips
         }
-        promotions = store.promotions
-
         budgetError = (store.budget == nil ? store.budgetError : nil)
-        promotionsError = (store.promotions == nil ? store.promotionsError : nil)
-
+        // Always reflect store loading flag — covers both initial load and
+        // explicit refresh. Avoids the wedge-state where `awaitBudget`
+        // failed and `isBudgetLoading` stayed `true` forever.
         isBudgetLoading = store.budgetLoading && store.budget == nil
-        isPromotionsLoading = store.promotionsLoading && store.promotions == nil
     }
 
-    /// Loads everything every Savings tab needs on first appear.
-    ///
-    /// Products + Stores hit LLM endpoints (10-25 s on cache miss) so
-    /// they used to wait for an explicit user tap. Wojtek wanted them
-    /// auto-prefetched: `/api/prices/compare` now caches 24 h and
-    /// `/api/audit/generate` caches 6 h, so the first visit eats the
-    /// AI call but everything after is instant. We fire all five slices
-    /// in parallel — price + audit run in the background while the
-    /// user is staring at the planner / deals, so by the time they
-    /// switch tabs the data is already there.
+    /// Fires the two slices the planner actually renders. Previously
+    /// triggered LLM-backed price comparison + shopping audit endpoints
+    /// (~10-25 s each, ~$0.02 a call) on every Savings tab visit, even
+    /// though their views were never rendered. Removed.
     func loadAll() async {
         await withTaskGroup(of: Void.self) { group in
             group.addTask { await self.loadBudget() }
             group.addTask { await self.loadFinancialHealth() }
-            group.addTask { await self.loadPromotions() }
-            group.addTask { await self.loadPriceComparison() }
-            group.addTask { await self.loadAudit() }
         }
         hasLoadedOnce = true
     }
@@ -1221,6 +855,10 @@ final class SavingsHubViewModel: ObservableObject {
         if store.budget == nil { isBudgetLoading = true }
         budgetError = nil
         await store.awaitBudget(force: force)
+        // Hard reset — `syncFromStore` only resets the flag when budget
+        // is non-nil; a failed load with no cached budget would otherwise
+        // leave the spinner spinning forever.
+        isBudgetLoading = false
         syncFromStore()
     }
 
@@ -1228,78 +866,6 @@ final class SavingsHubViewModel: ObservableObject {
         guard let store else { return }
         await store.awaitFinancialHealth(force: force)
         syncFromStore()
-    }
-
-    func loadPromotions(force: Bool = false) async {
-        guard let store else { return }
-        if store.promotions == nil { isPromotionsLoading = true }
-        promotionsError = nil
-        await store.awaitPromotions(force: force)
-        syncFromStore()
-    }
-
-    /// Fetches AI price comparison. Auto-fired from `loadAll()` on tab
-    /// entry; refresh button on the Products card calls with `force: true`.
-    /// Backend caches 24 h, so cold call after first visit is ~50 ms.
-    func loadPriceComparison(force: Bool = false) async {
-        if isPriceLoading { return }
-        isPriceLoading = true
-        priceError = nil
-        defer { isPriceLoading = false }
-        do {
-            let lang = locale?.language.rawValue ?? "pl"
-            priceResult = try await PricesRepo.compare(lang: lang, currency: currency, force: force)
-        } catch ApiError.cancelled {
-            // User left the tab — no toast.
-        } catch let api as ApiError {
-            // Don't show error if we already have data on screen — user
-            // shouldn't see a "couldn't load" banner over content that's
-            // visible. Background prefetch failure is silent.
-            if priceResult == nil { priceError = friendlyMessage(for: api) }
-        } catch {
-            if priceResult == nil { priceError = locale?.t("errors.unknown") ?? error.localizedDescription }
-        }
-    }
-
-    /// Fetches AI shopping audit. Auto-fired from `loadAll()` on tab
-    /// entry; refresh button on the Stores card calls with `force: true`.
-    /// Backend caches 6 h.
-    func loadAudit(force: Bool = false) async {
-        if isAuditLoading { return }
-        isAuditLoading = true
-        auditError = nil
-        defer { isAuditLoading = false }
-        do {
-            let lang = locale?.language.rawValue ?? "pl"
-            auditResult = try await AuditRepo.generate(lang: lang, currency: currency, force: force)
-        } catch ApiError.cancelled {
-            // ignore
-        } catch let api as ApiError {
-            if auditResult == nil { auditError = friendlyMessage(for: api) }
-        } catch {
-            if auditResult == nil { auditError = locale?.t("errors.unknown") ?? error.localizedDescription }
-        }
-    }
-
-    /// Localized fallback for ApiError cases — same mapping as ScanFlow.
-    private func friendlyMessage(for error: ApiError) -> String {
-        let l = locale
-        switch error {
-        case .invalidURL: return l?.t("errors.unknown") ?? "Unknown error"
-        case .transport: return l?.t("errors.network") ?? "Network error"
-        case .decoding: return l?.t("errors.serverUnexpected") ?? "Unexpected server response"
-        case .unauthorized: return l?.t("errors.sessionExpired") ?? "Session expired"
-        case .forbidden: return l?.t("errors.forbidden") ?? "Forbidden"
-        case .notFound: return l?.t("errors.notFound") ?? "Not found"
-        case .rateLimited: return l?.t("errors.rateLimited") ?? "Rate limited"
-        case .timeout: return l?.t("errors.timeout") ?? "Timed out"
-        case .noConnection: return l?.t("errors.network") ?? "No connection"
-        case .server(let status, _) where status >= 500: return l?.t("errors.serverDown") ?? "Server down"
-        case .server: return l?.t("errors.serverUnexpected") ?? "Server error"
-        case .payloadTooLarge: return l?.t("errors.payloadTooLarge") ?? "Too large"
-        case .cancelled: return l?.t("errors.cancelled") ?? "Cancelled"
-        case .unknown: return l?.t("errors.unknown") ?? "Unknown error"
-        }
     }
 }
 
@@ -1466,6 +1032,7 @@ struct BudgetEditSheet: View {
                 Spacer()
                 if existing == nil, hasLastMonthValues {
                     Button {
+                        Haptics.selection()
                         copyLastMonth()
                     } label: {
                         Label(locale.t("budgetSheet.copyLastMonth"), systemImage: "arrow.uturn.backward")
@@ -1505,6 +1072,7 @@ struct BudgetEditSheet: View {
         savingsShare: Double
     ) -> some View {
         Button {
+            Haptics.selection()
             applyPreset(budgetShare: budgetShare, savingsShare: savingsShare)
         } label: {
             HStack(alignment: .center, spacing: Theme.Spacing.sm) {

@@ -12,6 +12,7 @@ import {
 } from '@/lib/db/schema'
 import { eq, and, inArray } from 'drizzle-orm'
 import crypto from 'crypto'
+import { z } from 'zod'
 
 // ── GET: calculate full settlement for group ────────────────────────────────
 export async function GET(
@@ -277,6 +278,20 @@ export async function GET(
   }
 }
 
+// SECURITY (round 2 / A2): Zod schema for the create-payment-request POST body.
+// `amount` accepts number or numeric string (iOS sends number, web sends form
+// values that may be string). Bounds protect against decimal(12,2) overflow.
+const CreatePaymentRequestSchema = z.object({
+  fromMemberId: z.string().min(1).max(128),
+  toMemberId: z.string().min(1).max(128),
+  amount: z.union([
+    z.number().positive().max(9_999_999_999.99),
+    z.string().regex(/^\d+(\.\d{1,2})?$/).transform(Number),
+  ]),
+  note: z.string().max(500).optional().nullable(),
+  bankAccount: z.string().max(50).optional().nullable(),
+})
+
 // ── POST: create a payment request ──────────────────────────────────────────
 export async function POST(
   req: NextRequest,
@@ -287,12 +302,18 @@ export async function POST(
 
   try {
     const { id: groupId } = await params
-    const body = await req.json()
-    const { fromMemberId, toMemberId, amount, note, bankAccount } = body
 
-    if (!fromMemberId || !toMemberId || !amount) {
-      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
+    const rawBody = await req.json().catch(() => null)
+    if (!rawBody) return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
+
+    const parsed = CreatePaymentRequestSchema.safeParse(rawBody)
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: 'Invalid input', details: parsed.error.flatten().fieldErrors },
+        { status: 400 },
+      )
     }
+    const { fromMemberId, toMemberId, amount, note, bankAccount } = parsed.data
 
     // Verify group access: creator OR member
     const [group] = await db
@@ -310,11 +331,33 @@ export async function POST(
       if (!membership) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     }
 
+    // SECURITY (round 2 / A2): validate fromMemberId + toMemberId both
+    // belong to THIS group. Without this, an attacker who's a member of
+    // their own group could craft a payment_request rows that reference
+    // members of foreign groups — polluting their settlement views and
+    // exposing displayName/email when the foreign user opens the request.
+    const groupMemberIds = await db
+      .select({ id: groupMembers.id })
+      .from(groupMembers)
+      .where(eq(groupMembers.groupId, groupId))
+    const validMemberIds = new Set(groupMemberIds.map((m) => m.id))
+    if (!validMemberIds.has(fromMemberId) || !validMemberIds.has(toMemberId)) {
+      return NextResponse.json({ error: 'fromMemberId or toMemberId not in group' }, { status: 400 })
+    }
+
     // Generate share token
     const shareToken = crypto.randomBytes(32).toString('hex')
 
     // Build item breakdown from receipt assignments
-    const groupReceipts = await db.select().from(receipts).where(eq(receipts.groupId, groupId))
+    // Slim the receipt projection — settlement only needs vendor +
+    // date for the line breakdown, not items/rawOcr/imageUrl.
+    const groupReceipts = await db.select({
+      id: receipts.id,
+      vendor: receipts.vendor,
+      date: receipts.date,
+      total: receipts.total,
+      currency: receipts.currency,
+    }).from(receipts).where(eq(receipts.groupId, groupId))
     const allAssignments = await db
       .select()
       .from(receiptItemAssignments)
@@ -353,9 +396,21 @@ export async function POST(
           const totalShares = allAssignments
             .filter((a) => a.receiptItemId === item.id)
             .reduce((sum, a) => sum + parseFloat(String(a.share || '1')), 0)
-          const memberShare = parseFloat(String(itemAssignments[0].share || '1'))
+          const firstAssignment = itemAssignments[0]
+          if (!firstAssignment) continue
+          const memberShare = parseFloat(String(firstAssignment.share || '1'))
           const itemPrice = parseFloat(String(item.totalPrice || '0'))
+          // SECURITY/CORRECTNESS (round 3 / A4): defend against malformed
+          // assignments where every `share` is "0" or NaN — without these
+          // guards the division yields Infinity / NaN and the resulting
+          // breakdown row poisons the JSON payload (and any downstream
+          // sum). We just skip the item; the settlement still goes
+          // through with the remaining valid line items.
+          if (!Number.isFinite(totalShares) || totalShares <= 0) continue
+          if (!Number.isFinite(memberShare) || memberShare <= 0) continue
+          if (!Number.isFinite(itemPrice)) continue
           const shareAmount = (itemPrice * memberShare) / totalShares
+          if (!Number.isFinite(shareAmount)) continue
 
           breakdown.push({
             itemName: item.name,
@@ -384,6 +439,13 @@ export async function POST(
         status: 'pending',
       })
       .returning()
+
+    // CORRECTNESS (round 3 / A4): Drizzle returns an array even when 1 row
+    // was requested; guard the destructure so a transient failure surfaces
+    // as a 500 rather than a TypeError on `created.id`.
+    if (!created) {
+      return NextResponse.json({ error: 'Failed to create payment request' }, { status: 500 })
+    }
 
     const shareUrl = `${process.env.NEXT_PUBLIC_APP_URL || `https://${process.env.VERCEL_URL}` || 'https://solvio-lac.vercel.app'}/settlement/${created.id}?token=${shareToken}`
 

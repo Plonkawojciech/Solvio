@@ -63,6 +63,15 @@ enum ApiError: Error, LocalizedError {
 /// matching the `credentials: 'include'` behavior of the web app.
 final class ApiClient {
     static let shared = ApiClient()
+    private static let csrfHeader = "x-csrf-token"
+    private static let csrfBypassPrefixes = [
+        "/api/auth/session",
+        "/api/auth/demo",
+        "/api/auth/magic-login",
+        "/api/auth/csrf",
+        "/api/settlement/",
+        "/api/cron/",
+    ]
 
     private let decoder: JSONDecoder = {
         let d = JSONDecoder()
@@ -79,6 +88,9 @@ final class ApiClient {
     }()
 
     private let session: URLSession
+    private let csrfLock = NSLock()
+    private var csrfToken: String?
+    private var csrfFetchTask: (id: UUID, task: Task<String, Error>)?
 
     private init() {
         let config = URLSessionConfiguration.default
@@ -87,7 +99,18 @@ final class ApiClient {
         config.httpShouldSetCookies = true
         config.timeoutIntervalForRequest = AppConfig.requestTimeout
         config.timeoutIntervalForResource = AppConfig.longRequestTimeout
-        config.requestCachePolicy = .reloadIgnoringLocalCacheData
+        // Honour ETag/Last-Modified — let the system 304 path kick in
+        // for unchanged responses so refreshes don't redownload the
+        // full payload. Was previously `.reloadIgnoringLocalCacheData`
+        // which meant Vercel's ETag headers were silently ignored and
+        // every dashboard refresh re-pulled the entire JSON blob.
+        config.requestCachePolicy = .useProtocolCachePolicy
+        // Bump shared URLCache so 304 path actually has something to
+        // revalidate against (default ~5 MB shared with the rest of the
+        // process is fine for our payload sizes, but be explicit).
+        config.urlCache = URLCache(memoryCapacity: 8 * 1024 * 1024,
+                                   diskCapacity: 32 * 1024 * 1024,
+                                   diskPath: "solvio-api-cache")
         self.session = URLSession(configuration: config)
     }
 
@@ -174,7 +197,7 @@ final class ApiClient {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-        applyDefaultHeaders(to: &request)
+        try await prepareRequest(&request, path: path, method: "POST")
 
         var body = Data()
         for (k, v) in extraFields {
@@ -191,12 +214,7 @@ final class ApiClient {
         request.httpBody = body
         request.timeoutInterval = AppConfig.longRequestTimeout
 
-        let (data, response): (Data, URLResponse)
-        do {
-            (data, response) = try await session.data(for: request)
-        } catch {
-            throw Self.classifyTransport(error)
-        }
+        let (data, response) = try await send(request, path: path, method: "POST")
         try validate(response, data: data)
         return try decode(data)
     }
@@ -212,7 +230,7 @@ final class ApiClient {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-        applyDefaultHeaders(to: &request)
+        try await prepareRequest(&request, path: path, method: "POST")
 
         var body = Data()
         for (k, v) in fields {
@@ -225,12 +243,7 @@ final class ApiClient {
         request.httpBody = body
         request.timeoutInterval = AppConfig.longRequestTimeout
 
-        let (data, response): (Data, URLResponse)
-        do {
-            (data, response) = try await session.data(for: request)
-        } catch {
-            throw Self.classifyTransport(error)
-        }
+        let (data, response) = try await send(request, path: path, method: "POST")
         try validate(response, data: data)
         return try decode(data)
     }
@@ -239,6 +252,16 @@ final class ApiClient {
         if let cookies = HTTPCookieStorage.shared.cookies {
             for cookie in cookies { HTTPCookieStorage.shared.deleteCookie(cookie) }
         }
+    }
+
+    func clearAuthState() {
+        clearCookies()
+        clearCsrfToken()
+    }
+
+    @discardableResult
+    func refreshCsrfToken(force: Bool = false) async throws -> String {
+        try await ensureCsrfToken(forceRefresh: force)
     }
 
     // MARK: - Private
@@ -252,18 +275,13 @@ final class ApiClient {
         let url = try buildURL(path: path, query: query)
         var request = URLRequest(url: url)
         request.httpMethod = method
-        applyDefaultHeaders(to: &request)
+        try await prepareRequest(&request, path: path, method: method)
         if let body = body, !(body is Empty) {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.httpBody = try encoder.encode(body)
         }
 
-        let (data, response): (Data, URLResponse)
-        do {
-            (data, response) = try await session.data(for: request)
-        } catch {
-            throw Self.classifyTransport(error)
-        }
+        let (data, response) = try await send(request, path: path, method: method)
         try validate(response, data: data)
         return try decode(data)
     }
@@ -305,11 +323,124 @@ final class ApiClient {
         return url
     }
 
+    private func prepareRequest(_ request: inout URLRequest, path: String, method: String) async throws {
+        applyDefaultHeaders(to: &request)
+        guard requestNeedsCsrf(path: path, method: method) else { return }
+        let token = try await ensureCsrfToken(forceRefresh: false)
+        request.setValue(token, forHTTPHeaderField: Self.csrfHeader)
+    }
+
     private func applyDefaultHeaders(to request: inout URLRequest) {
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("Solvio-iOS/\(AppConfig.appVersion)", forHTTPHeaderField: "User-Agent")
         if let lang = Locale.preferredLanguages.first {
             request.setValue(String(lang.prefix(2)), forHTTPHeaderField: "Accept-Language")
+        }
+    }
+
+    private func requestNeedsCsrf(path: String, method: String) -> Bool {
+        let normalizedMethod = method.uppercased()
+        guard normalizedMethod == "POST" || normalizedMethod == "PUT" || normalizedMethod == "PATCH" || normalizedMethod == "DELETE" else {
+            return false
+        }
+        return !Self.csrfBypassPrefixes.contains(where: { path.hasPrefix($0) })
+    }
+
+    private func send(_ request: URLRequest, path: String, method: String, allowCsrfRetry: Bool = true) async throws -> (Data, URLResponse) {
+        let (data, response): (Data, URLResponse)
+        do {
+            (data, response) = try await session.data(for: request)
+        } catch {
+            throw Self.classifyTransport(error)
+        }
+
+        if allowCsrfRetry,
+           requestNeedsCsrf(path: path, method: method),
+           let http = response as? HTTPURLResponse,
+           http.statusCode == 403,
+           let reason = http.value(forHTTPHeaderField: "X-CSRF-Reason")?.lowercased(),
+           reason == "missing" || reason == "mismatch" {
+            let token = try await ensureCsrfToken(forceRefresh: true)
+            var retry = request
+            retry.setValue(token, forHTTPHeaderField: Self.csrfHeader)
+            return try await send(retry, path: path, method: method, allowCsrfRetry: false)
+        }
+
+        return (data, response)
+    }
+
+    private func ensureCsrfToken(forceRefresh: Bool) async throws -> String {
+        if !forceRefresh, let token = currentCsrfToken() {
+            return token
+        }
+
+        let entry = csrfLock.withLock { () -> (id: UUID, task: Task<String, Error>) in
+            if !forceRefresh, let token = csrfToken {
+                return (UUID(), Task<String, Error> { token })
+            }
+            if let existing = csrfFetchTask {
+                return existing
+            }
+
+            let id = UUID()
+            let task = Task<String, Error> { [weak self] in
+                guard let self else { throw ApiError.unknown }
+                defer { self.clearCsrfFetchTask(id: id) }
+                let token = try await self.fetchCsrfTokenFromServer()
+                self.setCsrfToken(token)
+                return token
+            }
+            let entry = (id, task)
+            csrfFetchTask = entry
+            return entry
+        }
+
+        return try await entry.task.value
+    }
+
+    private func fetchCsrfTokenFromServer() async throws -> String {
+        struct CsrfResponse: Decodable {
+            let token: String
+        }
+
+        let url = try buildURL(path: "/api/auth/csrf", query: [])
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        applyDefaultHeaders(to: &request)
+
+        let (data, response): (Data, URLResponse)
+        do {
+            (data, response) = try await session.data(for: request)
+        } catch {
+            throw Self.classifyTransport(error)
+        }
+
+        try validate(response, data: data)
+        let decoded: CsrfResponse = try decode(data)
+        return decoded.token
+    }
+
+    private func currentCsrfToken() -> String? {
+        csrfLock.withLock { csrfToken }
+    }
+
+    private func setCsrfToken(_ token: String?) {
+        csrfLock.withLock {
+            csrfToken = token
+        }
+    }
+
+    private func clearCsrfToken() {
+        csrfLock.withLock {
+            csrfToken = nil
+            csrfFetchTask = nil
+        }
+    }
+
+    private func clearCsrfFetchTask(id: UUID) {
+        csrfLock.withLock {
+            guard csrfFetchTask?.id == id else { return }
+            csrfFetchTask = nil
         }
     }
 
@@ -323,7 +454,13 @@ final class ApiClient {
         print("[ApiClient] HTTP \(http.statusCode) \(url)\n  message: \(msg ?? "nil")\n  body: \(preview)")
         #endif
         switch http.statusCode {
-        case 401: throw ApiError.unauthorized
+        case 401:
+            // Broadcast a session-expired event so SessionStore can clear
+            // cookies + cache and route the user back to login. Without
+            // this, every tab keeps spinning on its 401-throwing fetch
+            // and the app sits in a broken half-logged-in state forever.
+            NotificationCenter.default.post(name: .solvioSessionExpired, object: nil)
+            throw ApiError.unauthorized
         case 403: throw ApiError.forbidden
         case 404: throw ApiError.notFound
         case 413: throw ApiError.payloadTooLarge
@@ -366,6 +503,14 @@ final class ApiClient {
 
     struct Empty: Encodable {}
     struct EmptyResponse: Decodable {}
+}
+
+private extension NSLock {
+    func withLock<T>(_ work: () -> T) -> T {
+        lock()
+        defer { unlock() }
+        return work()
+    }
 }
 
 private extension Data {
@@ -519,4 +664,12 @@ final class FXRates: ObservableObject {
         let rates: [String: Double]
         let fetchedAt: Date
     }
+}
+
+extension Notification.Name {
+    /// Posted by `ApiClient` when any request returns HTTP 401. The root
+    /// `SolvioApp` listens and triggers `SessionStore.logout()` so the
+    /// app reliably falls back to the login screen instead of leaving
+    /// the user in a half-authenticated zombie state.
+    static let solvioSessionExpired = Notification.Name("solvio.sessionExpired")
 }

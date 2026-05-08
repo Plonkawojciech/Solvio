@@ -6,17 +6,26 @@ import { eq } from 'drizzle-orm'
 import { cookies } from 'next/headers'
 import { SESSION_COOKIE, buildSignedSession, getSession } from '@/lib/session'
 import { seedBusinessCategories } from '@/lib/db/seed-user'
+import { z } from 'zod'
+
+// SECURITY FIX: Zod validation on body — explicit enum prevents
+// arbitrary productType values landing in user_settings.
+const SwitchProductSchema = z.object({
+  productType: z.enum(['personal', 'business']),
+})
 
 export async function POST(req: NextRequest) {
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const body = await req.json()
-  const { productType } = body
+  const body = await req.json().catch(() => null)
+  if (!body) return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
 
-  if (!productType || !['personal', 'business'].includes(productType)) {
-    return NextResponse.json({ error: 'Invalid productType' }, { status: 400 })
+  const parsed = SwitchProductSchema.safeParse(body)
+  if (!parsed.success) {
+    return NextResponse.json({ error: 'Invalid input', details: parsed.error.flatten().fieldErrors }, { status: 400 })
   }
+  const { productType } = parsed.data
 
   // Update product type
   await db.update(userSettings)

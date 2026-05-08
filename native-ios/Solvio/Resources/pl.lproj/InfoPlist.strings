@@ -1,0 +1,3 @@
+"NSCameraUsageDescription" = "Solvio potrzebuje dostepu do kamery, aby skanowac paragony i faktury.";
+"NSPhotoLibraryUsageDescription" = "Solvio potrzebuje dostepu do Twoich zdjec, aby importowac paragony i faktury do analizy.";
+"NSPhotoLibraryAddUsageDescription" = "Solvio moze zapisywac wygenerowane raporty i e-paragony w Twojej bibliotece zdjec.";

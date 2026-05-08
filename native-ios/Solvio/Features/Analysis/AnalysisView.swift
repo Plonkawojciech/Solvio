@@ -12,6 +12,10 @@ struct AnalysisView: View {
     @State private var isLoading = false
     @State private var result: AnalysisResponse?
     @State private var errorMessage: String?
+    /// Current in-flight analysis task — cancelled when user flips
+    /// period quickly, otherwise an older period's response can land
+    /// after a newer one and nadpisać `result` ze złą wartością.
+    @State private var currentRunTask: Task<Void, Never>? = nil
     private var currency: String { store.currency }
 
     /// Mirrors web `Period` type in `app/(protected)/analysis/page.tsx`.
@@ -73,7 +77,12 @@ struct AnalysisView: View {
                     )
                 }
                 if let msg = errorMessage, result == nil {
-                    NBErrorCard(message: msg) { Task { await run(force: true) } }
+                    NBErrorCard(message: msg) {
+                        // Subtle tick on retry — user already saw the error,
+                        // a heavier impact would feel punitive for a recoverable.
+                        Haptics.impact(.light)
+                        Task { await run(force: true) }
+                    }
                 }
                 if let r = result {
                     if let summary = r.summary, !summary.isEmpty {
@@ -120,7 +129,13 @@ struct AnalysisView: View {
         }
         // Pull-to-refresh always forces a real run — the user explicitly
         // wants the latest numbers, even if the cache is still warm.
-        .refreshable { await run(force: true) }
+        .refreshable {
+            // Light impact on threshold + success when fresh data lands —
+            // matches Dashboard's pull-to-refresh feel across the app.
+            Haptics.impact(.light)
+            await run(force: true)
+            if errorMessage == nil { Haptics.success() }
+        }
     }
 
     // MARK: - Period selector (mirrors web chip row: 7d / 30d / 3m / 6m / 1y / All)
@@ -135,16 +150,23 @@ struct AnalysisView: View {
                 }
             )
             .onChange(of: period) { _ in
+                // Selection tick — subtle confirmation of the segmented swap,
+                // matches the system pattern (Apple's UISegmentedControl).
+                Haptics.selection()
                 // Period change: serve from cache if we've already analyzed
                 // this combination recently — instant tab swap, no spinner,
                 // no second AI bill. If the cache is empty/stale, fall back
-                // to a real run.
-                guard !isLoading else { return }
+                // to a real run, cancelling any in-flight task so a slow
+                // older response can't nadpisać a newer one (user click
+                // 30d → 3m → 6m quickly → 6m wins regardless of order).
                 if let cached = cachedResultForCurrentKey() {
+                    currentRunTask?.cancel()
                     result = cached
                     errorMessage = nil
+                    isLoading = false
                 } else {
-                    Task { await run() }
+                    currentRunTask?.cancel()
+                    currentRunTask = Task { await run() }
                 }
             }
         }
@@ -167,6 +189,9 @@ struct AnalysisView: View {
                 .foregroundColor(Theme.mutedForeground)
                 .fixedSize(horizontal: false, vertical: true)
             Button {
+                // Medium impact — primary CTA, matches the Dashboard refresh
+                // pattern. Fires on tap regardless of cache outcome.
+                Haptics.impact(.medium)
                 // The "Regenerate" label implies a fresh run — bypass the
                 // cache so the user actually sees updated data. First-run
                 // case (no result yet) likewise just runs.
@@ -222,7 +247,7 @@ struct AnalysisView: View {
 
     private func insightsSection(_ items: [AnalysisInsight]) -> some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
-            NBSectionHeader(eyebrow: locale.t("analysis.insightsEyebrow"), title: String(format: locale.t("analysis.insightsCountFmt"), items.count))
+            NBSectionHeader(eyebrow: locale.t("analysis.insightsEyebrow"), title: String(format: locale.tPlural("analysis.insightsCountFmt", count: items.count), items.count))
             ForEach(items) { item in
                 let (icon, color) = iconForInsight(item.type)
                 HStack(alignment: .top, spacing: Theme.Spacing.sm) {

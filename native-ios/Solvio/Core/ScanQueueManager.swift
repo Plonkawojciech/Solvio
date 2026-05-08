@@ -44,10 +44,23 @@ final class ScanQueueManager: ObservableObject {
     struct ScanQueueItem: Identifiable, Equatable {
         let id: UUID
         let thumbnail: UIImage
-        let imageData: Data
+        /// Compressed JPEG bytes ready for upload. Mutable so we can null
+        /// it out once a terminal status is reached — a 4 MB upload kept
+        /// in memory forever blew up RAM after a batch of 10+ scans.
+        var imageData: Data
         let filename: String
         let createdAt: Date
-        var status: ScanStatus
+        var status: ScanStatus {
+            didSet {
+                // Drop the upload payload as soon as the receipt is
+                // safely saved on the server — keep only the small
+                // thumbnail for the UI chip. Failed items keep their
+                // bytes so `retry(id:)` actually has something to send.
+                if status == .saved && !imageData.isEmpty {
+                    imageData = Data()
+                }
+            }
+        }
         var receiptId: String?
         var vendor: String?
         var total: Double?

@@ -4,14 +4,14 @@ import { db } from '@/lib/db'
 import { groups, groupMembers, expenseSplits, receipts } from '@/lib/db/schema'
 import { eq, and } from 'drizzle-orm'
 import { getAIClient } from '@/lib/ai-client'
-import { rateLimit } from '@/lib/rate-limit'
+import { rateLimitPersistent } from '@/lib/rate-limit'
 
 export async function GET(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   // SECURITY FIX: Rate limit AI endpoint to prevent cost abuse
-  const rl = rateLimit(`ai:${userId}`, { maxRequests: 10, windowMs: 3600000 })
+  const rl = await rateLimitPersistent(`ai:group-insights:${userId}`, { maxRequests: 10, windowMs: 3600000 })
   if (!rl.allowed) return NextResponse.json({ error: 'Too many requests' }, { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } })
 
   const ai = getAIClient()
@@ -35,11 +35,19 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
       if (!membership) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     }
 
-    // Fetch group data
+    // Fetch group data — skip the heavy rawOcr/items jsonb on receipts
+    // since this endpoint only needs vendor + total for aggregation.
     const [members, splits, groupReceipts] = await Promise.all([
       db.select().from(groupMembers).where(eq(groupMembers.groupId, id)),
       db.select().from(expenseSplits).where(eq(expenseSplits.groupId, id)),
-      db.select().from(receipts).where(eq(receipts.groupId, id)),
+      db.select({
+        id: receipts.id,
+        vendor: receipts.vendor,
+        date: receipts.date,
+        total: receipts.total,
+        currency: receipts.currency,
+        paidByMemberId: receipts.paidByMemberId,
+      }).from(receipts).where(eq(receipts.groupId, id)),
     ])
 
     if (splits.length === 0 && groupReceipts.length === 0) {

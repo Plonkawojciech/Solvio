@@ -1,7 +1,7 @@
 // app/api/v1/ocr-receipt/route.ts - Azure Document Intelligence
 import { NextRequest } from 'next/server';
 import { auth } from '@/lib/auth-compat';
-import { rateLimit } from '@/lib/rate-limit';
+import { rateLimitPersistent } from '@/lib/rate-limit';
 import { db, receipts, expenses, categories, userSettings } from '@/lib/db';
 import { eq, and } from 'drizzle-orm';
 import { put } from '@vercel/blob';
@@ -22,6 +22,14 @@ const log = (message: string, ...args: any[]) => {
 
 const AZURE_ENDPOINT = process.env.AZURE_OCR_ENDPOINT;
 const AZURE_KEY = process.env.AZURE_OCR_KEY;
+const OCR_ERROR_CODES = {
+  invalidFormat: 'OCR_AZURE_INVALID_FORMAT',
+  uploadFailed: 'OCR_AZURE_POST_FAILED',
+  pollFailed: 'OCR_AZURE_GET_FAILED',
+  failed: 'OCR_AZURE_FAILED',
+  timeout: 'OCR_AZURE_TIMEOUT',
+  missingOperation: 'OCR_AZURE_NO_OPERATION_LOCATION',
+} as const;
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -95,23 +103,24 @@ async function processAzureOCR(buffer: Buffer, mimeType: string) {
 
     // Check for specific error types
     if (postResponse.status === 400) {
+      let errorJson: { error?: { message?: string } } | null = null
       try {
-        const errorJson = JSON.parse(errorText);
-        if (errorJson.error?.message?.includes('invalid') || errorJson.error?.message?.includes('type')) {
-          throw new Error(`Invalid file type or format. Azure rejected the file. MIME type: ${mimeType}, Error: ${errorJson.error.message}`);
-        }
+        errorJson = JSON.parse(errorText);
       } catch {
         // Not JSON, use raw text
       }
+      if (errorJson?.error?.message?.includes('invalid') || errorJson?.error?.message?.includes('type')) {
+        throw new Error(OCR_ERROR_CODES.invalidFormat);
+      }
     }
 
-    throw new Error(`Azure POST failed: ${postResponse.status} - ${errorText}`);
+    throw new Error(OCR_ERROR_CODES.uploadFailed);
   }
 
   // Pobierz URL do sprawdzania statusu
   const operationLocation = postResponse.headers.get('Operation-Location');
   if (!operationLocation) {
-    throw new Error('Azure did not return Operation-Location header');
+    throw new Error(OCR_ERROR_CODES.missingOperation);
   }
 
   log('[Azure] Operation-Location:', operationLocation);
@@ -140,7 +149,7 @@ async function processAzureOCR(buffer: Buffer, mimeType: string) {
     if (!getResponse.ok) {
       const errorText = await getResponse.text();
       console.error('[Azure] GET Error:', errorText);
-      throw new Error(`Azure GET failed: ${getResponse.status} - ${errorText}`);
+      throw new Error(OCR_ERROR_CODES.pollFailed);
     }
 
     const result = await getResponse.json();
@@ -155,13 +164,14 @@ async function processAzureOCR(buffer: Buffer, mimeType: string) {
     }
 
     if (status === 'failed') {
-      throw new Error(`Azure OCR failed: ${JSON.stringify(result.error || result)}`);
+      console.error('[Azure] OCR failed payload:', result.error || result);
+      throw new Error(OCR_ERROR_CODES.failed);
     }
 
     // Status: running, notStarted - kontynuuj polling
   }
 
-  throw new Error('Azure OCR timeout - exceeded max polling attempts');
+  throw new Error(OCR_ERROR_CODES.timeout);
 }
 
 
@@ -923,7 +933,7 @@ export async function POST(req: NextRequest) {
   }
 
   // RATE LIMIT: 30 requests per hour per userId
-  const rlOcr = rateLimit(`ocr:receipt:${authUserId}`, { maxRequests: 30, windowMs: 60 * 60 * 1000 })
+  const rlOcr = await rateLimitPersistent(`ocr:receipt:${authUserId}`, { maxRequests: 30, windowMs: 60 * 60 * 1000 })
   if (!rlOcr.allowed) {
     return json({ error: 'OCR rate limit exceeded. Try again later.' }, 429)
   }
@@ -1298,8 +1308,14 @@ export async function POST(req: NextRequest) {
           ? ([...withCat].sort((a, b) => (b.price ?? 0) - (a.price ?? 0))[0].category_id ?? null)
           : null;
 
-        // 9-11. PARALLEL: Update receipt + delete old expenses, then insert new expense
-        await Promise.all([
+        // 9-11. ATOMIC: update receipt + delete prior expenses + insert new expense.
+        // Neon HTTP driver doesn't support db.transaction(async tx) but it does
+        // support db.batch([...]) which runs all statements inside a single
+        // server-side transaction with automatic rollback on any failure. This
+        // prevents partial-failure states where the receipt is marked
+        // "processed" but the expense row never lands (or vice versa, where a
+        // re-scan deletes the prior expense but the new one fails to insert).
+        await db.batch([
           db.update(receipts)
             .set({
               status: 'processed',
@@ -1327,18 +1343,17 @@ export async function POST(req: NextRequest) {
               eq(expenses.userId, userId)
             )
           ),
+          db.insert(expenses).values({
+            userId,
+            receiptId: currentReceiptId,
+            title: `${finalMerchant}`,
+            amount: String(finalTotal),
+            currency: currency,
+            date: finalDate,
+            vendor: finalMerchant,
+            categoryId: bestCategoryId,
+          }),
         ]);
-
-        await db.insert(expenses).values({
-          userId,
-          receiptId: currentReceiptId,
-          title: `${finalMerchant}`,
-          amount: String(finalTotal),
-          currency: currency,
-          date: finalDate,
-          vendor: finalMerchant,
-          categoryId: bestCategoryId,
-        });
 
         log(`[File ${i + 1}] ✅ Receipt updated + expense created (categoryId=${bestCategoryId})`);
 
@@ -1376,9 +1391,15 @@ export async function POST(req: NextRequest) {
         if (fileError instanceof Error) {
           errorMessage = fileError.message;
 
-          if (errorMessage.includes('Azure POST failed: 400')) {
+          if (errorMessage === OCR_ERROR_CODES.invalidFormat) {
             errorType = 'azure_invalid_format';
             errorMessage = 'Azure rejected the file format. The image may be corrupted or in an unsupported format.';
+          } else if (errorMessage === OCR_ERROR_CODES.uploadFailed || errorMessage === OCR_ERROR_CODES.pollFailed || errorMessage === OCR_ERROR_CODES.failed) {
+            errorType = 'ocr_failed';
+            errorMessage = 'Receipt OCR failed. Please retry with a clearer photo.';
+          } else if (errorMessage === OCR_ERROR_CODES.timeout || errorMessage === OCR_ERROR_CODES.missingOperation) {
+            errorType = 'ocr_timeout';
+            errorMessage = 'Receipt OCR timed out. Please retry in a moment.';
           } else if (errorMessage.includes('Invalid file type')) {
             errorType = 'invalid_type';
           } else if (errorMessage.includes('empty')) {

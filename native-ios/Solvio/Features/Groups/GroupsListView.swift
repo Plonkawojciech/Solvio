@@ -13,6 +13,7 @@ struct GroupsListView: View {
     @EnvironmentObject private var locale: AppLocale
     @EnvironmentObject private var store: AppDataStore
     @State private var showCreate = false
+    @State private var showQuickSplit = false
     @State private var tipDismissed = false
     @State private var showRecentActivity = false
     @State private var pendingDelete: Group?
@@ -80,19 +81,31 @@ struct GroupsListView: View {
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
         .background(Theme.background)
-        .refreshable { await store.awaitGroups(force: true) }
+        .refreshable {
+            // Match Dashboard pattern: light tick on pull, success on data.
+            Haptics.impact(.light)
+            await store.awaitGroups(force: true)
+            if errorMessage == nil { Haptics.success() }
+        }
         .task { store.ensureGroups() }
         .animation(.nbSpring, value: showRecentActivity)
         .animation(.nbSpring, value: tipDismissed)
+        .sheet(isPresented: $showQuickSplit) {
+            QuickSplitStandaloneSheet()
+                .environmentObject(locale)
+                .environmentObject(toast)
+        }
         .sheet(isPresented: $showCreate) {
             GroupCreateSheet { payload in
                 Task {
                     do {
                         let finalPayload = payloadWithCreator(payload)
                         _ = try await GroupsRepo.create(finalPayload)
+                        Haptics.success()
                         toast.success(locale.t("toast.created"))
                         store.didMutateGroups()
                     } catch {
+                        Haptics.error()
                         toast.error(locale.t("toast.error"), description: error.localizedDescription)
                     }
                 }
@@ -109,12 +122,15 @@ struct GroupsListView: View {
         ) { g in
             Button(locale.t("common.cancel"), role: .cancel) {}
             Button(locale.t("common.delete"), role: .destructive) {
+                Haptics.warning()
                 Task {
                     do {
                         try await GroupsRepo.delete(id: g.id)
+                        Haptics.success()
                         toast.success(locale.t("toast.deleted"))
                         store.didMutateGroups()
                     } catch {
+                        Haptics.error()
                         toast.error(locale.t("toast.error"), description: error.localizedDescription)
                     }
                 }
@@ -127,18 +143,17 @@ struct GroupsListView: View {
     // MARK: - Top CTAs
 
     /// Two primary buttons matching web — Quick Split (secondary, bolt icon)
-    /// and New Group (primary, plus icon). Quick Split routes to the first
-    /// available group's detail view; if no groups yet, shows a toast hint
-    /// (web opens QuickSplitSheet directly — native doesn't have a shared
-    /// sheet yet, so we route through the first group).
+    /// and New Group (primary, plus icon). Quick Split now opens the
+    /// standalone sheet directly — was previously routing into the first
+    /// group's detail view, which was confusing because Quick Split is
+    /// a *groupless* flow (one-off split with whoever was there). Old
+    /// behaviour also fell back to a toast when there were no groups,
+    /// which felt broken. The standalone sheet works in both cases.
     private var topCTAs: some View {
         HStack(spacing: Theme.Spacing.sm) {
             Button {
-                if let first = groups.first {
-                    router.push(.groupDetail(id: first.id))
-                } else {
-                    toast.info(locale.t("groups.quickSplitUnavailable"))
-                }
+                Haptics.impact(.medium)
+                showQuickSplit = true
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "bolt.fill")
@@ -147,7 +162,10 @@ struct GroupsListView: View {
             }
             .buttonStyle(NBSecondaryButtonStyle())
 
-            Button { showCreate = true } label: {
+            Button {
+                Haptics.impact(.medium)
+                showCreate = true
+            } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "plus")
                     Text(locale.t("groups.newGroup"))
@@ -181,6 +199,7 @@ struct GroupsListView: View {
             }
             Spacer()
             Button {
+                Haptics.selection()
                 withAnimation { tipDismissed = true }
             } label: {
                 Image(systemName: "xmark")
@@ -193,6 +212,7 @@ struct GroupsListView: View {
         }
         .padding(Theme.Spacing.sm)
         .nbCard(radius: Theme.Radius.md, shadow: Theme.Shadow.sm)
+        .accessibilityElement(children: .combine)
     }
 
     private func payloadWithCreator(_ payload: GroupCreate) -> GroupCreate {
@@ -224,6 +244,8 @@ struct GroupsListView: View {
             title: locale.t("groups.subtitle"),
             subtitle: "\(groups.count) \(locale.t("challenges.active").lowercased())"
         )
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
     }
 
     @ViewBuilder
@@ -271,6 +293,7 @@ struct GroupsListView: View {
                         ))
                         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                             Button(role: .destructive) {
+                                Haptics.warning()
                                 pendingDelete = g
                             } label: {
                                 Label(locale.t("common.delete"), systemImage: "trash")
@@ -284,7 +307,19 @@ struct GroupsListView: View {
     // MARK: - Rich group card (emoji + members + avatars + balance + Open)
 
     private func groupCard(_ g: Group) -> some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+        let count = g.members?.count ?? 0
+        let memberWord = count == 1 ? locale.t("groups.member") : locale.t("groups.memberCount")
+        let balance = g.totalBalance ?? 0
+        let balanceA11y: String = {
+            if abs(balance) <= 0.01 {
+                return locale.t("groups.settled")
+            } else {
+                let sign = balance > 0 ? "+" : "−"
+                return "\(locale.t("groups.balance")): \(sign)\(Fmt.amount(abs(balance), currency: g.currency))"
+            }
+        }()
+        let cardA11y = "\(g.name), \(count) \(memberWord), \(balanceA11y)"
+        return VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
             // Top row: emoji + name/meta + mode badge + Open button
             HStack(alignment: .top, spacing: Theme.Spacing.sm) {
                 Text(g.emoji ?? "👥")
@@ -296,6 +331,7 @@ struct GroupsListView: View {
                         RoundedRectangle(cornerRadius: Theme.Radius.sm)
                             .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
                     )
+                    .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
                         Text(g.name)
@@ -306,13 +342,15 @@ struct GroupsListView: View {
                             NBTag(text: modeLabel(mode))
                         }
                     }
-                    let count = g.members?.count ?? 0
-                    Text("\(count) \(count == 1 ? locale.t("groups.member") : locale.t("groups.memberCount"))")
+                    Text("\(count) \(memberWord)")
                         .font(AppFont.caption)
                         .foregroundColor(Theme.mutedForeground)
                 }
                 Spacer(minLength: 0)
-                Button { router.push(.groupDetail(id: g.id)) } label: {
+                Button {
+                    Haptics.selection()
+                    router.push(.groupDetail(id: g.id))
+                } label: {
                     HStack(spacing: 4) {
                         Text(locale.t("groups.open"))
                             .font(AppFont.mono(11))
@@ -332,6 +370,8 @@ struct GroupsListView: View {
                     )
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(locale.t("groups.open"))
+                .accessibilityHint(g.name)
             }
 
             NBDivider()
@@ -346,7 +386,13 @@ struct GroupsListView: View {
         .padding(Theme.Spacing.sm)
         .nbCard(radius: Theme.Radius.md, shadow: Theme.Shadow.sm)
         .contentShape(Rectangle())
-        .onTapGesture { router.push(.groupDetail(id: g.id)) }
+        .onTapGesture {
+            Haptics.selection()
+            router.push(.groupDetail(id: g.id))
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(cardA11y)
+        .accessibilityAddTraits(.isButton)
     }
 
     /// Up to 5 overlapping circular avatars with initials in colored
@@ -376,6 +422,9 @@ struct GroupsListView: View {
                     .overlay(Circle().stroke(Theme.background, lineWidth: 2))
             }
         }
+        // Member count is already announced in the card a11y label —
+        // don't make VoiceOver spell every initial.
+        .accessibilityHidden(true)
     }
 
     @ViewBuilder
@@ -417,6 +466,7 @@ struct GroupsListView: View {
         DisclosureGroup(isExpanded: Binding(
             get: { showRecentActivity },
             set: { newValue in
+                Haptics.selection()
                 withAnimation(.nbSpring) { showRecentActivity = newValue }
             }
         )) {
@@ -461,7 +511,10 @@ struct GroupsListView: View {
     }
 
     private func recentActivityCard(_ g: Group) -> some View {
-        Button { router.push(.groupDetail(id: g.id)) } label: {
+        Button {
+            Haptics.selection()
+            router.push(.groupDetail(id: g.id))
+        } label: {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 6) {
                     Text(g.emoji ?? "👥")
@@ -520,7 +573,7 @@ struct GroupCreateSheet: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-                    NBTextField(label: locale.t("groups.name"), text: $name, placeholder: "Trip to Berlin")
+                    NBTextField(label: locale.t("groups.name"), text: $name, placeholder: locale.t("groups.namePlaceholder"))
                     emojiPicker
                     NBTextField(label: locale.t("settings.currency"), text: $currency, placeholder: "PLN", autocapitalization: .characters)
                     VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
@@ -535,6 +588,9 @@ struct GroupCreateSheet: View {
                                 (value: "household", label: locale.t("groups.modeHousehold")),
                             ]
                         )
+                        .onChange(of: mode) { _ in
+                            Haptics.selection()
+                        }
                     }
                     VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
                         Text(locale.t("groups.descriptionOptional"))
@@ -575,6 +631,7 @@ struct GroupCreateSheet: View {
                                 )
                             }
                             .compactMap { $0 }
+                        Haptics.success()
                         onSubmit(GroupCreate(
                             name: name,
                             description: description.isEmpty ? nil : description,
@@ -591,6 +648,8 @@ struct GroupCreateSheet: View {
                 }
             }
         }
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
     }
 
     private var emojiPicker: some View {
@@ -601,11 +660,15 @@ struct GroupCreateSheet: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 6) {
                     ForEach(Self.emojiChoices, id: \.self) { e in
-                        Button { emoji = e } label: {
+                        let active = emoji == e
+                        Button {
+                            Haptics.selection()
+                            emoji = e
+                        } label: {
                             Text(e)
                                 .font(.system(size: 22))
                                 .frame(width: 40, height: 40)
-                                .background(emoji == e ? Theme.foreground : Theme.muted)
+                                .background(active ? Theme.foreground : Theme.muted)
                                 .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                                 .overlay(
                                     RoundedRectangle(cornerRadius: Theme.Radius.sm)
@@ -613,6 +676,8 @@ struct GroupCreateSheet: View {
                                 )
                         }
                         .buttonStyle(.plain)
+                        .accessibilityLabel(e)
+                        .accessibilityAddTraits(active ? .isSelected : [])
                     }
                 }
             }
@@ -627,6 +692,7 @@ struct GroupCreateSheet: View {
                     .foregroundColor(Theme.foreground)
                 Spacer()
                 Button {
+                    Haptics.selection()
                     let next = Self.memberColors[members.count % Self.memberColors.count]
                     members.append(MemberDraft(name: "", email: "", color: next))
                 } label: {
@@ -664,6 +730,7 @@ struct GroupCreateSheet: View {
                             )
                         if members.count > 1 {
                             Button {
+                                Haptics.warning()
                                 members.removeAll { $0.id == m.id }
                             } label: {
                                 Image(systemName: "xmark")
@@ -678,6 +745,8 @@ struct GroupCreateSheet: View {
                                     )
                             }
                             .buttonStyle(.plain)
+                            .accessibilityLabel(locale.t("common.delete"))
+                            .accessibilityHint(m.name.isEmpty ? locale.t("groups.memberName") : m.name)
                         }
                     }
                     TextField(locale.t("groups.memberEmailOptional"), text: $m.email)
@@ -705,18 +774,24 @@ struct GroupCreateSheet: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
                 ForEach(Self.memberColors, id: \.self) { c in
-                    Button { selection.wrappedValue = c } label: {
+                    let active = selection.wrappedValue == c
+                    Button {
+                        Haptics.selection()
+                        selection.wrappedValue = c
+                    } label: {
                         Circle()
                             .fill(Color(hex: c) ?? Theme.muted)
                             .frame(width: 22, height: 22)
                             .overlay(
                                 Circle().stroke(
                                     Theme.foreground,
-                                    lineWidth: selection.wrappedValue == c ? 2 : Theme.Border.widthThin
+                                    lineWidth: active ? 2 : Theme.Border.widthThin
                                 )
                             )
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel(c)
+                    .accessibilityAddTraits(active ? .isSelected : [])
                 }
             }
         }
