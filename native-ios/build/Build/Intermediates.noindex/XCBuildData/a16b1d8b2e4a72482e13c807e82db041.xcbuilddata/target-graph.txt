@@ -1,2 +1,0 @@
-Target dependency graph (1 target)
-Target 'Solvio' in project 'Solvio' (no dependencies)

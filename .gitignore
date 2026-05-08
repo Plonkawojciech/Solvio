@@ -48,3 +48,6 @@ next-env.d.ts
 native-ios/build/
 **/xcuserdata/
 *.xcuserstate
+
+# Android/Gradle local build cache
+android/.gradle/
