@@ -46,7 +46,7 @@ export default function ProtectedError({
           {c.eyebrow}
         </div>
 
-        <div className="flex h-16 w-16 items-center justify-center rounded-md border-2 border-destructive bg-destructive/10 text-destructive shadow-[3px_3px_0_hsl(var(--destructive))]">
+        <div className="flex h-16 w-16 items-center justify-center rounded-md border border-destructive bg-destructive/10 text-destructive shadow-[var(--nb-shadow-sm)]">
           <AlertTriangle className="size-7" aria-hidden="true" />
         </div>
 
@@ -56,7 +56,7 @@ export default function ProtectedError({
         </div>
 
         {error.message && error.message !== 'An unexpected error occurred' && (
-          <div className="w-full rounded-md border-2 border-foreground bg-card px-3 py-2 text-left">
+          <div className="w-full rounded-md border border-border bg-card px-3 py-2 text-left">
             <p className="font-mono text-[11px] text-muted-foreground break-all line-clamp-3">
               {error.message}
             </p>

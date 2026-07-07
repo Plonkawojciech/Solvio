@@ -434,7 +434,7 @@ export function QuickSplitSheet({ open, onOpenChange }: QuickSplitSheetProps) {
                     type="button"
                     onClick={() => setMode('manual')}
                     whileTap={{ scale: 0.97 }}
-                    className={`flex items-center justify-center gap-2 rounded-xl border-2 py-3 px-3 text-sm font-semibold transition-all ${
+                    className={`flex items-center justify-center gap-2 rounded-xl border py-3 px-3 text-sm font-semibold transition-all ${
                       mode === 'manual'
                         ? 'border-primary bg-primary/5'
                         : 'border-border bg-muted/30 hover:bg-muted/60'
@@ -447,7 +447,7 @@ export function QuickSplitSheet({ open, onOpenChange }: QuickSplitSheetProps) {
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
                     whileTap={{ scale: 0.97 }}
-                    className={`flex items-center justify-center gap-2 rounded-xl border-2 py-3 px-3 text-sm font-semibold transition-all ${
+                    className={`flex items-center justify-center gap-2 rounded-xl border py-3 px-3 text-sm font-semibold transition-all ${
                       mode === 'receipt'
                         ? 'border-primary bg-primary/5'
                         : 'border-border bg-muted/30 hover:bg-muted/60'
@@ -500,7 +500,7 @@ export function QuickSplitSheet({ open, onOpenChange }: QuickSplitSheetProps) {
                         <button
                           type="button"
                           onClick={() => setSplitType('equal')}
-                          className={`rounded-lg border-2 py-2.5 text-sm font-medium transition-all ${
+                          className={`rounded-lg border py-2.5 text-sm font-medium transition-all ${
                             splitType === 'equal'
                               ? 'border-primary bg-primary/5 text-primary'
                               : 'border-border hover:bg-muted/50'
@@ -511,7 +511,7 @@ export function QuickSplitSheet({ open, onOpenChange }: QuickSplitSheetProps) {
                         <button
                           type="button"
                           onClick={() => setSplitType('custom')}
-                          className={`rounded-lg border-2 py-2.5 text-sm font-medium transition-all ${
+                          className={`rounded-lg border py-2.5 text-sm font-medium transition-all ${
                             splitType === 'custom'
                               ? 'border-primary bg-primary/5 text-primary'
                               : 'border-border hover:bg-muted/50'
@@ -538,7 +538,7 @@ export function QuickSplitSheet({ open, onOpenChange }: QuickSplitSheetProps) {
                             <div
                               key={p.id}
                               title={p.name}
-                              className="h-7 w-7 rounded-full border-2 border-background flex items-center justify-center text-[10px] font-semibold text-white"
+                              className="h-7 w-7 rounded-full border border-background flex items-center justify-center text-[10px] font-semibold text-white"
                               style={{ backgroundColor: MEMBER_COLORS[idx % MEMBER_COLORS.length] }}
                             >
                               {getInitials(p.name)}

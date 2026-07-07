@@ -62,14 +62,14 @@ function MemberAvatars({ members }: { members: GroupMember[] }) {
         <div
           key={m.id}
           title={m.name}
-          className="h-8 w-8 rounded-full border-2 border-background flex items-center justify-center text-xs font-semibold text-white shrink-0"
+          className="h-8 w-8 rounded-full border border-background flex items-center justify-center text-xs font-semibold text-white shrink-0"
           style={{ backgroundColor: MEMBER_COLORS[idx % MEMBER_COLORS.length] }}
         >
           {getInitials(m.name)}
         </div>
       ))}
       {overflow > 0 && (
-        <div className="h-8 w-8 rounded-full border-2 border-background bg-muted flex items-center justify-center text-xs font-semibold text-muted-foreground">
+        <div className="h-8 w-8 rounded-full border border-background bg-muted flex items-center justify-center text-xs font-semibold text-muted-foreground">
           +{overflow}
         </div>
       )}
@@ -240,9 +240,9 @@ export default function GroupsPage() {
           className="flex flex-col items-center justify-center py-20 sm:py-28 gap-5 text-center"
         >
           <div className="font-mono text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-            {'// '}{t('groups.emptyTitle')}
+            {t('groups.emptyTitle')}
           </div>
-          <div className="flex h-16 w-16 items-center justify-center rounded-md border-2 border-foreground bg-card text-foreground shadow-[3px_3px_0_hsl(var(--foreground))]">
+          <div className="flex h-16 w-16 items-center justify-center rounded-md border border-border bg-card text-foreground shadow-[var(--nb-shadow-sm)]">
             <Users className="h-7 w-7" aria-hidden="true" />
           </div>
           <div className="space-y-2 max-w-sm">

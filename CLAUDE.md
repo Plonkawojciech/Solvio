@@ -67,6 +67,9 @@ AZURE_OPENAI_DEPLOYMENT=   # Deployment name (e.g. gpt-4o-mini)
 AZURE_OPENAI_API_VERSION=  # Optional, defaults to 2024-10-21
 # Option B (fallback): OpenAI direct
 OPENAI_API_KEY=            # Used only if Azure vars not set
+# Option C (free, self-host): Google Gemini — OCR paragonów + AI bez kosztów
+GEMINI_API_KEY=            # https://aistudio.google.com/apikey (darmowy tier)
+GEMINI_MODEL=              # Optional, defaults to gemini-2.5-flash
 AZURE_OCR_ENDPOINT=     # Azure Document Intelligence endpoint
 AZURE_OCR_KEY=          # Azure Document Intelligence key
 BLOB_READ_WRITE_TOKEN=  # Vercel Blob token (reports storage)

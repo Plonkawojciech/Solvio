@@ -58,7 +58,7 @@ export function MobileBottomNav() {
 
   return (
     <>
-      <nav className="shrink-0 md:hidden bg-background border-t-2 border-foreground" style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
+      <nav className="shrink-0 md:hidden bg-background border-t border-border" style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
         <div className="flex items-center justify-around h-14 px-2">
           {navItems.map((item) => {
             if (!item) {
@@ -72,7 +72,7 @@ export function MobileBottomNav() {
                     // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     aria-label={t('groups.quickSplit' as any)}
                   >
-                    <div className="h-12 w-12 rounded-md border-2 border-foreground bg-foreground text-background shadow-[3px_3px_0_hsl(var(--foreground))] flex items-center justify-center">
+                    <div className="h-12 w-12 rounded-md border border-border bg-primary text-primary-foreground shadow-[var(--nb-shadow-sm)] flex items-center justify-center">
                       <Zap className="h-5 w-5" aria-hidden="true" />
                     </div>
                   </button>
@@ -87,7 +87,7 @@ export function MobileBottomNav() {
                   className="flex flex-col items-center justify-center -mt-5 active:translate-x-[1px] active:translate-y-[1px] transition-transform"
                   aria-label={t('receipts.scan')}
                 >
-                  <div className="h-12 w-12 rounded-md border-2 border-foreground bg-foreground text-background shadow-[3px_3px_0_hsl(var(--foreground))] flex items-center justify-center">
+                  <div className="h-12 w-12 rounded-md border border-border bg-primary text-primary-foreground shadow-[var(--nb-shadow-sm)] flex items-center justify-center">
                     <Camera className="h-5 w-5" aria-hidden="true" />
                   </div>
                 </button>
@@ -106,7 +106,7 @@ export function MobileBottomNav() {
                 className={cn(
                   'flex flex-col items-center justify-center gap-1 flex-1 min-h-[44px] py-2 rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/50 focus-visible:ring-inset',
                   isActive
-                    ? 'text-foreground font-bold border-t-[3px] border-foreground -mt-[2px]'
+                    ? 'text-foreground font-bold border-t-[3px] border-border -mt-[2px]'
                     : 'text-muted-foreground hover:text-foreground'
                 )}
               >

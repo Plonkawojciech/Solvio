@@ -70,16 +70,16 @@ function FileRow({
   }, [file, isImage, isHeic])
 
   return (
-    <div className="flex items-center gap-3 rounded-md border-2 border-foreground bg-card px-3 py-2 shadow-[2px_2px_0_hsl(var(--foreground))]">
+    <div className="flex items-center gap-3 rounded-md border border-border bg-card px-3 py-2 shadow-[var(--nb-shadow-sm)]">
       {previewSrc ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
           src={previewSrc}
           alt={file.name}
-          className="h-10 w-10 rounded-md border-2 border-foreground object-cover shrink-0"
+          className="h-10 w-10 rounded-md border border-border object-cover shrink-0"
         />
       ) : (
-        <div className="h-10 w-10 rounded-md border-2 border-foreground bg-secondary flex items-center justify-center shrink-0">
+        <div className="h-10 w-10 rounded-md border border-border bg-secondary flex items-center justify-center shrink-0">
           <FileText className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
         </div>
       )}
@@ -591,7 +591,7 @@ export function AddExpenseSheet({
                             field.onChange(e)
                             if (categoryAppliedByRule) setCategoryAppliedByRule(null)
                           }}
-                          className="flex h-11 w-full items-center rounded-md border-2 border-foreground bg-background px-3 text-base md:text-sm font-medium shadow-[2px_2px_0_hsl(var(--foreground))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                          className="flex h-11 w-full items-center rounded-md border border-border bg-background px-3 text-base md:text-sm font-medium shadow-[var(--nb-shadow-sm)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                         >
                           <option value="">{t('addExpense.selectCategory')}</option>
                           {categories.map((cat) => (
@@ -766,7 +766,7 @@ export function AddExpenseSheet({
                 <label
                   htmlFor="file-upload"
                   className={cn(
-                    'relative flex w-full cursor-pointer flex-col items-center justify-center gap-2 rounded-md border-2 border-dashed border-foreground/40 bg-secondary/30 p-8 transition-colors hover:bg-secondary/60 focus-within:outline-none focus-within:ring-2 focus-within:ring-foreground/50 focus-within:ring-offset-2',
+                    'relative flex w-full cursor-pointer flex-col items-center justify-center gap-2 rounded-md border border-dashed border-border/40 bg-secondary/30 p-8 transition-colors hover:bg-secondary/60 focus-within:outline-none focus-within:ring-2 focus-within:ring-foreground/50 focus-within:ring-offset-2',
                     isLoading && 'cursor-not-allowed opacity-50'
                   )}
                 >

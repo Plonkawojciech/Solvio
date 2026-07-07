@@ -12,9 +12,18 @@ export async function GET(request: Request) {
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   // Allow `?since=all` to fetch all expenses (iOS uses this by default)
+  // `?period=month` = calendar-month mode (web dashboard): current month
+  // expenses + previous calendar month aggregates for comparison.
   const url = new URL(request.url)
   const showAll = url.searchParams.get('since') === 'all'
+  const periodMonth = url.searchParams.get('period') === 'month'
+  // `?month=YYYY-MM` — przeglądanie wybranego miesiąca (tylko z period=month)
+  const monthParam = url.searchParams.get('month')
 
+  const realNow = new Date()
+  const now = periodMonth && monthParam && /^\d{4}-\d{2}$/.test(monthParam)
+    ? new Date(Number(monthParam.slice(0, 4)), Number(monthParam.slice(5, 7)) - 1, 1)
+    : realNow
   const since = new Date()
   since.setDate(since.getDate() - 29)
   const sinceStr = since.toISOString().slice(0, 10)
@@ -23,14 +32,29 @@ export async function GET(request: Request) {
   prev30.setDate(prev30.getDate() - 59)
   const prev30Str = prev30.toISOString().slice(0, 10)
 
+  // Calendar-month boundaries (local time)
+  const ym = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+  const monthStartStr = `${ym(now)}-01`
+  const monthEndStr = `${ym(now)}-${String(new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()).padStart(2, '0')}`
+  const prevMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+  const prevMonthStartStr = `${ym(prevMonthDate)}-01`
+  const prevMonthEndStr = `${ym(prevMonthDate)}-${String(new Date(now.getFullYear(), now.getMonth(), 0).getDate()).padStart(2, '0')}`
+
   try {
     const currentMonth = new Date().toISOString().slice(0, 7)
-    const expenseFilter = showAll
+    const expenseFilter = periodMonth
+      ? and(eq(expenses.userId, userId), gte(expenses.date, monthStartStr), lte(expenses.date, monthEndStr))
+      : showAll
       ? eq(expenses.userId, userId)
       : and(eq(expenses.userId, userId), gte(expenses.date, sinceStr))
-    const receiptFilter = showAll
+    const receiptFilter = periodMonth
+      ? and(eq(receipts.userId, userId), gte(receipts.date, monthStartStr), lte(receipts.date, monthEndStr))
+      : showAll
       ? eq(receipts.userId, userId)
       : and(eq(receipts.userId, userId), gte(receipts.date, sinceStr))
+    const prevRangeFilter = periodMonth
+      ? and(eq(expenses.userId, userId), gte(expenses.date, prevMonthStartStr), lte(expenses.date, prevMonthEndStr))
+      : and(eq(expenses.userId, userId), gte(expenses.date, prev30Str), lte(expenses.date, sinceStr))
 
     const [cats, settings, budgets, exps, recsCount, prevCatTotals, monthBudget] = await Promise.all([
       db.select().from(categories).where(eq(categories.userId, userId)),
@@ -63,7 +87,7 @@ export async function GET(request: Request) {
         ), 0)`,
       }).from(expenses)
         .leftJoin(receipts, eq(expenses.receiptId, receipts.id))
-        .where(and(eq(expenses.userId, userId), gte(expenses.date, prev30Str), lte(expenses.date, sinceStr)))
+        .where(prevRangeFilter)
         .groupBy(expenses.categoryId),
       db.select({ totalIncome: monthlyBudgets.totalIncome, savingsTarget: monthlyBudgets.savingsTarget })
         .from(monthlyBudgets)

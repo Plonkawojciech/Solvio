@@ -102,7 +102,7 @@ export default function LandingPage() {
       <section className="relative flex flex-col items-center text-center px-5 sm:px-10 pt-20 pb-16 sm:pt-32 sm:pb-24">
         {/* Eyebrow badge — mono, uppercase, hard shadow */}
         <motion.div initial={{ opacity: 0, y: -12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
-          <span className="inline-flex items-center gap-2 rounded-md border-2 border-foreground bg-card px-3 py-1.5 text-xs font-bold uppercase tracking-[0.2em] shadow-[2px_2px_0_hsl(var(--foreground))] font-mono mb-8">
+          <span className="inline-flex items-center gap-2 rounded-md border border-border bg-card px-3 py-1.5 text-xs font-bold uppercase tracking-[0.2em] shadow-[var(--nb-shadow-sm)] font-mono mb-8">
             <Sparkles className="h-3.5 w-3.5" />
             {t('landing.badge')}
           </span>
@@ -157,7 +157,7 @@ export default function LandingPage() {
           className="flex flex-wrap justify-center gap-2 mt-8"
         >
           {benefits.map((b) => (
-            <span key={b} className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-foreground border-2 border-foreground bg-card rounded-md px-3 py-1 shadow-[2px_2px_0_hsl(var(--foreground))]">
+            <span key={b} className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-foreground border border-border bg-card rounded-md px-3 py-1 shadow-[var(--nb-shadow-sm)]">
               <CheckCircle2 className="h-3 w-3" />
               {b}
             </span>
@@ -171,7 +171,7 @@ export default function LandingPage() {
           <p className="font-mono text-[11px] text-muted-foreground font-bold uppercase tracking-[0.25em]">
             {t('landing.trustedBy')}
           </p>
-          <div className="inline-flex items-center gap-3 rounded-md border-2 border-foreground bg-card px-6 py-3 shadow-[4px_4px_0_hsl(var(--foreground))]">
+          <div className="inline-flex items-center gap-3 rounded-md border border-border bg-card px-6 py-3 shadow-[var(--nb-shadow-sm)]">
             <Landmark className="h-5 w-5" />
             <span className="font-extrabold text-base tracking-tight">PKO BP</span>
             <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-background bg-foreground rounded-sm px-2 py-0.5">
@@ -199,8 +199,8 @@ export default function LandingPage() {
           <div className="grid md:grid-cols-2 gap-6">
             {/* Personal Card */}
             <FadeUp delay={1}>
-              <div className="h-full rounded-lg border-2 border-foreground bg-card p-8 shadow-[6px_6px_0_hsl(var(--foreground))]">
-                <div className="mb-4 inline-flex h-11 w-11 items-center justify-center rounded-md border-2 border-foreground bg-secondary shadow-[2px_2px_0_hsl(var(--foreground))]">
+              <div className="h-full rounded-lg border border-border bg-card p-8 shadow-[var(--nb-shadow-sm)]">
+                <div className="mb-4 inline-flex h-11 w-11 items-center justify-center rounded-md border border-border bg-secondary shadow-[var(--nb-shadow-sm)]">
                   <User className="h-5 w-5" />
                 </div>
                 <h3 className="text-xl font-extrabold mb-1 tracking-tight">{t('landing.personalTitle')}</h3>
@@ -210,7 +210,7 @@ export default function LandingPage() {
                     const Icon = personalFeatureIcons[i]
                     return (
                       <li key={f} className="flex items-center gap-3 text-sm font-medium">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-md border-2 border-foreground bg-background shrink-0">
+                        <div className="flex h-8 w-8 items-center justify-center rounded-md border border-border bg-background shrink-0">
                           <Icon className="h-3.5 w-3.5" />
                         </div>
                         {f}
@@ -232,14 +232,14 @@ export default function LandingPage() {
 
             {/* Business Card — Popular */}
             <FadeUp delay={2}>
-              <div className="relative h-full rounded-lg border-2 border-foreground bg-card p-8 shadow-[6px_6px_0_hsl(var(--foreground))]">
+              <div className="relative h-full rounded-lg border border-border bg-card p-8 shadow-[var(--nb-shadow-sm)]">
                 {/* Popular badge */}
                 <div className="absolute -top-3 right-6">
-                  <span className="font-mono text-[10px] font-bold uppercase tracking-widest bg-foreground text-background rounded-sm px-3 py-1 border-2 border-foreground shadow-[2px_2px_0_hsl(var(--foreground))]">
+                  <span className="font-mono text-[10px] font-bold uppercase tracking-widest bg-primary text-primary-foreground rounded-sm px-3 py-1 border border-border shadow-[var(--nb-shadow-sm)]">
                     {lang === 'pl' ? '★ Popularne' : '★ Popular'}
                   </span>
                 </div>
-                <div className="mb-4 inline-flex h-11 w-11 items-center justify-center rounded-md border-2 border-foreground bg-foreground text-background shadow-[2px_2px_0_hsl(var(--foreground))]">
+                <div className="mb-4 inline-flex h-11 w-11 items-center justify-center rounded-md border border-border bg-primary text-primary-foreground shadow-[var(--nb-shadow-sm)]">
                   <Building2 className="h-5 w-5" />
                 </div>
                 <h3 className="text-xl font-extrabold mb-1 tracking-tight">{t('landing.businessTitle')}</h3>
@@ -249,7 +249,7 @@ export default function LandingPage() {
                     const Icon = businessFeatureIcons[i]
                     return (
                       <li key={f} className="flex items-center gap-3 text-sm font-medium">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-md border-2 border-foreground bg-background shrink-0">
+                        <div className="flex h-8 w-8 items-center justify-center rounded-md border border-border bg-background shrink-0">
                           <Icon className="h-3.5 w-3.5" />
                         </div>
                         {f}
@@ -286,8 +286,8 @@ export default function LandingPage() {
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {features.map((f, i) => (
               <FadeUp key={f.title} delay={i + 1}>
-                <div className="h-full rounded-lg border-2 border-foreground bg-card p-6 shadow-[4px_4px_0_hsl(var(--foreground))]">
-                  <div className="mb-4 inline-flex h-10 w-10 items-center justify-center rounded-md border-2 border-foreground bg-background">
+                <div className="h-full rounded-lg border border-border bg-card p-6 shadow-[var(--nb-shadow-sm)]">
+                  <div className="mb-4 inline-flex h-10 w-10 items-center justify-center rounded-md border border-border bg-background">
                     <f.icon className="h-4 w-4" />
                   </div>
                   <h3 className="text-base font-extrabold mb-2 tracking-tight">{f.title}</h3>
@@ -311,9 +311,9 @@ export default function LandingPage() {
           </FadeUp>
 
           <FadeUp delay={1}>
-            <div className="rounded-lg border-2 border-foreground bg-card shadow-[4px_4px_0_hsl(var(--foreground))] overflow-hidden">
+            <div className="rounded-lg border border-border bg-card shadow-[var(--nb-shadow-sm)] overflow-hidden">
               {/* Header */}
-              <div className="grid grid-cols-[1fr_80px_80px] sm:grid-cols-[1fr_120px_120px] items-center gap-2 px-5 py-3 border-b-2 border-foreground bg-secondary">
+              <div className="grid grid-cols-[1fr_80px_80px] sm:grid-cols-[1fr_120px_120px] items-center gap-2 px-5 py-3 border-b border-border bg-secondary">
                 <span className="font-mono text-[11px] font-bold text-foreground uppercase tracking-wider">{t('landing.comparisonFeature')}</span>
                 <span className="font-mono text-[11px] font-bold text-center uppercase tracking-wider">{t('landing.comparisonPersonal')}</span>
                 <span className="font-mono text-[11px] font-bold text-center uppercase tracking-wider">{t('landing.comparisonBusiness')}</span>
@@ -323,7 +323,7 @@ export default function LandingPage() {
                 <div
                   key={row.key}
                   className={`grid grid-cols-[1fr_80px_80px] sm:grid-cols-[1fr_120px_120px] items-center gap-2 px-5 py-3 ${
-                    i < comparisonRows.length - 1 ? 'border-b border-foreground/20' : ''
+                    i < comparisonRows.length - 1 ? 'border-b border-border/20' : ''
                   }`}
                 >
                   <span className="text-sm font-medium">{t(row.key)}</span>
@@ -362,7 +362,7 @@ export default function LandingPage() {
             {steps.map((s, i) => (
               <FadeUp key={s.n} delay={i + 1}>
                 <div className="flex flex-col items-center text-center">
-                  <div className="relative mb-5 flex h-14 w-14 items-center justify-center rounded-md border-2 border-foreground bg-card font-mono text-xl font-extrabold shadow-[3px_3px_0_hsl(var(--foreground))]">
+                  <div className="relative mb-5 flex h-14 w-14 items-center justify-center rounded-md border border-border bg-card font-mono text-xl font-extrabold shadow-[var(--nb-shadow-sm)]">
                     {s.n}
                   </div>
                   <h3 className="text-base font-extrabold mb-2 tracking-tight">{s.t}</h3>
@@ -377,8 +377,8 @@ export default function LandingPage() {
       {/* ── FINAL CTA ── */}
       <section className="px-5 sm:px-10 pb-24 sm:pb-40">
         <FadeUp>
-          <div className="mx-auto max-w-2xl text-center rounded-lg border-2 border-foreground bg-card p-12 sm:p-16 shadow-[6px_6px_0_hsl(var(--foreground))]">
-            <div className="mx-auto mb-5 inline-flex h-12 w-12 items-center justify-center rounded-md border-2 border-foreground bg-background">
+          <div className="mx-auto max-w-2xl text-center rounded-lg border border-border bg-card p-12 sm:p-16 shadow-[var(--nb-shadow-sm)]">
+            <div className="mx-auto mb-5 inline-flex h-12 w-12 items-center justify-center rounded-md border border-border bg-background">
               <Wallet className="h-6 w-6" />
             </div>
             <h2 className="text-3xl sm:text-4xl font-black tracking-tighter mb-3">{t('landing.ctaTitle')}</h2>

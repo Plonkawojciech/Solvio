@@ -164,7 +164,7 @@ export function SendRequestSheet({
             <motion.div
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
-              className="relative rounded-2xl border-2 border-dashed border-muted-foreground/20 p-5 bg-muted/20"
+              className="relative rounded-2xl border border-dashed border-muted-foreground/20 p-5 bg-muted/20"
             >
               <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-4">
                 {t('settlements.preview')}

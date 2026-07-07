@@ -85,9 +85,9 @@ export function AppSidebar() {
 
   return (
     <Sidebar>
-      <SidebarHeader className="border-b-2 border-sidebar-border p-4">
+      <SidebarHeader className="border-b border-sidebar-border p-4">
         <Link href="/dashboard" className="flex items-center gap-3 group">
-          <div className="flex h-9 w-9 items-center justify-center rounded-md border-2 border-foreground bg-foreground text-background shadow-[2px_2px_0_hsl(var(--foreground))] group-hover:translate-x-[-1px] group-hover:translate-y-[-1px] group-hover:shadow-[3px_3px_0_hsl(var(--foreground))] transition-all">
+          <div className="flex h-9 w-9 items-center justify-center rounded-md border border-border bg-primary text-primary-foreground shadow-[var(--nb-shadow-sm)]  group-hover:shadow-[var(--nb-shadow)] transition-all">
             {isBusiness ? (
               <Building2 className="h-4 w-4" aria-hidden="true" />
             ) : (
@@ -98,9 +98,9 @@ export function AppSidebar() {
             <span className="text-sm font-black leading-tight tracking-tight">Solvio</span>
             <span
               suppressHydrationWarning
-              className="font-mono text-[10px] font-bold uppercase tracking-widest leading-none text-muted-foreground"
+              className="text-[10px] font-bold uppercase tracking-widest leading-none text-muted-foreground"
             >
-              {'// '}{t(`nav.${isPersonal ? 'personal' : 'business'}`)}
+              {t(`nav.${isPersonal ? 'personal' : 'business'}`)}
             </span>
           </div>
         </Link>
@@ -131,15 +131,15 @@ export function AppSidebar() {
         </SidebarGroup>
       </SidebarContent>
 
-      <SidebarFooter className="p-3 border-t-2 border-sidebar-border space-y-2.5">
+      <SidebarFooter className="p-3 border-t border-sidebar-border space-y-2.5">
         {/* Product switcher (Personal / Business) */}
         <ProductSwitcher />
 
         <div className="h-[2px] bg-sidebar-border" />
 
         {/* User info */}
-        <div className="flex items-center gap-3 px-2 py-2 rounded-md border-2 border-dashed border-sidebar-border/40">
-          <div className="h-9 w-9 shrink-0 rounded-md border-2 border-foreground bg-card flex items-center justify-center font-mono shadow-[2px_2px_0_hsl(var(--foreground))]">
+        <div className="flex items-center gap-3 px-2 py-2 rounded-md border border-dashed border-sidebar-border/40">
+          <div className="h-9 w-9 shrink-0 rounded-md border border-border bg-card flex items-center justify-center font-mono shadow-[var(--nb-shadow-sm)]">
             <span className="text-xs font-black text-foreground">{initials}</span>
           </div>
           <div className="flex-1 min-w-0">

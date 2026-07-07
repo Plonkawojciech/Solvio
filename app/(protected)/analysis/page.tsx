@@ -352,6 +352,8 @@ export default function AnalysisPage() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [weekdayData, setWeekdayData] = useState<any[]>([])
   const [spendingStreak, setSpendingStreak] = useState(0)
+  // Ranking ostatnich 6 miesięcy (z pełnej historii, niezależnie od wybranego okresu)
+  const [monthRanking, setMonthRanking] = useState<{ ym: string; label: string; total: number; isCurrent: boolean }[]>([])
   const [stats, setStats] = useState({ total90: 0, avg30: 0, topCat: '', txCount: 0, avgTx: 0 })
   const [prevStats, setPrevStats] = useState({ total: 0, txCount: 0, avgTx: 0 })
 
@@ -381,6 +383,22 @@ export default function AnalysisPage() {
         .sort(([a], [b]) => a.localeCompare(b))
         .map(([ym, total]) => ({ month: ymLabel(ym, polish), total: parseFloat(total.toFixed(2)) }))
     )
+    // Ranking miesięcy — zawsze z pełnej historii (allExps), posortowany od najtańszego
+    const byMonthAll: Record<string, number> = {}
+    for (const e of allExps) {
+      const amt = typeof e.amount === 'number' ? e.amount : parseFloat(String(e.amount)) || 0
+      const ym = e.date?.slice(0, 7) ?? ''
+      if (ym) byMonthAll[ym] = (byMonthAll[ym] || 0) + amt
+    }
+    const nowYM = new Date().toISOString().slice(0, 7)
+    setMonthRanking(
+      Object.entries(byMonthAll)
+        .sort(([a], [b]) => b.localeCompare(a))
+        .slice(0, 6)
+        .map(([ym, total]) => ({ ym, label: ymLabel(ym, polish), total: parseFloat(total.toFixed(2)), isCurrent: ym === nowYM }))
+        .sort((a, b) => a.total - b.total)
+    )
+
     const catEntries = Object.entries(byCat).sort((a, b) => b[1] - a[1])
     setCategoryData(catEntries.map(([name, value]) => ({ name, value: parseFloat(value.toFixed(2)) })))
     setDailyData(
@@ -616,9 +634,9 @@ export default function AnalysisPage() {
           className="flex flex-col items-center justify-center py-24 gap-5 text-center"
         >
           <p className="font-mono text-[10px] font-bold uppercase tracking-widest text-muted-foreground" suppressHydrationWarning>
-            {'// '}{t('analysis.noData')}
+            {t('analysis.noData')}
           </p>
-          <div className="h-20 w-20 border-2 border-foreground bg-secondary shadow-[3px_3px_0_hsl(var(--foreground))] rounded-md flex items-center justify-center">
+          <div className="h-20 w-20 border border-border bg-secondary shadow-[var(--nb-shadow-sm)] rounded-md flex items-center justify-center">
             <BarChart2 className="h-10 w-10 text-foreground" />
           </div>
           <div className="space-y-1 max-w-xs">
@@ -790,6 +808,60 @@ export default function AnalysisPage() {
               </Card>
             </motion.div>
           </div>
+
+          {/* ── Ranking miesięcy ── */}
+          {monthRanking.length >= 2 && (
+            <motion.div custom={2} variants={cardVariant} initial="hidden" animate="visible">
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base" suppressHydrationWarning>
+                    {isPolish ? 'Ranking miesięcy' : 'Month ranking'}
+                  </CardTitle>
+                  <CardDescription className="text-xs" suppressHydrationWarning>
+                    {isPolish ? 'Ostatnie miesiące od najtańszego do najdroższego' : 'Recent months, cheapest to most expensive'}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-2.5">
+                  {(() => {
+                    const maxTotal = Math.max(1, ...monthRanking.map((m) => m.total))
+                    return monthRanking.map((m) => (
+                      <div key={m.ym} className="flex items-center gap-3">
+                        <span className={`w-16 shrink-0 text-xs capitalize tabular-nums ${m.isCurrent ? 'font-extrabold text-primary' : 'font-semibold text-muted-foreground'}`}>
+                          {m.label}
+                        </span>
+                        <span className="flex-1 h-4 rounded-[5px] bg-muted overflow-hidden">
+                          <span
+                            className={`block h-full rounded-[5px] ${m.isCurrent ? 'bg-primary' : 'bg-[#d8cdb8] dark:bg-[#4a4436]'}`}
+                            style={{ width: `${Math.max(3, (m.total / maxTotal) * 100)}%` }}
+                          />
+                        </span>
+                        <span className={`w-24 shrink-0 text-right text-xs tabular-nums ${m.isCurrent ? 'font-extrabold' : 'font-semibold text-muted-foreground'}`}>
+                          {fmtMoney(m.total, currency)}
+                        </span>
+                      </div>
+                    ))
+                  })()}
+                  {(() => {
+                    const currentIdx = monthRanking.findIndex((m) => m.isCurrent)
+                    if (currentIdx < 0) return null
+                    const rankFromTop = monthRanking.length - currentIdx
+                    const record = monthRanking[monthRanking.length - 1]
+                    const current = monthRanking[currentIdx]
+                    const toRecord = record.total - current.total
+                    return (
+                      <p className="text-xs font-bold rounded-lg bg-[#fdf5e2] text-[#93591a] dark:bg-amber-500/10 dark:text-amber-400 px-3 py-2 mt-1" suppressHydrationWarning>
+                        {rankFromTop === 1
+                          ? (isPolish ? 'To Twój najdroższy miesiąc w tym zestawieniu.' : 'This is your most expensive month in this range.')
+                          : (isPolish
+                            ? `To Twój ${rankFromTop}. najdroższy miesiąc — ${fmtMoney(toRecord, currency)} do rekordu (${record.label}).`
+                            : `This is your #${rankFromTop} most expensive month — ${fmtMoney(toRecord, currency)} below the record (${record.label}).`)}
+                      </p>
+                    )
+                  })()}
+                </CardContent>
+              </Card>
+            </motion.div>
+          )}
 
           {/* ── Daily spending ── */}
           <motion.div custom={2} variants={cardVariant} initial="hidden" animate="visible">

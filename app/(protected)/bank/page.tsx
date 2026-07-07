@@ -162,7 +162,7 @@ function BankComingSoon({ t }: { t: (key: string) => string }) {
         <motion.div
           animate={{ rotate: 360 }}
           transition={{ duration: 12, repeat: Infinity, ease: 'linear' }}
-          className="absolute inset-0 rounded-full border-2 border-dashed border-primary/30"
+          className="absolute inset-0 rounded-full border border-dashed border-primary/30"
         />
       </div>
       <div className="space-y-2 max-w-sm">

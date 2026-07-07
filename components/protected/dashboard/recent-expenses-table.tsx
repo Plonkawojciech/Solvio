@@ -85,9 +85,6 @@ export function RecentExpensesTable({
           <TableHead suppressHydrationWarning>
             {t('expenses.titleCol') || 'Title'}
           </TableHead>
-          <TableHead className="hidden sm:table-cell" suppressHydrationWarning>
-            {t('expenses.vendor') || 'Vendor'}
-          </TableHead>
           <TableHead className="hidden md:table-cell" suppressHydrationWarning>
             {t('expenses.category') || 'Category'}
           </TableHead>
@@ -135,11 +132,6 @@ export function RecentExpensesTable({
                     />
                   </div>
                 )}
-              </TableCell>
-              <TableCell className="hidden sm:table-cell">
-                <span className="text-sm text-muted-foreground">
-                  {expense.vendor || '—'}
-                </span>
               </TableCell>
               <TableCell className="hidden md:table-cell">
                 {displayCategory ? (

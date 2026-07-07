@@ -290,7 +290,7 @@ export function ReceiptItemAssigner({
                               type="button"
                               onClick={() => toggleMember(item.id, m.id)}
                               whileTap={{ scale: 0.85 }}
-                              className="relative h-9 w-9 rounded-full border-2 flex items-center justify-center transition-all duration-150"
+                              className="relative h-9 w-9 rounded-full border flex items-center justify-center transition-all duration-150"
                               style={{
                                 borderColor: color,
                                 backgroundColor: isAssigned ? color : 'transparent',
@@ -365,7 +365,7 @@ export function ReceiptItemAssigner({
           </div>
 
           {/* Grand total */}
-          <div className="border-t-2 border-border px-6 py-4 flex items-center justify-between">
+          <div className="border-t border-border px-6 py-4 flex items-center justify-between">
             <span className="text-base font-bold">{t('groups.totalAmount')}</span>
             <span className="text-lg font-bold tabular-nums">
               {currency} {parseFloat(String(total ?? 0)).toFixed(2)}

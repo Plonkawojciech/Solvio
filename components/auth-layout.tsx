@@ -34,13 +34,13 @@ export function AuthLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-svh flex bg-background">
       {/* Left panel (branding) — hidden on mobile */}
-      <div className="hidden lg:flex lg:w-[48%] xl:w-[52%] relative flex-col justify-between border-r-2 border-foreground bg-secondary p-10 xl:p-14">
+      <div className="hidden lg:flex lg:w-[48%] xl:w-[52%] relative flex-col justify-between border-r border-border bg-secondary p-10 xl:p-14">
         <Link
           href="/"
           className="flex w-fit items-center gap-2 text-lg font-black tracking-tight"
           aria-label="Solvio — home"
         >
-          <div className="flex h-9 w-9 items-center justify-center rounded-md border-2 border-foreground bg-foreground text-background shadow-[2px_2px_0_hsl(var(--foreground))]">
+          <div className="flex h-9 w-9 items-center justify-center rounded-md border border-border bg-primary text-primary-foreground shadow-[var(--nb-shadow-sm)]">
             <BarChart3 className="size-4" />
           </div>
           Solvio
@@ -48,7 +48,7 @@ export function AuthLayout({ children }: { children: React.ReactNode }) {
 
         <div className="space-y-5">
           <div className="font-mono text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-            {'// '}{pl ? 'TWOJE FINANSE' : 'YOUR FINANCES'}
+            {pl ? 'TWOJE FINANSE' : 'YOUR FINANCES'}
           </div>
           <h2 className="text-3xl xl:text-4xl font-extrabold tracking-tight leading-[1.1]">
             {pl
@@ -65,9 +65,9 @@ export function AuthLayout({ children }: { children: React.ReactNode }) {
             {features.map((f) => (
               <div
                 key={f.key}
-                className="flex items-start gap-3 rounded-md border-2 border-foreground bg-card p-3 shadow-[2px_2px_0_hsl(var(--foreground))]"
+                className="flex items-start gap-3 rounded-md border border-border bg-card p-3 shadow-[var(--nb-shadow-sm)]"
               >
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border-2 border-foreground bg-foreground text-background">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border bg-primary text-primary-foreground">
                   <f.icon className="size-4" />
                 </div>
                 <div className="min-w-0">

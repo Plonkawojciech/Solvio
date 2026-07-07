@@ -2,19 +2,23 @@
 
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import {
-  Card, CardContent, CardDescription, CardHeader, CardTitle,
+  Card, CardContent, CardHeader, CardTitle,
 } from '@/components/ui/card';
-import { Activity, TrendingUp, TrendingDown, Wallet, Target, ArrowUpRight, AlertCircle, RefreshCw, CheckCircle2, Camera, BarChart3, Settings, Sparkles, ShieldCheck, Gauge, PiggyBank } from 'lucide-react';
+import { Activity, TrendingUp, TrendingDown, Wallet, ArrowUpRight, AlertCircle, RefreshCw, CheckCircle2, Camera, BarChart3, Settings, Sparkles, ShieldCheck, Gauge, PiggyBank } from 'lucide-react';
 import dynamic from 'next/dynamic';
 /* Heavy components — lazy-loaded to reduce initial bundle */
-const ChartSkeleton = () => <div className="h-[300px] w-full animate-shimmer rounded-lg border-2 border-foreground shadow-[4px_4px_0_hsl(var(--foreground))]" />;
-const ComponentSkeleton = () => <div className="h-[200px] w-full animate-shimmer rounded-lg border-2 border-foreground shadow-[4px_4px_0_hsl(var(--foreground))]" />;
-const SpendingByCategoryChart = dynamic(() => import('@/components/protected/dashboard/spending-by-category-chart').then(m => ({ default: m.SpendingByCategoryChart })), { ssr: false, loading: ChartSkeleton });
-const CategoryTrendChart = dynamic(() => import('@/components/protected/dashboard/category-trend-chart').then(m => ({ default: m.CategoryTrendChart })), { ssr: false, loading: ChartSkeleton });
-const WellnessScore = dynamic(() => import('@/components/protected/dashboard/wellness-score').then(m => ({ default: m.WellnessScore })), { ssr: false });
+const ComponentSkeleton = () => <div className="h-[200px] w-full animate-shimmer rounded-lg border border-border shadow-[var(--nb-shadow-sm)]" />;
 const RecentExpensesTable = dynamic(() => import('@/components/protected/dashboard/recent-expenses-table').then(m => ({ default: m.RecentExpensesTable })), { ssr: false, loading: ComponentSkeleton });
-const BudgetOverview = dynamic(() => import('@/components/protected/dashboard/budget-overview').then(m => ({ default: m.BudgetOverview })), { ssr: false, loading: ComponentSkeleton });
-const WeeklyDigest = dynamic(() => import('@/components/protected/dashboard/weekly-digest').then(m => ({ default: m.WeeklyDigest })), { ssr: false });
+
+/* Paleta kategorii Notes Classic — przypisywana wg rangi wydatków */
+const CAT_COLORS = ['#e2493a', '#e29a2f', '#3f9c74', '#4f79e2', '#9a5fd1', '#c9c2b2'];
+
+/* Klasa wypełnienia paska wg stopnia zapełnienia budżetu */
+function pbFillClass(pct: number): string {
+  if (pct >= 100) return 'pb-fill pb-fill-bad';
+  if (pct >= 75) return 'pb-fill pb-fill-warn';
+  return 'pb-fill pb-fill-ok';
+}
 import { AddExpenseTrigger } from '@/components/protected/dashboard/add-expense-trigger';
 import { ScanReceiptButton } from '@/components/protected/dashboard/scan-receipt-button';
 import { Button } from '@/components/ui/button';
@@ -49,27 +53,27 @@ function DashboardSkeleton() {
   return (
     <div className="flex flex-col gap-6">
       {/* Hero card */}
-      <div className="rounded-lg border-2 border-foreground bg-card shadow-[4px_4px_0_hsl(var(--foreground))] p-6 space-y-4">
+      <div className="rounded-lg border border-border bg-card shadow-[var(--nb-shadow-sm)] p-6 space-y-4">
         <div className="flex items-center justify-between">
           <div className="space-y-2">
             <div className="h-4 w-32 rounded animate-shimmer" />
             <div className="h-3 w-48 rounded animate-shimmer" />
           </div>
-          <div className="h-9 w-9 rounded border-2 border-foreground animate-shimmer" />
+          <div className="h-9 w-9 rounded border border-border animate-shimmer" />
         </div>
         <div className="h-9 w-48 rounded animate-shimmer" />
         <div className="h-3 w-56 rounded animate-shimmer" />
         <div className="flex gap-2">
-          <div className="h-10 w-36 rounded-md border-2 border-foreground animate-shimmer" />
-          <div className="h-10 w-32 rounded-md border-2 border-foreground animate-shimmer" />
-          <div className="h-10 w-36 rounded-md border-2 border-foreground animate-shimmer" />
+          <div className="h-10 w-36 rounded-md border border-border animate-shimmer" />
+          <div className="h-10 w-32 rounded-md border border-border animate-shimmer" />
+          <div className="h-10 w-36 rounded-md border border-border animate-shimmer" />
         </div>
       </div>
 
       {/* Stat cards */}
       <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
         {Array.from({ length: 4 }).map((_, i) => (
-          <div key={i} className="rounded-lg border-2 border-foreground bg-card shadow-[4px_4px_0_hsl(var(--foreground))] p-6 space-y-3">
+          <div key={i} className="rounded-lg border border-border bg-card shadow-[var(--nb-shadow-sm)] p-6 space-y-3">
             <div className="h-3 w-24 rounded animate-shimmer" />
             <div className="h-6 w-28 rounded animate-shimmer" />
             <div className="h-2.5 w-20 rounded animate-shimmer" />
@@ -79,12 +83,12 @@ function DashboardSkeleton() {
 
       {/* Main grid */}
       <div className="grid gap-4 grid-cols-1 lg:grid-cols-3">
-        <div className="lg:col-span-2 rounded-lg border-2 border-foreground bg-card shadow-[4px_4px_0_hsl(var(--foreground))] p-6 space-y-3">
+        <div className="lg:col-span-2 rounded-lg border border-border bg-card shadow-[var(--nb-shadow-sm)] p-6 space-y-3">
           <div className="h-4 w-36 rounded animate-shimmer" />
           <div className="h-3 w-48 rounded animate-shimmer" />
           <div className="space-y-2 pt-4">
             {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="flex items-center justify-between py-2 border-b border-dashed border-foreground/20 last:border-0">
+              <div key={i} className="flex items-center justify-between py-2 border-b border-dashed border-border/20 last:border-0">
                 <div className="space-y-1.5">
                   <div className="h-4 w-32 rounded animate-shimmer" />
                   <div className="h-3 w-20 rounded animate-shimmer" />
@@ -94,18 +98,18 @@ function DashboardSkeleton() {
             ))}
           </div>
         </div>
-        <div className="rounded-lg border-2 border-foreground bg-card shadow-[4px_4px_0_hsl(var(--foreground))] p-6 space-y-3">
+        <div className="rounded-lg border border-border bg-card shadow-[var(--nb-shadow-sm)] p-6 space-y-3">
           <div className="h-4 w-32 rounded animate-shimmer" />
           <div className="h-3 w-44 rounded animate-shimmer" />
-          <div className="mx-auto mt-4 h-48 w-48 rounded-full border-2 border-foreground animate-shimmer" />
+          <div className="mx-auto mt-4 h-48 w-48 rounded-full border border-border animate-shimmer" />
         </div>
       </div>
 
       {/* Chart */}
-      <div className="rounded-lg border-2 border-foreground bg-card shadow-[4px_4px_0_hsl(var(--foreground))] p-6 space-y-3">
+      <div className="rounded-lg border border-border bg-card shadow-[var(--nb-shadow-sm)] p-6 space-y-3">
         <div className="h-4 w-40 rounded animate-shimmer" />
         <div className="h-3 w-52 rounded animate-shimmer" />
-        <div className="mt-4 h-64 rounded-lg border-2 border-foreground animate-shimmer" />
+        <div className="mt-4 h-64 rounded-lg border border-border animate-shimmer" />
       </div>
     </div>
   );
@@ -317,12 +321,17 @@ export default function ProtectedPage() {
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [monthIncome, setMonthIncome] = useState<number | null>(null);
   const [lastUpdate, setLastUpdate] = useState<number>(Date.now());
+  // Wybrany miesiąc (YYYY-MM, czas lokalny) — przełącznik w nagłówku
+  const [selectedMonth, setSelectedMonth] = useState<string>(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  });
 
   const fetchData = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/data/dashboard?since=all', { signal });
+      const res = await fetch(`/api/data/dashboard?period=month&month=${selectedMonth}`, { signal });
       if (!res.ok) {
         const msg = res.status === 401
           ? 'Unauthorized'
@@ -346,7 +355,7 @@ export default function ProtectedPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [selectedMonth]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -473,10 +482,15 @@ export default function ProtectedPage() {
       : null;
 
     // Monthly forecast (linear from day-of-month progress)
-    const dayOfMonth = today.getDate();
-    const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+    // Dla miesięcy przeszłych (przełącznik miesiąca): miesiąc zamknięty → progress = 100%
+    const currentYM = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+    const isCurrentMonth = selectedMonth === currentYM;
+    const refYear = Number(selectedMonth.slice(0, 4));
+    const refMonth = Number(selectedMonth.slice(5, 7));
+    const daysInMonth = new Date(refYear, refMonth, 0).getDate();
+    const dayOfMonth = isCurrentMonth ? today.getDate() : daysInMonth;
     const monthProgress = dayOfMonth / daysInMonth;
-    const monthlyForecast = monthProgress > 0 ? totalSpent / monthProgress : null;
+    const monthlyForecast = isCurrentMonth && monthProgress > 0 ? totalSpent / monthProgress : null;
 
     // This week spending (Mon–today)
     const weekStartDate = new Date(today);
@@ -546,6 +560,28 @@ export default function ProtectedPage() {
     const wellnessScore = Math.min(100, Math.max(0, savingsScore + budgetScore + trendScore));
     const wellnessGrade = wellnessScore >= 85 ? 'A' : wellnessScore >= 70 ? 'B' : wellnessScore >= 50 ? 'C' : wellnessScore >= 30 ? 'D' : 'F';
 
+    // ── Notes Classic: porównanie kategorii bieżący vs poprzedni miesiąc ──
+    // Kategorie bez wydatków w poprzednim miesiącu = jednorazowe/nowe (bez Δ%)
+    const daysLeft = Math.max(1, daysInMonth - dayOfMonth + 1);
+    const dailyAllowance = isCurrentMonth && totalBudget > 0 && budgetRemaining > 0 ? budgetRemaining / daysLeft : null;
+    const comparisonData = Array.from(spentByCatId.entries())
+      .map(([catId, curr]) => {
+        const cat = catId === 'other' ? null : (catById.get(catId) || null);
+        const prev = prevSpentByCatId.get(catId) || 0;
+        const budgetAmt = catId === 'other' ? 0 : (budgetByCatId.get(catId) || 0);
+        return {
+          id: catId,
+          name: cat ? translateCategoryName(cat.name) : translateCategoryName('Other'),
+          icon: cat?.icon || null,
+          curr,
+          prev,
+          budget: budgetAmt,
+          deltaPct: prev > 0 ? Math.round(((curr - prev) / prev) * 100) : null,
+        };
+      })
+      .sort((a, b) => b.curr - a.curr)
+      .slice(0, 6);
+
     return {
       currency, locale, recentExpenses, totalSpent, totalTransactions,
       avgDaily, avgTransaction, mostExpensive, receiptsScanned: receiptsCount,
@@ -553,8 +589,9 @@ export default function ProtectedPage() {
       budgetProgress, catById,
       momChange, monthlyForecast, thisWeekSpent, overBudgetCategories, savingsRate,
       anomalies, wellnessScore, wellnessGrade, savingsScore, budgetScore, trendScore,
+      monthProgress, daysLeft, dailyAllowance, comparisonData, isCurrentMonth,
     };
-  }, [loading, categories, expenses, prevExpenses, serverPrevTotal, serverPrevByCategory, receiptsCount, settings, budgets, lang, monthIncome, translateCategoryName]);
+  }, [loading, categories, expenses, prevExpenses, serverPrevTotal, serverPrevByCategory, receiptsCount, settings, budgets, lang, monthIncome, translateCategoryName, selectedMonth]);
 
   // ── Render states ──────────────────────────────────────────────────────────
   if (loading) {
@@ -567,10 +604,10 @@ export default function ProtectedPage() {
 
   const {
     currency, locale, recentExpenses, totalSpent, totalTransactions, avgDaily,
-    mostExpensive, receiptsScanned, categorySpendingData, topCategory, budgetData,
+    mostExpensive, receiptsScanned,
     totalBudget, budgetRemaining, budgetProgress,
     momChange, monthlyForecast, thisWeekSpent, overBudgetCategories, savingsRate,
-    anomalies, wellnessScore, wellnessGrade, savingsScore, budgetScore, trendScore,
+    monthProgress, daysLeft, dailyAllowance, comparisonData, isCurrentMonth,
   } = calculatedData!;
 
   function formatAmount(amount: number) {
@@ -582,8 +619,9 @@ export default function ProtectedPage() {
     }).format(amount);
   }
 
-  // Empty state
-  if (recentExpenses.length === 0) {
+  // Empty state — onboarding tylko dla bieżącego miesiąca; w przeglądanym
+  // pustym miesiącu pokazujemy normalny dashboard z zerami
+  if (recentExpenses.length === 0 && isCurrentMonth) {
     return (
       <DashboardEmpty
         onAction={() => {}}
@@ -592,228 +630,252 @@ export default function ProtectedPage() {
     );
   }
 
-  const budgetProgressColor =
-    budgetProgress >= 100
-      ? 'bg-red-500'
-      : budgetProgress >= 90
-      ? 'bg-yellow-500'
-      : budgetProgress >= 70
-      ? 'bg-amber-400'
-      : 'bg-emerald-500';
+  // ── Notes Classic: dane pochodne renderu ──
+  const monthLabel = new Date(Number(selectedMonth.slice(0, 4)), Number(selectedMonth.slice(5, 7)) - 1, 1)
+    .toLocaleDateString(locale, { month: 'long', year: 'numeric' });
+  const shiftMonth = (delta: number) => {
+    const d = new Date(Number(selectedMonth.slice(0, 4)), Number(selectedMonth.slice(5, 7)) - 1 + delta, 1);
+    setSelectedMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+  };
+  const colorByCatId = new Map<string, string>(
+    comparisonData.map((c, i) => [c.id, CAT_COLORS[Math.min(i, CAT_COLORS.length - 1)]])
+  );
+  // Donut struktury wydatków — CSS conic-gradient z udziałów kategorii
+  const donutSegments: string[] = [];
+  let cumPct = 0;
+  for (let i = 0; i < comparisonData.length; i++) {
+    const share = totalSpent > 0 ? (comparisonData[i].curr / totalSpent) * 100 : 0;
+    donutSegments.push(`${colorByCatId.get(comparisonData[i].id)} ${cumPct}% ${cumPct + share}%`);
+    cumPct += share;
+  }
+  if (cumPct < 100) donutSegments.push(`hsl(var(--muted)) ${cumPct}% 100%`);
+  const donutStyle = { background: `conic-gradient(${donutSegments.join(', ')})` };
+  const maxCompareVal = Math.max(1, ...comparisonData.flatMap(c => [c.curr, c.prev]));
 
   return (
-    <div className="flex flex-col gap-4 md:gap-6">
-      {/* Hero Section — Clean summary card */}
-      <Card>
-        <div className="p-4 md:p-6 space-y-4 md:space-y-5">
-          {/* Header row */}
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium">{t('dashboard.totalSpent') || 'Total Spent'}</p>
-              <p className="text-sm text-muted-foreground hidden sm:block mt-0.5">{t('dashboard.spendingOverview') || 'Your spending overview'}</p>
-            </div>
-            <div className="h-9 w-9 rounded-lg bg-muted flex items-center justify-center">
-              <Wallet className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
-            </div>
-          </div>
-
-          {/* Total amount */}
-          <div>
-            <span className="text-2xl md:text-3xl font-semibold tabular-nums tracking-tight">{formatAmount(totalSpent)}</span>
-            <div className="flex items-center gap-3 mt-1 flex-wrap">
-              <p className="text-sm text-muted-foreground" suppressHydrationWarning>
-                {totalTransactions} {t('dashboard.transactions') || 'transactions'} · {formatAmount(avgDaily)}/{t('dashboard.day')}
-              </p>
-              {momChange !== null && (
-                <span className={`inline-flex items-center gap-1 text-xs font-medium ${momChange < 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`} suppressHydrationWarning>
-                  {momChange < 0 ? <TrendingDown className="h-3.5 w-3.5" aria-hidden="true" /> : <TrendingUp className="h-3.5 w-3.5" aria-hidden="true" />}
-                  {momChange > 0 ? '+' : ''}{momChange}% {t('dashboard.vsLastMonth') || 'vs last month'}
-                </span>
-              )}
-            </div>
-          </div>
-
-          {totalBudget > 0 && (
-            <div className="space-y-2 rounded-lg border p-3 md:p-4">
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">{t('dashboard.budgetProgress') || 'Budget Progress'}</span>
-                <span className="font-medium tabular-nums">
-                  {budgetRemaining >= 0
-                    ? <span className="text-emerald-600 dark:text-emerald-400">{formatAmount(budgetRemaining)} {t('dashboard.left') || 'left'}</span>
-                    : <span className="text-red-600 dark:text-red-400">{formatAmount(Math.abs(budgetRemaining))} {t('dashboard.over') || 'over'}</span>
-                  }
-                </span>
-              </div>
-              {/* Progress bar */}
-              <div
-                className="relative h-2 w-full overflow-hidden rounded-full bg-muted"
-                role="progressbar"
-                aria-valuenow={Math.round(budgetProgress)}
-                aria-valuemin={0}
-                aria-valuemax={100}
-                aria-label={t('dashboard.budgetProgress') || 'Budget progress'}
-              >
-                <div
-                  className={`h-full rounded-full transition-all duration-700 ${budgetProgressColor}`}
-                  style={{ width: `${Math.min(budgetProgress, 100)}%` }}
-                />
-              </div>
-              <p className="text-xs text-muted-foreground tabular-nums" suppressHydrationWarning>
-                {budgetProgress.toFixed(1)}% {t('dashboard.of')} {formatAmount(totalBudget)} {t('dashboard.budget') || 'budget'} {t('dashboard.used') || 'used'}
-              </p>
-            </div>
-          )}
-
-          <div className="flex flex-col sm:flex-row gap-2 pt-1">
-            <ScanReceiptButton onAction={fetchData} />
-            <AddExpenseTrigger onAction={fetchData} />
-            <Link href="/expenses" className="w-full sm:w-auto">
-              <Button variant="outline" size="default" className="w-full sm:w-auto text-sm">
-                {t('dashboard.viewAllExpenses') || 'View All Expenses'}
-                <ArrowUpRight className="ml-2 h-4 w-4" />
-              </Button>
-            </Link>
+    <div className="flex flex-col gap-4 md:gap-5">
+      {/* ── Nagłówek strony: powitanie + akcje ── */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-xl md:text-2xl" suppressHydrationWarning>{t('dashboard.goodMorning')} 👋</h1>
+          {/* Przełącznik miesiąca */}
+          <div className="mt-0.5 flex items-center gap-1">
+            <button
+              onClick={() => shiftMonth(-1)}
+              className="h-6 w-6 rounded-md flex items-center justify-center text-muted-foreground hover:bg-secondary hover:text-secondary-foreground transition-colors"
+              aria-label="previous month"
+            >
+              ‹
+            </button>
+            <span className="text-sm font-bold text-muted-foreground capitalize tabular-nums min-w-[110px] text-center" suppressHydrationWarning>
+              {monthLabel}
+            </span>
+            <button
+              onClick={() => shiftMonth(1)}
+              disabled={isCurrentMonth}
+              className="h-6 w-6 rounded-md flex items-center justify-center text-muted-foreground hover:bg-secondary hover:text-secondary-foreground transition-colors disabled:opacity-30 disabled:pointer-events-none"
+              aria-label="next month"
+            >
+              ›
+            </button>
           </div>
         </div>
-      </Card>
-
-      {/* Forecast + Savings Rate */}
-      {(monthlyForecast !== null || savingsRate !== null) && totalSpent > 0 && (
-        <div className="grid gap-3 grid-cols-1 sm:grid-cols-2">
-          {monthlyForecast !== null && (
-            <Card className="border-dashed bg-muted/30">
-              <div className="px-5 py-3.5 flex items-center gap-3">
-                <div className="h-8 w-8 rounded-lg bg-muted flex items-center justify-center shrink-0">
-                  <Gauge className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium">{t('dashboard.forecastMonth') || 'Monthly forecast'}</p>
-                  <p className="text-sm font-semibold tabular-nums">{formatAmount(monthlyForecast)}</p>
-                </div>
-              </div>
-            </Card>
-          )}
-          {savingsRate !== null && (
-            <Card className={`border-dashed ${savingsRate >= 20 ? 'bg-emerald-500/5' : savingsRate >= 10 ? 'bg-yellow-500/5' : 'bg-red-500/5'}`}>
-              <div className="px-5 py-3.5 flex items-center gap-3">
-                <div className={`h-8 w-8 rounded-lg flex items-center justify-center shrink-0 ${savingsRate >= 20 ? 'bg-emerald-500/15' : savingsRate >= 10 ? 'bg-yellow-500/15' : 'bg-red-500/15'}`}>
-                  <PiggyBank className={`h-4 w-4 ${savingsRate >= 20 ? 'text-emerald-600' : savingsRate >= 10 ? 'text-yellow-600' : 'text-red-500'}`} aria-hidden="true" />
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium">{t('dashboard.savingsRate') || 'Savings rate'}</p>
-                  <p className={`text-sm font-semibold tabular-nums ${savingsRate >= 20 ? 'text-emerald-600 dark:text-emerald-400' : savingsRate >= 10 ? 'text-yellow-600' : 'text-red-500'}`}>{savingsRate}%</p>
-                </div>
-              </div>
-            </Card>
-          )}
+        <div className="flex flex-wrap gap-2">
+          <ScanReceiptButton onAction={fetchData} />
+          <AddExpenseTrigger onAction={fetchData} />
         </div>
-      )}
+      </div>
 
-      {/* Over-budget alerts — show top 2 on mobile, all on desktop */}
+      {/* ── Alerty przekroczonych budżetów ── */}
       {overBudgetCategories.length > 0 && (
         <div className="flex flex-col gap-2">
           {overBudgetCategories.map((cat, i) => (
-            <div key={i} className={`flex items-center gap-2 md:gap-3 rounded-xl border px-3 py-2.5 md:px-4 md:py-3 text-sm ${i >= 2 ? 'hidden md:flex' : ''} ${cat.pct >= 1 ? 'border-red-500/30 bg-red-500/8 text-red-700 dark:text-red-400' : 'border-orange-500/30 bg-orange-500/8 text-orange-700 dark:text-orange-400'}`}>
-              <AlertCircle className="h-4 w-4 shrink-0" />
+            <div
+              key={i}
+              className={`flex items-center gap-2 md:gap-3 rounded-xl border px-3 py-2.5 md:px-4 text-sm font-medium ${i >= 2 ? 'hidden md:flex' : ''} ${
+                cat.pct >= 1
+                  ? 'border-[#f0c9bf] bg-[#fdeeea] text-[#a4442e] dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-400'
+                  : 'border-[#f0dcb4] bg-[#fdf5e2] text-[#93591a] dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-400'
+              }`}
+            >
+              <AlertCircle className="h-4 w-4 shrink-0" aria-hidden="true" />
               <span className="flex-1 truncate" suppressHydrationWarning>
-                <span className="font-medium">{cat.name}</span>{': '}
-                {(cat.pct * 100).toFixed(0)}% {cat.pct >= 1 ? (lang === 'pl' ? 'przekroczono' : 'exceeded') : (lang === 'pl' ? 'wykorzystano' : 'used')}
+                <span className="font-bold">{cat.name}</span>{': '}
+                {cat.pct >= 1
+                  ? `${t('dashboard.overBudgetShort')} ${formatAmount(cat.spent - cat.budget)}`
+                  : `${t('dashboard.nearLimitShort')} (${(cat.pct * 100).toFixed(0)}%)`}
               </span>
-              <span className="tabular-nums font-medium shrink-0 text-xs md:text-sm">{formatAmount(cat.spent)} / {formatAmount(cat.budget)}</span>
+              <span className="tabular-nums shrink-0 text-xs md:text-sm">{formatAmount(cat.spent)} / {formatAmount(cat.budget)}</span>
             </div>
           ))}
         </div>
       )}
 
-      {/* Spending anomaly alerts — hidden on mobile to reduce clutter */}
-      {anomalies.length > 0 && (
-        <div className="hidden md:flex flex-col gap-2">
-          {anomalies.map((a, i) => (
-            <div key={i} className="flex items-center gap-3 rounded-xl border border-blue-500/30 bg-blue-500/8 px-4 py-3 text-sm text-blue-700 dark:text-blue-400">
-              <span className="text-base shrink-0">{a.icon}</span>
-              <span className="flex-1" suppressHydrationWarning>
-                <span className="font-medium">{a.name}</span>{': '}
-                {a.ratio.toFixed(1)}× {lang === 'pl' ? 'więcej niż w poprzednim okresie' : 'more than previous period'}
-              </span>
+      {/* ── Rząd górny: hero z paskiem tempa + prognoza + na dziś + donut ── */}
+      <div className="grid gap-4 grid-cols-2 xl:grid-cols-[1.6fr_0.8fr_0.8fr_1.2fr]">
+        {/* Hero: wydano + pasek zmieniający kolor + kreska tempa */}
+        <Card className="col-span-2 xl:col-span-1">
+          <div className="p-4 md:p-5">
+            <p className="nb-label" suppressHydrationWarning>{t('dashboard.monthSpending')}</p>
+            <div className="mt-1 mb-4 flex items-baseline gap-2 flex-wrap">
+              <span className="text-3xl md:text-4xl font-extrabold tabular-nums tracking-tight">{formatAmount(totalSpent)}</span>
+              {totalBudget > 0 && (
+                <span className="text-sm text-muted-foreground font-medium tabular-nums">/ {formatAmount(totalBudget)}</span>
+              )}
+              {momChange !== null && (
+                <span className={`inline-flex items-center gap-1 text-xs font-bold ${momChange < 0 ? 'text-[#1e6b2f] dark:text-emerald-400' : 'text-[#b3402c] dark:text-red-400'}`} suppressHydrationWarning>
+                  {momChange < 0 ? <TrendingDown className="h-3.5 w-3.5" aria-hidden="true" /> : <TrendingUp className="h-3.5 w-3.5" aria-hidden="true" />}
+                  {momChange > 0 ? '+' : ''}{momChange}% {t('dashboard.vsLastMonth')}
+                </span>
+              )}
             </div>
-          ))}
-        </div>
-      )}
+            {totalBudget > 0 ? (
+              <>
+                <div
+                  className="pb-track"
+                  role="progressbar"
+                  aria-valuenow={Math.round(budgetProgress)}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-label={t('dashboard.budgetProgress')}
+                >
+                  <span className={pbFillClass(budgetProgress)} style={{ width: `${Math.min(budgetProgress, 100)}%` }} />
+                  {isCurrentMonth && <span className="pb-pin" style={{ left: `${Math.min(monthProgress * 100, 99)}%` }} />}
+                </div>
+                <div className="mt-1.5 flex items-center justify-between text-xs text-muted-foreground tabular-nums flex-wrap gap-1">
+                  <span suppressHydrationWarning>
+                    {budgetProgress.toFixed(0)}% ·{' '}
+                    {budgetRemaining >= 0
+                      ? <>{t('dashboard.remainingBudget')} <b className="text-foreground">{formatAmount(budgetRemaining)}</b></>
+                      : <b className="text-[#b3402c] dark:text-red-400">{formatAmount(Math.abs(budgetRemaining))} {t('dashboard.over')}</b>}
+                  </span>
+                  {isCurrentMonth && (
+                    <span className="hidden sm:inline" suppressHydrationWarning>{t('dashboard.paceMarker')} ({(monthProgress * 100).toFixed(0)}%)</span>
+                  )}
+                </div>
+              </>
+            ) : (
+              <p className="text-sm text-muted-foreground" suppressHydrationWarning>
+                {totalTransactions} {t('dashboard.transactions')} · {formatAmount(avgDaily)}/{t('dashboard.day')}
+              </p>
+            )}
+          </div>
+        </Card>
 
-      {/* Metric Cards */}
-      <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
-        {[
-          { label: t('dashboard.receiptsScanned') || 'Receipts Scanned', value: receiptsScanned, sub: t('dashboard.aiProcessed') || 'AI processed' },
-          { label: t('dashboard.biggestPurchase') || 'Biggest Purchase', value: formatAmount(mostExpensive), sub: t('dashboard.largestTransaction') || 'Largest transaction' },
-          { label: t('dashboard.thisWeek') || 'This Week', value: formatAmount(thisWeekSpent), sub: t('dashboard.weeklySpend') || 'Weekly spend' },
-          { label: t('dashboard.topCategory') || 'Top Category', value: topCategory, sub: t('dashboard.highestSpending') || 'Highest spending', truncate: true },
-        ].map((card, i) => (
-          <Card key={i}>
-            <div className="p-3 md:p-6">
-              <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium line-clamp-1">{card.label}</p>
-              <div className={`mt-1 md:mt-2 font-semibold tabular-nums${card.truncate ? ' text-sm md:text-base truncate' : ' text-lg md:text-xl'}`} title={card.truncate ? String(card.value) : undefined}>{card.value}</div>
-              <p className="text-xs text-muted-foreground mt-0.5 md:mt-1 hidden md:block">{card.sub}</p>
+        {/* KPI: prognoza końca miesiąca */}
+        <Card>
+          <div className="p-4 md:p-5 flex flex-col justify-center h-full">
+            <p className="nb-label flex items-center gap-1.5" suppressHydrationWarning>
+              <Gauge className="h-3.5 w-3.5" aria-hidden="true" />{t('dashboard.forecastMonth')}
+            </p>
+            <p className={`mt-1 text-xl md:text-2xl font-extrabold tabular-nums ${monthlyForecast !== null && totalBudget > 0 && monthlyForecast > totalBudget ? 'text-[#b3402c] dark:text-red-400' : ''}`}>
+              {monthlyForecast !== null ? formatAmount(monthlyForecast) : '—'}
+            </p>
+            {monthlyForecast !== null && totalBudget > 0 && (
+              <p className={`text-xs font-bold mt-0.5 ${monthlyForecast > totalBudget ? 'text-[#b3402c] dark:text-red-400' : 'text-[#1e6b2f] dark:text-emerald-400'}`} suppressHydrationWarning>
+                {monthlyForecast > totalBudget
+                  ? `▲ ${formatAmount(monthlyForecast - totalBudget)} ${t('dashboard.over')}`
+                  : `✓ ${formatAmount(totalBudget - monthlyForecast)} ${t('dashboard.remainingBudget')}`}
+              </p>
+            )}
+          </div>
+        </Card>
+
+        {/* KPI: ile można wydać dziennie */}
+        <Card>
+          <div className="p-4 md:p-5 flex flex-col justify-center h-full">
+            <p className="nb-label flex items-center gap-1.5" suppressHydrationWarning>
+              <Wallet className="h-3.5 w-3.5" aria-hidden="true" />{t('dashboard.dailyAllowance')}
+            </p>
+            <p className="mt-1 text-xl md:text-2xl font-extrabold tabular-nums">
+              {dailyAllowance !== null ? formatAmount(dailyAllowance) : formatAmount(avgDaily)}
+            </p>
+            <p className="text-xs text-muted-foreground font-medium mt-0.5" suppressHydrationWarning>
+              {dailyAllowance !== null
+                ? `${t('dashboard.perDay')} · ${daysLeft} ${t('dashboard.daysLeft')}`
+                : `${t('dashboard.perDay')}`}
+            </p>
+          </div>
+        </Card>
+
+        {/* Donut: struktura wydatków */}
+        <Card className="col-span-2 xl:col-span-1">
+          <div className="p-4 md:p-5 flex items-center gap-4 h-full">
+            <div className="relative h-24 w-24 shrink-0 rounded-full" style={donutStyle} role="img" aria-label={t('dashboard.categorySplit')}>
+              <div className="absolute inset-[18px] rounded-full bg-card flex flex-col items-center justify-center">
+                <span className="text-sm font-extrabold tabular-nums">{totalBudget > 0 ? `${budgetProgress.toFixed(0)}%` : formatAmount(totalSpent)}</span>
+                {totalBudget > 0 && <span className="text-[9px] text-muted-foreground font-bold" suppressHydrationWarning>{t('dashboard.budget')}</span>}
+              </div>
             </div>
-          </Card>
-        ))}
+            <div className="min-w-0 flex-1 space-y-1">
+              <p className="nb-label" suppressHydrationWarning>{t('dashboard.categorySplit')}</p>
+              {comparisonData.slice(0, 4).map((c) => (
+                <div key={c.id} className="flex items-center gap-1.5 text-xs font-semibold">
+                  <span className="h-2 w-2 rounded-[3px] shrink-0" style={{ backgroundColor: colorByCatId.get(c.id) }} />
+                  <span className="truncate flex-1">{c.name}</span>
+                  <span className="tabular-nums text-muted-foreground">{totalSpent > 0 ? Math.round((c.curr / totalSpent) * 100) : 0}%</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </Card>
       </div>
 
-      {/* Financial Wellness Score — hidden on mobile to reduce clutter */}
-      <div className="hidden md:block">
-      <WellnessScore
-        score={wellnessScore}
-        grade={wellnessGrade}
-        savingsScore={savingsScore}
-        budgetScore={budgetScore}
-        trendScore={trendScore}
-        currency={currency}
-        lang={lang}
-      />
-      </div>
+      {/* ── Rząd środkowy: porównanie kategorii + ostatnie transakcje ── */}
+      <div className="grid gap-4 grid-cols-1 lg:grid-cols-[1.4fr_1fr]">
+        {/* Porównanie: bieżący vs poprzedni miesiąc */}
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="flex items-baseline justify-between gap-2 flex-wrap">
+              <CardTitle suppressHydrationWarning>{t('dashboard.topCategories')} — {t('dashboard.vsPrevMonth')}</CardTitle>
+              <span className="text-[11px] text-muted-foreground font-medium" suppressHydrationWarning>{t('dashboard.comparisonHint')}</span>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {comparisonData.map((c) => (
+              <div key={c.id} className="flex items-center gap-3">
+                <span className="flex items-center gap-2 w-[120px] md:w-[140px] shrink-0 text-sm font-bold truncate">
+                  <span className="h-2.5 w-2.5 rounded-[3px] shrink-0" style={{ backgroundColor: colorByCatId.get(c.id) }} />
+                  <span className="truncate">{c.name}</span>
+                </span>
+                <span className="flex-1 flex flex-col gap-[3px] min-w-0">
+                  <span className="h-[9px] rounded-[5px]" style={{ width: `${Math.max(2, (c.curr / maxCompareVal) * 100)}%`, backgroundColor: colorByCatId.get(c.id) }} />
+                  <span className="h-[9px] rounded-[5px] opacity-30" style={{ width: `${Math.max(c.prev > 0 ? 2 : 0, (c.prev / maxCompareVal) * 100)}%`, backgroundColor: colorByCatId.get(c.id) }} />
+                </span>
+                <span className="w-[76px] text-right text-sm font-bold tabular-nums shrink-0">{formatAmount(c.curr)}</span>
+                <span className={`w-[52px] text-right text-xs font-extrabold tabular-nums shrink-0 ${
+                  c.deltaPct === null ? 'text-muted-foreground' : c.deltaPct > 0 ? 'text-[#b3402c] dark:text-red-400' : c.deltaPct < 0 ? 'text-[#1e6b2f] dark:text-emerald-400' : 'text-muted-foreground'
+                }`} suppressHydrationWarning>
+                  {c.deltaPct === null ? '•' : c.deltaPct > 0 ? `▲${c.deltaPct}%` : c.deltaPct < 0 ? `▼${Math.abs(c.deltaPct)}%` : '0%'}
+                </span>
+              </div>
+            ))}
+            {comparisonData.some(c => c.deltaPct === null) && (
+              <p className="text-[11px] text-muted-foreground pt-1" suppressHydrationWarning>
+                • = {t('dashboard.oneOffNew')}
+              </p>
+            )}
+          </CardContent>
+        </Card>
 
-      {/* Weekly Digest — hidden on mobile */}
-      <div className="hidden md:block">
-        <WeeklyDigest currency={currency} />
-      </div>
-
-      {/* Spending Trends */}
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="flex items-center gap-2">
-            <TrendingUp className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
-            <span suppressHydrationWarning>{t('dashboard.categoryTrends')}</span>
-          </CardTitle>
-          <CardDescription suppressHydrationWarning>{t('dashboard.categoryTrendsDesc')}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <CategoryTrendChart
-            key={`trend-${lastUpdate}`}
-            expenses={expenses.map(e => ({
-              amount: e.amount,
-              date: e.date,
-              categoryId: e.categoryId,
-              currency: e.currency,
-            }))}
-            categories={categories}
-            currency={currency}
-          />
-        </CardContent>
-      </Card>
-
-      {/* Main Content Grid */}
-      <div className="grid gap-4 grid-cols-1 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Activity className="h-4 w-4 text-muted-foreground" />
-              {t('dashboard.recentActivity') || 'Recent Activity'}
-            </CardTitle>
-            <CardDescription>{t('dashboard.latestTransactions') || 'Latest transactions'}</CardDescription>
+        {/* Ostatnie transakcje */}
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="flex items-baseline justify-between gap-2">
+              <CardTitle className="flex items-center gap-2">
+                <Activity className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+                <span suppressHydrationWarning>{t('dashboard.recentActivity')}</span>
+              </CardTitle>
+              <Link href="/expenses" className="text-xs font-bold text-primary inline-flex items-center gap-0.5 hover:underline">
+                <span suppressHydrationWarning>{t('dashboard.viewAllExpenses')}</span>
+                <ArrowUpRight className="h-3 w-3" aria-hidden="true" />
+              </Link>
+            </div>
           </CardHeader>
           <CardContent>
             <RecentExpensesTable
               key={`recent-${lastUpdate}`}
-              data={recentExpenses.slice(0, 10).map(e => ({
+              data={recentExpenses.slice(0, 8).map(e => ({
                 id: e.id,
                 description: e.description,
                 vendor: e.vendor,
@@ -827,56 +889,39 @@ export default function ProtectedPage() {
             />
           </CardContent>
         </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Target className="h-4 w-4 text-muted-foreground" />
-              {t('dashboard.topCategories') || 'Top Categories'}
-            </CardTitle>
-            <CardDescription>{t('dashboard.whereMoneyGoes') || 'Where your money goes'}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {categorySpendingData.length === 0 ? (
-              <p className="text-muted-foreground text-sm text-center py-8">
-                <span suppressHydrationWarning>{t('dashboard.noCategoryData')}</span>
-              </p>
-            ) : (
-              <div className="space-y-4">
-                <SpendingByCategoryChart
-                  key={`category-${lastUpdate}`}
-                  data={categorySpendingData.map(c => ({ name: c.name, total: c.total }))}
-                  currency={currency}
-                />
-                <div className="space-y-2 pt-4 border-t">
-                  {categorySpendingData.map((cat, idx) => (
-                    <div key={idx} className="flex items-center justify-between text-sm">
-                      <span className="text-muted-foreground">{cat.name}</span>
-                      <span className="font-medium font-mono tabular-nums">{formatAmount(cat.total)}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
       </div>
 
-      {/* Category Budgets */}
-      {budgetData.length > 0 && (
+      {/* ── Dolny rząd KPI: oszczędności / tydzień / największy zakup / paragony ── */}
+      <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
         <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Target className="h-4 w-4 text-muted-foreground" />
-              {t('dashboard.categoryBudgets') || 'Category Budgets'}
-            </CardTitle>
-            <CardDescription>{t('dashboard.trackSpending') || 'Track your spending by category'}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <BudgetOverview key={`budget-${lastUpdate}`} data={budgetData} currency={currency} />
-          </CardContent>
+          <div className="p-3 md:p-5">
+            <p className="nb-label flex items-center gap-1.5" suppressHydrationWarning>
+              <PiggyBank className="h-3.5 w-3.5" aria-hidden="true" />{t('dashboard.savingsRate')}
+            </p>
+            <p className={`mt-1 text-lg md:text-xl font-extrabold tabular-nums ${savingsRate !== null ? (savingsRate >= 20 ? 'text-[#1e6b2f] dark:text-emerald-400' : savingsRate >= 10 ? 'text-[#93591a] dark:text-amber-400' : 'text-[#b3402c] dark:text-red-400') : ''}`}>
+              {savingsRate !== null ? `${savingsRate}%` : '—'}
+            </p>
+          </div>
         </Card>
-      )}
+        <Card>
+          <div className="p-3 md:p-5">
+            <p className="nb-label" suppressHydrationWarning>{t('dashboard.thisWeek')}</p>
+            <p className="mt-1 text-lg md:text-xl font-extrabold tabular-nums">{formatAmount(thisWeekSpent)}</p>
+          </div>
+        </Card>
+        <Card>
+          <div className="p-3 md:p-5">
+            <p className="nb-label" suppressHydrationWarning>{t('dashboard.biggestPurchase')}</p>
+            <p className="mt-1 text-lg md:text-xl font-extrabold tabular-nums">{formatAmount(mostExpensive)}</p>
+          </div>
+        </Card>
+        <Card>
+          <div className="p-3 md:p-5">
+            <p className="nb-label" suppressHydrationWarning>{t('dashboard.receiptsScanned')}</p>
+            <p className="mt-1 text-lg md:text-xl font-extrabold tabular-nums">{receiptsScanned}</p>
+          </div>
+        </Card>
+      </div>
     </div>
   );
 }

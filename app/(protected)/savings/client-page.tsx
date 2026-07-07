@@ -558,9 +558,9 @@ export default function SavingsHub() {
               <Card>
                 <CardContent className="p-8 text-center">
                   <p className="font-mono text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-3" suppressHydrationWarning>
-                    {'// '}{t('goals.emptyTitle')}
+                    {t('goals.emptyTitle')}
                   </p>
-                  <div className="mx-auto mb-4 h-16 w-16 border-2 border-foreground bg-secondary shadow-[3px_3px_0_hsl(var(--foreground))] rounded-md flex items-center justify-center">
+                  <div className="mx-auto mb-4 h-16 w-16 border border-border bg-secondary shadow-[var(--nb-shadow-sm)] rounded-md flex items-center justify-center">
                     <Target className="h-8 w-8 text-foreground" />
                   </div>
                   <h3 className="font-semibold mb-1" suppressHydrationWarning>{t('goals.emptyTitle')}</h3>

@@ -236,7 +236,7 @@ export function CategoriesManager({ initialCategories }: { initialCategories: Ca
   return (
     <div className="space-y-4">
       {/* Seed Default Categories */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 rounded-md border-2 border-dashed border-foreground/40 bg-secondary/40 p-4">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 rounded-md border border-dashed border-border/40 bg-secondary/40 p-4">
         <div className="min-w-0">
           <p className="font-extrabold text-sm">{t('settings.defaultCategories')}</p>
           <p className="text-xs text-muted-foreground mt-0.5 leading-snug">{t('settings.defaultCategoriesDesc')}</p>
@@ -275,7 +275,7 @@ export function CategoriesManager({ initialCategories }: { initialCategories: Ca
       </div>
 
       {/* Categories Table */}
-      <div className="rounded-md border-2 border-foreground bg-card overflow-hidden shadow-[3px_3px_0_hsl(var(--foreground))]">
+      <div className="rounded-md border border-border bg-card overflow-hidden shadow-[var(--nb-shadow-sm)]">
         <Table>
           <TableHeader>
             <TableRow>

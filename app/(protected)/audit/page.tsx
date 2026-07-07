@@ -376,7 +376,7 @@ export default function AuditPage() {
               <motion.div
                 animate={{ rotate: 360 }}
                 transition={{ duration: 8, repeat: Infinity, ease: 'linear' }}
-                className="absolute inset-0 rounded-full border-2 border-dashed border-primary/30"
+                className="absolute inset-0 rounded-full border border-dashed border-primary/30"
               />
               <motion.div
                 animate={{ scale: [1, 1.15, 1] }}

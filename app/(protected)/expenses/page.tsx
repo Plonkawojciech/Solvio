@@ -869,7 +869,7 @@ export default function ExpensesPage() {
               <p className="font-mono text-[10px] font-bold uppercase tracking-widest text-destructive">
                 {'// ERROR'}
               </p>
-              <div className="flex items-center justify-center w-16 h-16 border-2 border-destructive bg-destructive/10 shadow-[3px_3px_0_hsl(var(--destructive))] rounded-md">
+              <div className="flex items-center justify-center w-16 h-16 border border-destructive bg-destructive/10 shadow-[var(--nb-shadow-sm)] rounded-md">
                 <AlertCircle className="h-8 w-8 text-destructive" />
               </div>
               <p className="text-center text-destructive text-lg font-medium">{error}</p>
@@ -892,9 +892,9 @@ export default function ExpensesPage() {
               className="flex flex-col items-center justify-center py-20 sm:py-28 gap-5 text-center"
             >
               <div className="font-mono text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                {'// '}{t('expenses.noExpensesTitle')}
+                {t('expenses.noExpensesTitle')}
               </div>
-              <div className="flex items-center justify-center w-16 h-16 rounded-md border-2 border-foreground bg-card text-foreground shadow-[3px_3px_0_hsl(var(--foreground))]">
+              <div className="flex items-center justify-center w-16 h-16 rounded-md border border-border bg-card text-foreground shadow-[var(--nb-shadow-sm)]">
                 <ReceiptText className="h-7 w-7" aria-hidden="true" />
               </div>
               <div className="space-y-2 max-w-sm">
@@ -1055,7 +1055,7 @@ export default function ExpensesPage() {
                           animate={{ opacity: 1, scale: 1 }}
                           exit={{ opacity: 0, scale: 0.8 }}
                           onClick={() => { setAmountFrom(''); setAmountTo(''); setCurrentPage(1) }}
-                          className="flex items-center gap-1 text-xs px-2 py-1 border-2 border-foreground bg-secondary shadow-[2px_2px_0_hsl(var(--foreground))] rounded-md hover:translate-x-[1px] hover:translate-y-[1px] hover:shadow-none active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all whitespace-nowrap font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/50 focus-visible:ring-offset-1"
+                          className="flex items-center gap-1 text-xs px-2 py-1 border border-border bg-secondary shadow-[var(--nb-shadow-sm)] rounded-md hover:-translate-y-px hover:shadow-none active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all whitespace-nowrap font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/50 focus-visible:ring-offset-1"
                           aria-label={t('expenses.clearRange')}
                           type="button"
                           suppressHydrationWarning
@@ -1128,7 +1128,7 @@ export default function ExpensesPage() {
               {/* No results after filtering */}
               {filteredExpenses.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
-                  <div className="flex h-14 w-14 items-center justify-center rounded-md border-2 border-foreground bg-card text-foreground shadow-[3px_3px_0_hsl(var(--foreground))]">
+                  <div className="flex h-14 w-14 items-center justify-center rounded-md border border-border bg-card text-foreground shadow-[var(--nb-shadow-sm)]">
                     <Search className="h-6 w-6" aria-hidden="true" />
                   </div>
                   <p className="text-muted-foreground text-sm font-medium" suppressHydrationWarning>

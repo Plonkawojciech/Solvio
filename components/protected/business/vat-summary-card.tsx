@@ -97,7 +97,7 @@ export function VatSummaryCard({
       {/* VAT Balance */}
       <motion.div custom={index + 2} initial="hidden" animate="show" variants={fadeUp}>
         <Card className={cn(
-          'h-full border-2',
+          'h-full border',
           isPositive
             ? 'border-red-200 dark:border-red-900/60'
             : 'border-emerald-200 dark:border-emerald-900/60'

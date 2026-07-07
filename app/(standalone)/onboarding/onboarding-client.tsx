@@ -105,8 +105,8 @@ export function OnboardingClient() {
             className={cn(
               'relative w-full text-left rounded-lg border p-6 sm:p-8 transition-colors cursor-pointer',
               selected === 'personal'
-                ? 'border-foreground bg-accent/50'
-                : 'border-border hover:border-foreground/20'
+                ? 'border-border bg-accent/50'
+                : 'border-border hover:border-border/20'
             )}
           >
             {/* Selected badge */}
@@ -153,8 +153,8 @@ export function OnboardingClient() {
             className={cn(
               'relative w-full text-left rounded-lg border p-6 sm:p-8 transition-colors cursor-pointer',
               selected === 'business'
-                ? 'border-foreground bg-accent/50'
-                : 'border-border hover:border-foreground/20'
+                ? 'border-border bg-accent/50'
+                : 'border-border hover:border-border/20'
             )}
           >
             {/* Selected badge */}

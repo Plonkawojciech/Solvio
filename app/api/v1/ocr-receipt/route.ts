@@ -164,6 +164,103 @@ async function processAzureOCR(buffer: Buffer, mimeType: string) {
   throw new Error('Azure OCR timeout - exceeded max polling attempts');
 }
 
+// --- VISION OCR (fallback bez Azure) ---
+// Używa klienta AI z obsługą obrazów (Gemini darmowy tier / GPT-4o-mini) do
+// odczytania paragonu i zwraca wynik W KSZTAŁCIE odpowiedzi Azure, żeby cały
+// dalszy pipeline (extractReceiptData, wykrywanie sieci, kategoryzacja)
+// działał bez zmian.
+async function processVisionOCR(buffer: Buffer, mimeType: string) {
+  const ai = getAIClient();
+  if (!ai) throw new Error('No AI provider configured for vision OCR');
+  if (mimeType === 'application/pdf') {
+    throw new Error('PDF receipts require Azure Document Intelligence — upload a photo (JPG/PNG) instead');
+  }
+
+  log(`[VisionOCR] Using ${ai.backend}/${ai.model}, buffer: ${(buffer.length / 1024).toFixed(1)}KB`);
+  const startTime = Date.now();
+  const dataUri = `data:${mimeType};base64,${buffer.toString('base64')}`;
+
+  const completion = await ai.client.chat.completions.create({
+    model: ai.model,
+    messages: [
+      {
+        role: 'user',
+        content: [
+          {
+            type: 'text',
+            text: [
+              'Read this retail receipt image (likely Polish). Return ONLY valid JSON, no markdown fences:',
+              '{',
+              '  "merchant": string|null,        // store name, e.g. "Biedronka"',
+              '  "date": "YYYY-MM-DD"|null,      // transaction date',
+              '  "total": number|null,           // final amount paid',
+              '  "currency": "PLN"|"EUR"|...,    // 3-letter code, default PLN',
+              '  "items": [ { "name": string, "quantity": number|null, "unit_price": number|null, "total_price": number|null } ],',
+              '  "raw_text": string              // full receipt text, line by line',
+              '}',
+              'Rules: item names exactly as printed; total_price = final line price after discounts; skip deposit/loyalty/VAT summary lines.',
+            ].join('\n'),
+          },
+          { type: 'image_url', image_url: { url: dataUri } },
+        ],
+      },
+    ],
+    max_tokens: 4000,
+    temperature: 0,
+  });
+
+  const raw = completion.choices[0]?.message?.content || '';
+  const jsonText = raw.replace(/```json\s*/gi, '').replace(/```/g, '').trim();
+  let parsed: {
+    merchant?: string | null;
+    date?: string | null;
+    total?: number | null;
+    currency?: string | null;
+    items?: Array<{ name?: string; quantity?: number | null; unit_price?: number | null; total_price?: number | null }>;
+    raw_text?: string;
+  };
+  try {
+    parsed = JSON.parse(jsonText);
+  } catch {
+    const match = jsonText.match(/\{[\s\S]*\}/);
+    if (!match) throw new Error(`Vision OCR returned unparseable output: ${raw.slice(0, 200)}`);
+    parsed = JSON.parse(match[0]);
+  }
+
+  log(`[VisionOCR] ✅ Done in ${Date.now() - startTime}ms — merchant="${parsed.merchant}", total=${parsed.total}, items=${parsed.items?.length ?? 0}`);
+
+  // Synteza odpowiedzi w kształcie Azure prebuilt-receipt
+  const currencyCode = (parsed.currency || 'PLN').toUpperCase().slice(0, 3);
+  return {
+    analyzeResult: {
+      content: parsed.raw_text || '',
+      documents: [
+        {
+          fields: {
+            MerchantName: parsed.merchant ? { valueString: parsed.merchant } : undefined,
+            TransactionDate: parsed.date ? { valueDate: parsed.date } : undefined,
+            Total: parsed.total != null
+              ? { valueNumber: parsed.total, valueCurrency: { currencyCode } }
+              : undefined,
+            Items: {
+              valueArray: (parsed.items || [])
+                .filter((it) => it && it.name)
+                .map((it) => ({
+                  valueObject: {
+                    Description: { valueString: String(it.name) },
+                    Quantity: it.quantity != null ? { valueNumber: it.quantity } : undefined,
+                    Price: it.unit_price != null ? { valueNumber: it.unit_price } : undefined,
+                    TotalPrice: it.total_price != null ? { valueNumber: it.total_price } : undefined,
+                  },
+                })),
+            },
+          },
+        },
+      ],
+    },
+  };
+}
+
 
 
 // --- EXCHANGE RATES ---
@@ -929,11 +1026,17 @@ export async function POST(req: NextRequest) {
   }
 
   // WERYFIKACJA ZMIENNYCH ŚRODOWISKOWYCH
+  // OCR: Azure Document Intelligence (preferowane) LUB vision przez klienta AI
+  // (np. darmowy Gemini) — patrz processVisionOCR.
   const missingEnvVars: string[] = [];
-  if (!process.env.AZURE_OCR_ENDPOINT) missingEnvVars.push('AZURE_OCR_ENDPOINT');
-  if (!process.env.AZURE_OCR_KEY) missingEnvVars.push('AZURE_OCR_KEY');
-  // AI client: either Azure OpenAI or OpenAI direct — checked inside categorizeAndTranslateItems via getAIClient()
-  if (!process.env.OPENAI_API_KEY && !(process.env.AZURE_OPENAI_ENDPOINT && process.env.AZURE_OPENAI_API_KEY && process.env.AZURE_OPENAI_DEPLOYMENT)) missingEnvVars.push('OPENAI_API_KEY or AZURE_OPENAI_*');
+  const hasAzureOcr = !!(process.env.AZURE_OCR_ENDPOINT && process.env.AZURE_OCR_KEY);
+  const hasAnyAI = !!(
+    process.env.OPENAI_API_KEY ||
+    process.env.GEMINI_API_KEY ||
+    (process.env.AZURE_OPENAI_ENDPOINT && process.env.AZURE_OPENAI_API_KEY && process.env.AZURE_OPENAI_DEPLOYMENT)
+  );
+  if (!hasAzureOcr && !hasAnyAI) missingEnvVars.push('AZURE_OCR_* or an AI provider (OPENAI_API_KEY / GEMINI_API_KEY / AZURE_OPENAI_*)');
+  if (!hasAnyAI) missingEnvVars.push('OPENAI_API_KEY or GEMINI_API_KEY or AZURE_OPENAI_*');
   if (!process.env.DATABASE_URL) missingEnvVars.push('DATABASE_URL');
 
   if (missingEnvVars.length > 0) {
@@ -1118,13 +1221,18 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        // 4+5. Parallel: Upload to Vercel Blob + Azure OCR
+        // 4+5. Parallel: Upload to Vercel Blob + OCR
+        // Azure Document Intelligence gdy skonfigurowane; inaczej vision OCR
+        // przez klienta AI (np. darmowy Gemini) — patrz processVisionOCR.
+        const useAzureOcr = !!(AZURE_ENDPOINT && AZURE_KEY);
         const [imageUrl, azureResult] = await Promise.all([
-          put(`receipts/${userId}/${currentReceiptId}/${file.name}`, buffer, { access: 'public', contentType: mimeType }).then(r => r.url).catch((blobErr) => {
-            console.warn(`[File ${i + 1}] ⚠️ Blob upload failed (non-fatal):`, blobErr);
-            return null;
-          }),
-          processAzureOCR(buffer, mimeType),
+          process.env.BLOB_READ_WRITE_TOKEN
+            ? put(`receipts/${userId}/${currentReceiptId}/${file.name}`, buffer, { access: 'public', contentType: mimeType }).then(r => r.url).catch((blobErr) => {
+                console.warn(`[File ${i + 1}] ⚠️ Blob upload failed (non-fatal):`, blobErr);
+                return null;
+              })
+            : Promise.resolve(null),
+          useAzureOcr ? processAzureOCR(buffer, mimeType) : processVisionOCR(buffer, mimeType),
         ]);
         if (imageUrl) {
           log(`[File ${i + 1}] ✅ Uploaded to Blob: ${imageUrl}`);

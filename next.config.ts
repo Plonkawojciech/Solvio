@@ -1,6 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Samodzielny deploy (Docker/Coolify) — .next/standalone z własnym serwerem.
+  // Nie wpływa na deploy Vercel.
+  output: process.env.NEXT_OUTPUT_STANDALONE === '1' ? 'standalone' : undefined,
   // Remove X-Powered-By header
   poweredByHeader: false,
   // Catch React issues early
@@ -119,6 +122,12 @@ const nextConfig: NextConfig = {
         sharp: "commonjs sharp",
       });
     }
+    // Ignoruj artefakty narzędzi (np. zrzuty Playwright MCP) — zapisy do nich
+    // wywoływały pętlę rekompilacji w dev
+    config.watchOptions = {
+      ...config.watchOptions,
+      ignored: ["**/node_modules/**", "**/.playwright-mcp/**", "**/.git/**"],
+    };
     return config;
   },
 };

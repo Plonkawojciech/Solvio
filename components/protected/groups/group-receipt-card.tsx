@@ -178,7 +178,7 @@ export function GroupReceiptCard({
                 return (
                   <div
                     key={mid}
-                    className="h-6 w-6 rounded-full border-2 border-card flex items-center justify-center text-[8px] font-bold text-white shrink-0"
+                    className="h-6 w-6 rounded-full border border-card flex items-center justify-center text-[8px] font-bold text-white shrink-0"
                     style={{ backgroundColor: color }}
                     title={mem.name}
                   >
@@ -187,7 +187,7 @@ export function GroupReceiptCard({
                 )
               })}
               {assignedMemberIds.length > 6 && (
-                <div className="h-6 w-6 rounded-full border-2 border-card bg-muted flex items-center justify-center text-[8px] font-semibold text-muted-foreground">
+                <div className="h-6 w-6 rounded-full border border-card bg-muted flex items-center justify-center text-[8px] font-semibold text-muted-foreground">
                   +{assignedMemberIds.length - 6}
                 </div>
               )}

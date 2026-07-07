@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { toast } from 'sonner'
 import { useTranslation } from '@/lib/i18n'
+import { useSession } from '@/lib/use-session'
 import {
   Sheet,
   SheetContent,
@@ -22,7 +23,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Plus, Trash2, Loader2, Users, CalendarDays, ChevronDown, ChevronUp } from 'lucide-react'
+import { Plus, Trash2, Loader2, Users, CalendarDays, ChevronDown, ChevronUp, UserPlus } from 'lucide-react'
 
 const EMOJIS = ['👥', '🏠', '🎉', '✈️', '🍕', '🎓', '💍', '🏋️', '🛒', '🎮', '💸', '🚗']
 
@@ -147,6 +148,7 @@ function generateMembers(count: number): Member[] {
 
 export function NewGroupSheet({ open, onOpenChange, onCreated }: NewGroupSheetProps) {
   const { t } = useTranslation()
+  const { email: sessionEmail } = useSession()
 
   const [selectedTemplate, setSelectedTemplate] = useState<TemplateKey | null>(null)
   const [name, setName] = useState('')
@@ -175,6 +177,26 @@ export function NewGroupSheet({ open, onOpenChange, onCreated }: NewGroupSheetPr
       ...prev,
       { id: String(Date.now()), name: '', email: '' },
     ])
+  }
+
+  // Dodaje zalogowanego użytkownika jako członka — imię z części lokalnej maila,
+  // można je potem edytować jak każde inne pole
+  const addSelf = () => {
+    if (!sessionEmail) return
+    if (members.some((m) => m.email.trim().toLowerCase() === sessionEmail.toLowerCase())) {
+      toast.info(t('groups.alreadyAdded'))
+      return
+    }
+    const local = sessionEmail.split('@')[0]
+    const selfName = local.charAt(0).toUpperCase() + local.slice(1)
+    setMembers((prev) => {
+      const emptyIdx = prev.findIndex((m) => !m.name.trim() && !m.email.trim())
+      const self = { name: selfName, email: sessionEmail }
+      if (emptyIdx >= 0) {
+        return prev.map((m, i) => (i === emptyIdx ? { ...m, ...self } : m))
+      }
+      return [...prev, { id: String(Date.now()), ...self }]
+    })
   }
 
   const removeMember = (id: string) => {
@@ -279,7 +301,7 @@ export function NewGroupSheet({ open, onOpenChange, onCreated }: NewGroupSheetPr
                     type="button"
                     onClick={() => handleTemplateSelect(template)}
                     whileTap={{ scale: 0.96 }}
-                    className={`relative flex flex-col items-center gap-1.5 rounded-xl border-2 py-3 px-2 text-center transition-all duration-200 ${
+                    className={`relative flex flex-col items-center gap-1.5 rounded-xl border py-3 px-2 text-center transition-all duration-200 ${
                       isActive
                         ? 'border-primary bg-primary/5 shadow-sm'
                         : 'border-border bg-muted/30 hover:bg-muted/60 hover:border-border'
@@ -299,7 +321,7 @@ export function NewGroupSheet({ open, onOpenChange, onCreated }: NewGroupSheetPr
                     {isActive && (
                       <motion.div
                         layoutId="template-indicator"
-                        className="absolute -top-px -right-px h-3 w-3 rounded-full bg-primary border-2 border-background"
+                        className="absolute -top-px -right-px h-3 w-3 rounded-full bg-primary border border-background"
                         transition={{ type: 'spring', damping: 20, stiffness: 300 }}
                       />
                     )}
@@ -349,7 +371,7 @@ export function NewGroupSheet({ open, onOpenChange, onCreated }: NewGroupSheetPr
                         key={e}
                         type="button"
                         onClick={() => setEmoji(e)}
-                        className={`flex h-10 w-10 items-center justify-center rounded-lg text-xl transition-all border-2 ${
+                        className={`flex h-10 w-10 items-center justify-center rounded-lg text-xl transition-all border ${
                           emoji === e
                             ? 'border-primary bg-primary/10 scale-110'
                             : 'border-transparent bg-muted hover:bg-muted/80'
@@ -437,9 +459,22 @@ export function NewGroupSheet({ open, onOpenChange, onCreated }: NewGroupSheetPr
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <Label>{t('groups.addMembers')}</Label>
-              <span className="text-xs text-muted-foreground">
-                {members.filter((m) => m.name.trim()).length} / {members.length}
-              </span>
+              <div className="flex items-center gap-2">
+                {sessionEmail && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 gap-1.5 px-2 text-xs text-primary"
+                    onClick={addSelf}
+                  >
+                    <UserPlus className="h-3.5 w-3.5" />
+                    {t('groups.addMe')}
+                  </Button>
+                )}
+                <span className="text-xs text-muted-foreground">
+                  {members.filter((m) => m.name.trim()).length} / {members.length}
+                </span>
+              </div>
             </div>
 
             <AnimatePresence initial={false}>

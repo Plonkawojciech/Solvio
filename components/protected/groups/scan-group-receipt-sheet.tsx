@@ -204,7 +204,7 @@ export function ScanGroupReceiptSheet({
               {/* File upload area */}
               <div
                 onClick={() => fileInputRef.current?.click()}
-                className="border-2 border-dashed rounded-xl p-8 text-center cursor-pointer hover:border-primary/50 hover:bg-primary/5 transition-all duration-200"
+                className="border border-dashed rounded-xl p-8 text-center cursor-pointer hover:border-primary/50 hover:bg-primary/5 transition-all duration-200"
               >
                 {previewUrl ? (
                   <div className="space-y-3">

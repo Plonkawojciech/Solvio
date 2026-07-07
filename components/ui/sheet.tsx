@@ -60,13 +60,13 @@ function SheetContent({
         className={cn(
           "bg-card data-[state=open]:animate-in data-[state=closed]:animate-out fixed z-50 flex flex-col gap-4 transition ease-in-out data-[state=closed]:duration-300 data-[state=open]:duration-500",
           side === "right" &&
-            "data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right inset-y-0 right-0 h-full w-3/4 border-l-2 border-foreground shadow-[-6px_0_0_hsl(var(--foreground))] sm:max-w-sm",
+            "data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right inset-y-0 right-0 h-full w-3/4 border-l border-border shadow-[-6px_0_0_hsl(var(--foreground))] sm:max-w-sm",
           side === "left" &&
-            "data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left inset-y-0 left-0 h-full w-3/4 border-r-2 border-foreground shadow-[6px_0_0_hsl(var(--foreground))] sm:max-w-sm",
+            "data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left inset-y-0 left-0 h-full w-3/4 border-r border-border shadow-[6px_0_0_hsl(var(--foreground))] sm:max-w-sm",
           side === "top" &&
-            "data-[state=closed]:slide-out-to-top data-[state=open]:slide-in-from-top inset-x-0 top-0 h-auto border-b-2 border-foreground shadow-[0_6px_0_hsl(var(--foreground))]",
+            "data-[state=closed]:slide-out-to-top data-[state=open]:slide-in-from-top inset-x-0 top-0 h-auto border-b border-border shadow-[0_6px_0_hsl(var(--foreground))]",
           side === "bottom" &&
-            "data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom inset-x-0 bottom-0 h-auto border-t-2 border-foreground shadow-[0_-6px_0_hsl(var(--foreground))]",
+            "data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom inset-x-0 bottom-0 h-auto border-t border-border shadow-[0_-6px_0_hsl(var(--foreground))]",
           className
         )}
         {...props}
@@ -74,7 +74,7 @@ function SheetContent({
         {children}
         <SheetPrimitive.Close
           aria-label="Close"
-          className="absolute top-3 right-3 flex size-10 items-center justify-center rounded-md border-2 border-foreground bg-card shadow-[2px_2px_0_hsl(var(--foreground))] transition-[transform,box-shadow] hover:translate-x-[1px] hover:translate-y-[1px] hover:shadow-[1px_1px_0_hsl(var(--foreground))] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none focus-visible:ring-[3px] focus-visible:ring-foreground/50 focus-visible:outline-none disabled:pointer-events-none"
+          className="absolute top-3 right-3 flex size-10 items-center justify-center rounded-md border border-border bg-card shadow-[var(--nb-shadow-sm)] transition-[transform,box-shadow] hover:-translate-y-px hover:shadow-[var(--nb-shadow)] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none focus-visible:ring-[3px] focus-visible:ring-foreground/50 focus-visible:outline-none disabled:pointer-events-none"
         >
           <XIcon className="size-4" />
           <span className="sr-only">Close</span>

@@ -137,7 +137,7 @@ export function ReceiptItems({
               </dd>
             </div>
           )}
-          <div className="flex items-center justify-between pt-2 mt-2 border-t-2 border-foreground">
+          <div className="flex items-center justify-between pt-2 mt-2 border-t border-border">
             <dt className="font-mono text-xs font-bold uppercase tracking-widest text-foreground">
               {t.total}
             </dt>

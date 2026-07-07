@@ -222,7 +222,7 @@ export function TripTimeline({
               >
                 {/* Timeline dot */}
                 <div
-                  className={`absolute left-2.5 h-3 w-3 rounded-full border-2 border-background ${
+                  className={`absolute left-2.5 h-3 w-3 rounded-full border border-background ${
                     hasReceipts
                       ? 'bg-primary'
                       : 'bg-muted-foreground/30'

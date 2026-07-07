@@ -48,3 +48,6 @@ next-env.d.ts
 native-ios/build/
 **/xcuserdata/
 *.xcuserstate
+
+# Playwright MCP artifacts
+/.playwright-mcp/

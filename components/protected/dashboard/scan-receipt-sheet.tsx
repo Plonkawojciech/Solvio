@@ -993,7 +993,7 @@ export function ScanReceiptSheet({
                   onDragLeave={() => setIsDragOver(false)}
                   onDrop={handleDrop}
                   className={cn(
-                    'relative flex w-full cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed p-8 transition-colors',
+                    'relative flex w-full cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed p-8 transition-colors',
                     isDragOver
                       ? 'border-primary bg-primary/5'
                       : 'border-muted-foreground/20 bg-muted/30 hover:bg-muted/50'

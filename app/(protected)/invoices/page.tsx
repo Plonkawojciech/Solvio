@@ -101,9 +101,9 @@ function InvoicesError({ onRetry }: { onRetry: () => void }) {
         className="flex flex-col items-center gap-4 text-center max-w-sm"
       >
         <p className="font-mono text-[10px] font-bold uppercase tracking-widest text-destructive" suppressHydrationWarning>
-          {'// '}{t('invoices.error.title')}
+          {t('invoices.error.title')}
         </p>
-        <div className="h-16 w-16 border-2 border-destructive bg-destructive/10 shadow-[3px_3px_0_hsl(var(--destructive))] rounded-md flex items-center justify-center">
+        <div className="h-16 w-16 border border-destructive bg-destructive/10 shadow-[var(--nb-shadow-sm)] rounded-md flex items-center justify-center">
           <AlertCircle className="h-8 w-8 text-destructive" />
         </div>
         <div className="space-y-1">
@@ -131,9 +131,9 @@ function InvoicesEmpty({ onUpload }: { onUpload: () => void }) {
     >
       <div className="flex flex-col items-center gap-4 text-center max-w-sm">
         <p className="font-mono text-[10px] font-bold uppercase tracking-widest text-muted-foreground" suppressHydrationWarning>
-          {'// '}{t('invoices.empty.title')}
+          {t('invoices.empty.title')}
         </p>
-        <div className="h-20 w-20 border-2 border-foreground bg-secondary shadow-[3px_3px_0_hsl(var(--foreground))] rounded-md flex items-center justify-center">
+        <div className="h-20 w-20 border border-border bg-secondary shadow-[var(--nb-shadow-sm)] rounded-md flex items-center justify-center">
           <FileText className="h-10 w-10 text-foreground" />
         </div>
         <div className="space-y-1">
@@ -736,7 +736,7 @@ export default function InvoicesPage() {
           <div className="py-6 px-4">
             <div
               className={cn(
-                'border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors',
+                'border border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors',
                 uploading ? 'border-primary/50 bg-primary/5' : 'border-muted-foreground/20 hover:border-primary/50 hover:bg-muted/50'
               )}
               onClick={() => !uploading && fileInputRef.current?.click()}
