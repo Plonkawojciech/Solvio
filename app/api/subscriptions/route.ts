@@ -14,8 +14,8 @@ import { z } from 'zod'
 
 const INTERVALS = ['weekly', 'monthly', 'quarterly', 'yearly'] as const
 
-/// Mnożnik do przeliczenia kwoty interwału na miesiąc
-export const MONTHLY_FACTOR: Record<(typeof INTERVALS)[number], number> = {
+// Mnożnik do przeliczenia kwoty interwału na miesiąc
+const MONTHLY_FACTOR: Record<(typeof INTERVALS)[number], number> = {
   weekly: 52 / 12,
   monthly: 1,
   quarterly: 1 / 3,

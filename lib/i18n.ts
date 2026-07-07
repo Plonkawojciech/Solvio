@@ -118,6 +118,8 @@ const translations = {
     'expenses.openReceipt': 'Otwórz',
     'expenses.viewEReceipt': 'Pokaż e-paragon',
     'expenses.scanQr': 'Zeskanuj, aby otworzyć paragon',
+    'expenses.selectToPreview': 'Wybierz wydatek z listy, aby zobaczyć szczegóły',
+    'expenses.moreFilters': 'Więcej filtrów',
 
     // Categories
     'categories.food': 'Jedzenie',
@@ -1741,6 +1743,8 @@ const translations = {
     'expenses.openReceipt': 'Open',
     'expenses.viewEReceipt': 'View e-receipt',
     'expenses.scanQr': 'Scan to open receipt',
+    'expenses.selectToPreview': 'Select an expense from the list to see details',
+    'expenses.moreFilters': 'More filters',
 
     // Categories
     'categories.food': 'Food',

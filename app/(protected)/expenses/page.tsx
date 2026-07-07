@@ -6,22 +6,22 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useTranslation } from '@/lib/i18n'
 import { formatAmount } from '@/lib/format'
 import { useProductType } from '@/hooks/use-product-type'
+import { getCategoryColor, getCategoryBadgeClass } from '@/lib/category-colors'
 import { Button } from '@/components/ui/button'
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog'
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
-} from '@/components/ui/table'
+  Sheet, SheetContent, SheetHeader, SheetTitle,
+} from '@/components/ui/sheet'
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import {
   Loader2, Trash2, Edit2, Check, X, Image as ImageIcon,
   ReceiptText, AlertCircle, RefreshCw, Search, FilterX,
-  ChevronUp, ChevronDown, ChevronsUpDown, Download,
-  ChevronLeft, ChevronRight, Share2, QrCode, Copy, CheckCheck,
-  DollarSign, ClipboardCheck, ArrowDownUp,
+  Download, ChevronLeft, ChevronRight, Share2, QrCode, Copy, CheckCheck,
+  DollarSign, ClipboardCheck, ArrowDownUp, SlidersHorizontal,
 } from 'lucide-react'
 import dynamic from 'next/dynamic'
 import Image from 'next/image'
@@ -29,7 +29,7 @@ import Image from 'next/image'
 const LazyApprovalsPage = dynamic(() => import('../approvals/page'), { ssr: false })
 import { AddExpenseTrigger } from '@/components/protected/dashboard/add-expense-trigger'
 import { ScanReceiptButton } from '@/components/protected/dashboard/scan-receipt-button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -55,53 +55,27 @@ interface ReceiptItem {
   categoryId?: string | null
 }
 
-type SortField = 'title' | 'vendor' | 'amount' | 'date'
-type SortDir = 'asc' | 'desc'
-
 const PAGE_SIZE = 20
 
-// ─── Skeleton row ─────────────────────────────────────────────────────────────
-function TableRowSkeleton() {
+// ─── Skeleton row (list) ──────────────────────────────────────────────────────
+function ListRowSkeleton() {
   return (
-    <TableRow>
-      <TableCell><Skeleton className="h-4 w-4 rounded" /></TableCell>
-      <TableCell><Skeleton className="h-4 w-40 rounded" /></TableCell>
-      <TableCell className="hidden sm:table-cell"><Skeleton className="h-4 w-28 rounded" /></TableCell>
-      <TableCell><Skeleton className="h-4 w-20 rounded" /></TableCell>
-      <TableCell className="hidden md:table-cell"><Skeleton className="h-4 w-24 rounded" /></TableCell>
-      <TableCell className="text-right"><Skeleton className="h-7 w-20 ml-auto rounded" /></TableCell>
-    </TableRow>
-  )
-}
-
-function MobileCardSkeleton() {
-  return (
-    <div className="border rounded-lg p-3 bg-card space-y-2">
-      <div className="flex items-center gap-2">
-        <Skeleton className="h-4 w-4 rounded" />
+    <div className="flex items-center gap-2 rounded-lg px-2 py-2">
+      <Skeleton className="h-4 w-4 rounded" />
+      <Skeleton className="h-3 w-12 rounded" />
+      <Skeleton className="h-2 w-2 rounded-full" />
+      <div className="flex-1 space-y-1.5">
         <Skeleton className="h-4 w-40 rounded" />
+        <Skeleton className="h-3 w-28 rounded" />
       </div>
-      <div className="flex items-center justify-between">
-        <Skeleton className="h-3 w-24 rounded" />
-        <Skeleton className="h-3 w-16 rounded" />
-      </div>
-      <Skeleton className="h-3 w-20 rounded" />
+      <Skeleton className="h-4 w-16 rounded" />
     </div>
   )
 }
 
-
-// ─── Sort icon helper ─────────────────────────────────────────────────────────
-function SortIcon({ field, sortField, sortDir }: { field: SortField; sortField: SortField; sortDir: SortDir }) {
-  if (sortField !== field) return <ChevronsUpDown className="ml-1 h-3.5 w-3.5 text-muted-foreground/50 inline" />
-  return sortDir === 'asc'
-    ? <ChevronUp className="ml-1 h-3.5 w-3.5 text-foreground inline" />
-    : <ChevronDown className="ml-1 h-3.5 w-3.5 text-foreground inline" />
-}
-
 // ─── Main component ────────────────────────────────────────────────────────────
 export default function ExpensesPage() {
-  const { t } = useTranslation()
+  const { t, lang } = useTranslation()
   const router = useRouter()
   const { isBusiness } = useProductType()
   const [activeExpenseTab, setActiveExpenseTab] = useState<'expenses' | 'approvals'>('expenses')
@@ -163,6 +137,10 @@ export default function ExpensesPage() {
   const [viewingReceiptId, setViewingReceiptId] = useState<string | null>(null)
   const [shareCopied, setShareCopied] = useState(false)
   const [showShareQr, setShowShareQr] = useState(false)
+  const [panelShareCopied, setPanelShareCopied] = useState(false)
+
+  // Mobile detail sheet
+  const [isDetailSheetOpen, setIsDetailSheetOpen] = useState(false)
 
   // Search & filter
   const [searchQuery, setSearchQuery] = useState('')
@@ -173,15 +151,12 @@ export default function ExpensesPage() {
   const [dateTo, setDateTo] = useState<string>('')
   const [amountFrom, setAmountFrom] = useState<string>('')
   const [amountTo, setAmountTo] = useState<string>('')
+  const [showMoreFilters, setShowMoreFilters] = useState(false)
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Sort preset (overrides column sort when set)
+  // Sort preset
   type SortPreset = 'newest' | 'oldest' | 'highest' | 'lowest'
   const [sortPreset, setSortPreset] = useState<SortPreset>('newest')
-
-  // Sort
-  const [sortField, setSortField] = useState<SortField>('date')
-  const [sortDir, setSortDir] = useState<SortDir>('desc')
 
   // Bulk delete inline confirmation
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false)
@@ -222,16 +197,7 @@ export default function ExpensesPage() {
     amountTo !== ''
 
   const hasAmountRange = amountFrom !== '' || amountTo !== ''
-
-  const handleSort = (field: SortField) => {
-    if (sortField === field) {
-      setSortDir(d => d === 'asc' ? 'desc' : 'asc')
-    } else {
-      setSortField(field)
-      setSortDir(field === 'date' ? 'desc' : 'asc')
-    }
-    setCurrentPage(1)
-  }
+  const hasMoreFilters = dateFrom !== '' || dateTo !== '' || hasAmountRange
 
   // ─── Keyboard shortcut: press "n" to open Add Expense sheet ──────────────
   useEffect(() => {
@@ -289,24 +255,12 @@ export default function ExpensesPage() {
 
   const sortedExpenses = useMemo(() => {
     return [...filteredExpenses].sort((a, b) => {
-      // Sort preset takes precedence over column sort
-      if (sortPreset === 'newest') return b.date.localeCompare(a.date)
       if (sortPreset === 'oldest') return a.date.localeCompare(b.date)
       if (sortPreset === 'highest') return parseFloat(String(b.amount)) - parseFloat(String(a.amount))
       if (sortPreset === 'lowest') return parseFloat(String(a.amount)) - parseFloat(String(b.amount))
-      let cmp = 0
-      if (sortField === 'title') {
-        cmp = a.title.localeCompare(b.title)
-      } else if (sortField === 'vendor') {
-        cmp = (a.vendor ?? '').localeCompare(b.vendor ?? '')
-      } else if (sortField === 'amount') {
-        cmp = parseFloat(String(a.amount)) - parseFloat(String(b.amount))
-      } else if (sortField === 'date') {
-        cmp = a.date.localeCompare(b.date)
-      }
-      return sortDir === 'asc' ? cmp : -cmp
+      return b.date.localeCompare(a.date) // newest
     })
-  }, [filteredExpenses, sortField, sortDir, sortPreset])
+  }, [filteredExpenses, sortPreset])
 
   const totalPages = Math.max(1, Math.ceil(sortedExpenses.length / PAGE_SIZE))
   const safePage = Math.min(currentPage, totalPages)
@@ -413,6 +367,7 @@ export default function ExpensesPage() {
       })
       if (!res.ok) throw new Error('Delete failed')
       setIsDeleteDialogOpen(false)
+      setIsDetailSheetOpen(false)
       setSelectedExpense(null)
       setReceiptItems([])
       await fetchExpenses()
@@ -441,6 +396,7 @@ export default function ExpensesPage() {
     setReceiptItems([])
     setIsBulkDeleteDialogOpen(false)
     setShowBulkDeleteConfirm(false)
+    setIsDetailSheetOpen(false)
     await fetchExpenses()
     window.dispatchEvent(new CustomEvent('expensesUpdated'))
     router.refresh()
@@ -523,13 +479,17 @@ export default function ExpensesPage() {
     if (!validateExpense()) return
     setIsSavingExpense(true)
     try {
+      const newTitle = editExpenseTitle.trim()
+      const newAmount = parseFloat(editExpenseAmount)
       const res = await fetch('/api/data/expenses', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id, title: editExpenseTitle.trim(), amount: parseFloat(editExpenseAmount) }),
+        body: JSON.stringify({ id, title: newTitle, amount: newAmount }),
       })
       if (!res.ok) throw new Error('Save failed')
       setEditingExpenseId(null)
+      // Keep the detail panel in sync with the saved values
+      setSelectedExpense(prev => prev && prev.id === id ? { ...prev, title: newTitle, amount: newAmount } : prev)
       await fetchExpenses()
       toast.success(t('expenses.saved') || 'Expense saved')
     } catch {
@@ -643,6 +603,14 @@ export default function ExpensesPage() {
     }
   }
 
+  // Row click: select + fetch items; on mobile also open bottom sheet
+  const openExpense = (expense: Expense) => {
+    handleExpenseClick(expense)
+    if (typeof window !== 'undefined' && !window.matchMedia('(min-width: 1024px)').matches) {
+      setIsDetailSheetOpen(true)
+    }
+  }
+
   const handleViewReceiptImage = async (receiptId: string) => {
     setLoadingImage(true)
     setIsImageDialogOpen(true)
@@ -661,13 +629,9 @@ export default function ExpensesPage() {
     }
   }
 
-  const handleShareReceipt = async () => {
-    if (!viewingReceiptId) return
-    const url = `${window.location.origin}/receipt/${viewingReceiptId}`
+  const copyReceiptLink = async (url: string) => {
     try {
       await navigator.clipboard.writeText(url)
-      setShareCopied(true)
-      setTimeout(() => setShareCopied(false), 2000)
     } catch {
       // fallback
       const el = document.createElement('textarea')
@@ -676,9 +640,325 @@ export default function ExpensesPage() {
       el.select()
       document.execCommand('copy')
       document.body.removeChild(el)
-      setShareCopied(true)
-      setTimeout(() => setShareCopied(false), 2000)
     }
+  }
+
+  const handleShareReceipt = async () => {
+    if (!viewingReceiptId) return
+    await copyReceiptLink(`${window.location.origin}/receipt/${viewingReceiptId}`)
+    setShareCopied(true)
+    setTimeout(() => setShareCopied(false), 2000)
+  }
+
+  const handleShareFromPanel = async (receiptId: string) => {
+    await copyReceiptLink(`${window.location.origin}/receipt/${receiptId}`)
+    setPanelShareCopied(true)
+    setTimeout(() => setPanelShareCopied(false), 2000)
+  }
+
+  // ─── Formatting helpers ──────────────────────────────────────────────────────
+  const dateLocale = lang === 'pl' ? 'pl-PL' : 'en-GB'
+  const formatShortDate = (dateStr: string) =>
+    new Date(dateStr).toLocaleDateString(dateLocale, { day: 'numeric', month: 'short' })
+
+  const categoryNameOf = (categoryId: string | null): string | null => {
+    if (!categoryId) return null
+    const name = categories.get(categoryId)
+    return name ? translateCategoryName(name) : null
+  }
+
+  // ─── Detail panel content (shared: desktop panel + mobile sheet) ────────────
+  const renderExpenseDetail = (expense: Expense) => {
+    const catName = categoryNameOf(expense.categoryId)
+    return (
+      <div className="space-y-4">
+        {/* Header: title + meta + edit */}
+        {editingExpenseId === expense.id ? (
+          <div className="space-y-2">
+            <div>
+              <Input
+                value={editExpenseTitle}
+                onChange={(e) => {
+                  setEditExpenseTitle(e.target.value)
+                  if (e.target.value.trim()) setEditExpenseTitleError(null)
+                }}
+                onKeyDown={(e) => handleExpenseKeyDown(e, expense.id)}
+                className={`h-9 text-sm font-semibold ${editExpenseTitleError ? 'border-destructive' : ''}`}
+                aria-label={t('expenses.titleCol')}
+              />
+              {editExpenseTitleError && (
+                <p className="text-destructive text-xs mt-0.5">{editExpenseTitleError}</p>
+              )}
+            </div>
+            <div>
+              <Input
+                value={editExpenseAmount}
+                onChange={(e) => {
+                  setEditExpenseAmount(e.target.value)
+                  if (parseFloat(e.target.value) > 0) setEditExpenseAmountError(null)
+                }}
+                onKeyDown={(e) => handleExpenseKeyDown(e, expense.id)}
+                type="number"
+                step="0.01"
+                min="0.01"
+                className={`h-9 w-36 text-sm tabular-nums ${editExpenseAmountError ? 'border-destructive' : ''}`}
+                aria-label={t('expenses.amount')}
+              />
+              {editExpenseAmountError && (
+                <p className="text-destructive text-xs mt-0.5">{editExpenseAmountError}</p>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <Button size="sm" onClick={() => saveExpense(expense.id)} disabled={isSavingExpense} className="gap-1.5" suppressHydrationWarning>
+                {isSavingExpense ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                {t('expenses.saveEdit')}
+              </Button>
+              <Button variant="outline" size="sm" onClick={cancelEditingExpense} disabled={isSavingExpense} className="gap-1.5" suppressHydrationWarning>
+                <X className="h-3.5 w-3.5" />
+                {t('common.cancel')}
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <div className="flex items-start justify-between gap-2">
+              <h2 className="text-lg font-extrabold leading-tight break-words min-w-0">
+                {expense.title}
+              </h2>
+              <Button
+                aria-label={t('expenses.editExpense')}
+                variant="ghost"
+                size="icon"
+                onClick={() => startEditingExpense(expense)}
+                className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
+              >
+                <Edit2 className="h-4 w-4" />
+              </Button>
+            </div>
+            <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-muted-foreground">
+              <span>{expense.vendor || '—'}</span>
+              <span aria-hidden="true">·</span>
+              <span className="tabular-nums">{new Date(expense.date).toLocaleDateString(dateLocale)}</span>
+              {catName && (
+                <>
+                  <span aria-hidden="true">·</span>
+                  <span className={`px-2 py-0.5 rounded-full font-semibold ${getCategoryBadgeClass(expense.categoryId!)}`}>
+                    {catName}
+                  </span>
+                </>
+              )}
+            </div>
+            <p className="text-3xl font-extrabold tabular-nums">
+              {formatAmount(expense.amount, expense.currency || currency)}
+            </p>
+          </div>
+        )}
+
+        {/* Receipt items */}
+        {expense.receiptId ? (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <p className="nb-label" suppressHydrationWarning>
+                {t('expenses.receiptItems')} ({receiptItems.length})
+              </p>
+              {selectedItemIndices.size > 0 && (
+                <Button variant="destructive" size="sm" onClick={bulkDeleteItems} className="h-7 text-xs gap-1" suppressHydrationWarning>
+                  <Trash2 className="h-3 w-3" />
+                  {t('expenses.delete')} {selectedItemIndices.size}
+                </Button>
+              )}
+            </div>
+            {loadingReceiptItems ? (
+              <div className="space-y-2 py-1">
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <div key={i} className="flex items-center gap-3">
+                    <Skeleton className="h-4 w-4 rounded" />
+                    <Skeleton className="h-4 flex-1 rounded" />
+                    <Skeleton className="h-4 w-16 rounded" />
+                  </div>
+                ))}
+              </div>
+            ) : receiptItems.length > 0 ? (
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 pb-1.5 border-b">
+                  <Checkbox
+                    checked={selectedItemIndices.size === receiptItems.length && receiptItems.length > 0}
+                    onCheckedChange={toggleItemSelectAll}
+                    aria-label={t('expenses.selectAll')}
+                  />
+                  <span className="text-xs text-muted-foreground" suppressHydrationWarning>{t('expenses.selectAll')}</span>
+                </div>
+                <div className="max-h-[40vh] overflow-y-auto space-y-1 pr-1">
+                  {receiptItems.map((item, index) => (
+                    editingItemIndex === index ? (
+                      <div key={index} className="rounded-lg border p-2.5 space-y-2 bg-muted/20">
+                        <div>
+                          <Input
+                            value={editItemName}
+                            onChange={(e) => {
+                              setEditItemName(e.target.value)
+                              if (e.target.value.trim()) setEditItemNameError(null)
+                            }}
+                            onKeyDown={(e) => handleItemKeyDown(e, index)}
+                            className={`h-8 text-sm ${editItemNameError ? 'border-destructive' : ''}`}
+                            placeholder={t('expenses.itemName')}
+                          />
+                          {editItemNameError && (
+                            <p className="text-destructive text-xs mt-0.5">{editItemNameError}</p>
+                          )}
+                        </div>
+                        <div>
+                          <Input
+                            value={editItemPrice}
+                            onChange={(e) => {
+                              setEditItemPrice(e.target.value)
+                              if (parseFloat(e.target.value) >= 0) setEditItemPriceError(null)
+                            }}
+                            onKeyDown={(e) => handleItemKeyDown(e, index)}
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            className={`h-8 text-sm tabular-nums ${editItemPriceError ? 'border-destructive' : ''}`}
+                            placeholder={t('expenses.price')}
+                          />
+                          {editItemPriceError && (
+                            <p className="text-destructive text-xs mt-0.5">{editItemPriceError}</p>
+                          )}
+                        </div>
+                        <Select value={editItemCategory} onValueChange={setEditItemCategory}>
+                          <SelectTrigger className="h-8 text-sm" suppressHydrationWarning>
+                            <SelectValue placeholder={t('expenses.category')} />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="" suppressHydrationWarning>{t('expenses.noCategory')}</SelectItem>
+                            {categoriesList.map(cat => (
+                              <SelectItem key={cat.id} value={cat.id}>
+                                {translateCategoryName(cat.name)}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <div className="flex justify-end gap-1">
+                          <Button variant="ghost" size="icon" onClick={() => saveItem(index)} disabled={isSavingItem} className="h-8 w-8" aria-label={t('expenses.saveItem')}>
+                            {isSavingItem ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4 text-green-600" />}
+                          </Button>
+                          <Button variant="ghost" size="icon" onClick={cancelEditingItem} className="h-8 w-8" aria-label={t('expenses.cancelEditItem')}>
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div key={index} className="group flex items-center gap-2 rounded-lg px-1.5 py-1.5 hover:bg-muted/40 transition-colors">
+                        <Checkbox
+                          checked={selectedItemIndices.has(index)}
+                          onCheckedChange={() => toggleItemSelection(index)}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium truncate">{item.name}</p>
+                          <p className="text-[11px] text-muted-foreground truncate" suppressHydrationWarning>
+                            {item.categoryId
+                              ? categoryNameOf(item.categoryId) || translateCategoryName('Other')
+                              : t('expenses.noCategory')}
+                          </p>
+                        </div>
+                        <span className="text-sm font-bold tabular-nums shrink-0">
+                          {formatAmount(item.price ?? 0, expense.currency || currency)}
+                        </span>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => startEditingItem(index, item)}
+                          className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
+                          aria-label={t('expenses.editItem')}
+                        >
+                          <Edit2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    )
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground py-2" suppressHydrationWarning>
+                {t('expenses.noItems')}
+              </p>
+            )}
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground" suppressHydrationWarning>
+            {t('expenses.noReceiptAttached')}
+          </p>
+        )}
+
+        {/* Tags */}
+        {expense.tags && expense.tags.length > 0 && (
+          <div className="space-y-1.5">
+            <p className="nb-label" suppressHydrationWarning>{t('expenses.tags')}</p>
+            <div className="flex flex-wrap gap-1">
+              {expense.tags.map(tag => (
+                <span key={tag} className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary">
+                  {tag}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Notes */}
+        {expense.notes && (
+          <div className="space-y-1.5">
+            <p className="nb-label" suppressHydrationWarning>{t('addExpense.notes')}</p>
+            <p className="text-sm text-muted-foreground whitespace-pre-wrap break-words">{expense.notes}</p>
+          </div>
+        )}
+
+        {/* Actions */}
+        <div className="flex flex-wrap gap-2 border-t pt-3">
+          {expense.receiptId && (
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleViewReceiptImage(expense.receiptId!)}
+                className="gap-1.5 text-xs"
+                suppressHydrationWarning
+              >
+                <ImageIcon className="h-3.5 w-3.5" />
+                {t('expenses.viewReceipt')}
+              </Button>
+              <Button variant="outline" size="sm" asChild className="gap-1.5 text-xs">
+                <a href={`/receipt/${expense.receiptId}`} target="_blank" rel="noopener noreferrer" suppressHydrationWarning>
+                  <ReceiptText className="h-3.5 w-3.5" />
+                  {t('expenses.viewEReceipt')}
+                </a>
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleShareFromPanel(expense.receiptId!)}
+                className="gap-1.5 text-xs"
+                suppressHydrationWarning
+              >
+                {panelShareCopied
+                  ? <><CheckCheck className="h-3.5 w-3.5" /> {t('expenses.linkCopied')}</>
+                  : <><Share2 className="h-3.5 w-3.5" /> {t('expenses.copyLink')}</>
+                }
+              </Button>
+            </>
+          )}
+          <Button
+            variant="destructive"
+            size="sm"
+            onClick={() => setIsDeleteDialogOpen(true)}
+            className="gap-1.5 text-xs"
+            suppressHydrationWarning
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            {t('expenses.delete')}
+          </Button>
+        </div>
+      </div>
+    )
   }
 
   // ─── Approvals tab for business ────────────────────────────────────────────
@@ -714,7 +994,7 @@ export default function ExpensesPage() {
   // ─── Render ──────────────────────────────────────────────────────────────────
   return (
     <main className="min-h-screen w-full p-2 sm:p-4 md:p-6 lg:p-10">
-      <div className="flex flex-col h-full space-y-4 sm:space-y-6 md:space-y-10">
+      <div className="flex flex-col h-full space-y-4 sm:space-y-6 md:space-y-8">
 
         {/* ── Business Tab Bar ── */}
         {isBusiness && (
@@ -822,40 +1102,41 @@ export default function ExpensesPage() {
           </div>
         </div>
 
-        {/* ── Expenses Table Section ── */}
-        <section className="rounded-xl border p-2 sm:p-4 md:p-6 overflow-hidden flex-1">
+        {/* ── Content ── */}
+        <section className="flex-1">
           {loading ? (
             /* ── Loading skeleton ── */
-            <div role="status" aria-busy="true" aria-live="polite">
+            <div role="status" aria-busy="true" aria-live="polite" className="space-y-4">
               <span className="sr-only" suppressHydrationWarning>{t('common.loading')}</span>
-              {/* Search bar skeleton */}
-              <div className="flex flex-col sm:flex-row gap-2 mb-4">
-                <Skeleton className="h-9 w-full sm:w-64 rounded-md" />
-                <Skeleton className="h-9 w-full sm:w-48 rounded-md" />
-                <Skeleton className="h-9 w-full sm:w-32 rounded-md" />
+              {/* Filter bar skeleton */}
+              <div className="flex flex-col sm:flex-row gap-2">
+                <Skeleton className="h-9 flex-1 rounded-md" />
+                <Skeleton className="h-9 w-full sm:w-44 rounded-md" />
+                <Skeleton className="h-9 w-full sm:w-36 rounded-md" />
                 <Skeleton className="h-9 w-full sm:w-32 rounded-md" />
               </div>
-              {/* Mobile skeletons */}
-              <div className="block sm:hidden space-y-3">
-                {Array.from({ length: 5 }).map((_, i) => <MobileCardSkeleton key={i} />)}
-              </div>
-              {/* Desktop skeletons */}
-              <div className="hidden sm:block">
-                <Table className="w-full text-sm">
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-12"><Skeleton className="h-4 w-4 rounded" /></TableHead>
-                      <TableHead><Skeleton className="h-4 w-16 rounded" /></TableHead>
-                      <TableHead className="hidden sm:table-cell"><Skeleton className="h-4 w-16 rounded" /></TableHead>
-                      <TableHead><Skeleton className="h-4 w-16 rounded" /></TableHead>
-                      <TableHead className="hidden md:table-cell"><Skeleton className="h-4 w-16 rounded" /></TableHead>
-                      <TableHead className="text-right"><Skeleton className="h-4 w-16 ml-auto rounded" /></TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {Array.from({ length: 7 }).map((_, i) => <TableRowSkeleton key={i} />)}
-                  </TableBody>
-                </Table>
+              {/* Master-detail skeleton */}
+              <div className="grid gap-4 lg:grid-cols-[1.2fr_0.9fr] items-start">
+                <Card>
+                  <CardContent className="p-2 sm:p-3 space-y-1">
+                    {Array.from({ length: 8 }).map((_, i) => <ListRowSkeleton key={i} />)}
+                  </CardContent>
+                </Card>
+                <Card className="hidden lg:block">
+                  <CardContent className="p-4 space-y-4">
+                    <Skeleton className="h-6 w-3/4 rounded" />
+                    <Skeleton className="h-4 w-1/2 rounded" />
+                    <Skeleton className="h-9 w-32 rounded" />
+                    <div className="space-y-2 pt-2">
+                      {Array.from({ length: 4 }).map((_, i) => (
+                        <div key={i} className="flex items-center gap-3">
+                          <Skeleton className="h-4 flex-1 rounded" />
+                          <Skeleton className="h-4 w-14 rounded" />
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
               </div>
             </div>
           ) : error ? (
@@ -918,17 +1199,18 @@ export default function ExpensesPage() {
               </div>
             </motion.div>
           ) : (
-            /* ── Expense list ── */
+            /* ── Master-detail layout ── */
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ duration: 0.2 }}
+              className="space-y-4"
             >
-              {/* ── Filter bar ── */}
-              <div className="flex flex-col gap-2 mb-4">
+              {/* ── Filter bar (compact) ── */}
+              <div className="flex flex-col gap-2">
                 <div className="flex flex-col sm:flex-row gap-2">
                   {/* Search */}
-                  <div className="relative flex-1 max-w-sm">
+                  <div className="relative flex-1">
                     <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" aria-hidden="true" />
                     <Input
                       type="search"
@@ -958,7 +1240,7 @@ export default function ExpensesPage() {
 
                   {/* Category filter */}
                   <Select value={filterCategoryId} onValueChange={(v) => { setFilterCategoryId(v); setCurrentPage(1) }}>
-                    <SelectTrigger className="h-9 text-sm sm:w-48" suppressHydrationWarning>
+                    <SelectTrigger className="h-9 text-sm sm:w-44" suppressHydrationWarning>
                       <SelectValue placeholder={t('expenses.filterCategory')} />
                     </SelectTrigger>
                     <SelectContent>
@@ -970,6 +1252,35 @@ export default function ExpensesPage() {
                       ))}
                     </SelectContent>
                   </Select>
+
+                  {/* Tag filter */}
+                  {allTags.length > 0 && (
+                    <Select value={filterTag} onValueChange={(v) => { setFilterTag(v); setCurrentPage(1) }}>
+                      <SelectTrigger className="h-9 text-sm sm:w-36" suppressHydrationWarning>
+                        <SelectValue placeholder={t('expenses.filterByTag')} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all" suppressHydrationWarning>{t('expenses.allTags')}</SelectItem>
+                        {allTags.map(tag => (
+                          <SelectItem key={tag} value={tag}>{tag}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+
+                  {/* More filters toggle */}
+                  <Button
+                    variant={showMoreFilters || hasMoreFilters ? 'secondary' : 'outline'}
+                    size="sm"
+                    onClick={() => setShowMoreFilters(v => !v)}
+                    className="h-9 gap-1.5 text-sm whitespace-nowrap"
+                    aria-expanded={showMoreFilters}
+                    suppressHydrationWarning
+                  >
+                    <SlidersHorizontal className="h-3.5 w-3.5" />
+                    {t('expenses.moreFilters')}
+                    {hasMoreFilters && <span className="h-1.5 w-1.5 rounded-full bg-primary" aria-hidden="true" />}
+                  </Button>
 
                   {/* Clear filters */}
                   <AnimatePresence>
@@ -995,82 +1306,93 @@ export default function ExpensesPage() {
                   </AnimatePresence>
                 </div>
 
-                {/* Date range + Amount range row — hidden on mobile to reduce clutter */}
-                <div className="hidden md:flex flex-col sm:flex-row gap-2 flex-wrap">
-                  <div className="flex items-center gap-2 flex-1 max-w-xs">
-                    <label htmlFor="date-from" className="text-xs text-muted-foreground whitespace-nowrap" suppressHydrationWarning>
-                      {t('expenses.dateFrom')}
-                    </label>
-                    <Input
-                      id="date-from"
-                      type="date"
-                      value={dateFrom}
-                      onChange={(e) => { setDateFrom(e.target.value); setCurrentPage(1) }}
-                      className="h-9 text-sm flex-1"
-                      max={dateTo || undefined}
-                    />
-                  </div>
-                  <div className="flex items-center gap-2 flex-1 max-w-xs">
-                    <label htmlFor="date-to" className="text-xs text-muted-foreground whitespace-nowrap" suppressHydrationWarning>
-                      {t('expenses.dateTo')}
-                    </label>
-                    <Input
-                      id="date-to"
-                      type="date"
-                      value={dateTo}
-                      onChange={(e) => { setDateTo(e.target.value); setCurrentPage(1) }}
-                      className="h-9 text-sm flex-1"
-                      min={dateFrom || undefined}
-                    />
-                  </div>
-                  {/* Amount range */}
-                  <div className="flex items-center gap-2">
-                    <Input
-                      type="number"
-                      inputMode="decimal"
-                      min="0"
-                      step="0.01"
-                      value={amountFrom}
-                      onChange={(e) => { setAmountFrom(e.target.value); setCurrentPage(1) }}
-                      placeholder={t('expenses.amountFrom')}
-                      className="h-9 text-sm w-28"
-                      aria-label={t('expenses.amountFrom')}
-                    />
-                    <span className="text-xs text-muted-foreground" aria-hidden="true">–</span>
-                    <Input
-                      type="number"
-                      inputMode="decimal"
-                      min="0"
-                      step="0.01"
-                      value={amountTo}
-                      onChange={(e) => { setAmountTo(e.target.value); setCurrentPage(1) }}
-                      placeholder={t('expenses.amountTo')}
-                      className="h-9 text-sm w-28"
-                      aria-label={t('expenses.amountTo')}
-                    />
-                    <AnimatePresence>
-                      {hasAmountRange && (
-                        <motion.button
-                          initial={{ opacity: 0, scale: 0.8 }}
-                          animate={{ opacity: 1, scale: 1 }}
-                          exit={{ opacity: 0, scale: 0.8 }}
-                          onClick={() => { setAmountFrom(''); setAmountTo(''); setCurrentPage(1) }}
-                          className="flex items-center gap-1 text-xs px-2 py-1 border border-border bg-secondary shadow-[var(--nb-shadow-sm)] rounded-md hover:-translate-y-px hover:shadow-none active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all whitespace-nowrap font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/50 focus-visible:ring-offset-1"
-                          aria-label={t('expenses.clearRange')}
-                          type="button"
-                          suppressHydrationWarning
-                        >
-                          {t('expenses.amountRangeActive')}{' '}
-                          {amountFrom || '0'}–{amountTo || '∞'}
-                          <X className="h-3 w-3 ml-0.5" />
-                        </motion.button>
-                      )}
-                    </AnimatePresence>
-                  </div>
-                </div>
+                {/* Date range + Amount range — collapsible "More filters" */}
+                <AnimatePresence initial={false}>
+                  {showMoreFilters && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="overflow-hidden"
+                    >
+                      <div className="flex flex-col sm:flex-row gap-2 flex-wrap pt-1">
+                        <div className="flex items-center gap-2 flex-1 max-w-xs">
+                          <label htmlFor="date-from" className="text-xs text-muted-foreground whitespace-nowrap" suppressHydrationWarning>
+                            {t('expenses.dateFrom')}
+                          </label>
+                          <Input
+                            id="date-from"
+                            type="date"
+                            value={dateFrom}
+                            onChange={(e) => { setDateFrom(e.target.value); setCurrentPage(1) }}
+                            className="h-9 text-sm flex-1"
+                            max={dateTo || undefined}
+                          />
+                        </div>
+                        <div className="flex items-center gap-2 flex-1 max-w-xs">
+                          <label htmlFor="date-to" className="text-xs text-muted-foreground whitespace-nowrap" suppressHydrationWarning>
+                            {t('expenses.dateTo')}
+                          </label>
+                          <Input
+                            id="date-to"
+                            type="date"
+                            value={dateTo}
+                            onChange={(e) => { setDateTo(e.target.value); setCurrentPage(1) }}
+                            className="h-9 text-sm flex-1"
+                            min={dateFrom || undefined}
+                          />
+                        </div>
+                        {/* Amount range */}
+                        <div className="flex items-center gap-2">
+                          <Input
+                            type="number"
+                            inputMode="decimal"
+                            min="0"
+                            step="0.01"
+                            value={amountFrom}
+                            onChange={(e) => { setAmountFrom(e.target.value); setCurrentPage(1) }}
+                            placeholder={t('expenses.amountFrom')}
+                            className="h-9 text-sm w-28"
+                            aria-label={t('expenses.amountFrom')}
+                          />
+                          <span className="text-xs text-muted-foreground" aria-hidden="true">–</span>
+                          <Input
+                            type="number"
+                            inputMode="decimal"
+                            min="0"
+                            step="0.01"
+                            value={amountTo}
+                            onChange={(e) => { setAmountTo(e.target.value); setCurrentPage(1) }}
+                            placeholder={t('expenses.amountTo')}
+                            className="h-9 text-sm w-28"
+                            aria-label={t('expenses.amountTo')}
+                          />
+                          <AnimatePresence>
+                            {hasAmountRange && (
+                              <motion.button
+                                initial={{ opacity: 0, scale: 0.8 }}
+                                animate={{ opacity: 1, scale: 1 }}
+                                exit={{ opacity: 0, scale: 0.8 }}
+                                onClick={() => { setAmountFrom(''); setAmountTo(''); setCurrentPage(1) }}
+                                className="flex items-center gap-1 text-xs px-2 py-1 border border-border bg-secondary shadow-[var(--nb-shadow-sm)] rounded-md hover:-translate-y-px hover:shadow-none active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all whitespace-nowrap font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/50 focus-visible:ring-offset-1"
+                                aria-label={t('expenses.clearRange')}
+                                type="button"
+                                suppressHydrationWarning
+                              >
+                                {t('expenses.amountRangeActive')}{' '}
+                                {amountFrom || '0'}–{amountTo || '∞'}
+                                <X className="h-3 w-3 ml-0.5" />
+                              </motion.button>
+                            )}
+                          </AnimatePresence>
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
 
                 {/* Sort preset row */}
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <ArrowDownUp className="h-3.5 w-3.5 text-muted-foreground" />
                   <span className="text-xs text-muted-foreground whitespace-nowrap" suppressHydrationWarning>
                     {t('expenses.sortBy')}:
@@ -1086,43 +1408,10 @@ export default function ExpensesPage() {
                       }`}
                       suppressHydrationWarning
                     >
-                      {t(`expenses.sort${preset.charAt(0).toUpperCase() + preset.slice(1)}` as Parameters<typeof t>[0])}
+                      {t(`expenses.sort${preset.charAt(0).toUpperCase() + preset.slice(1)}`)}
                     </button>
                   ))}
                 </div>
-
-                {/* Tag filter chip-row — hidden on mobile */}
-                {allTags.length > 0 && (
-                  <div className="hidden md:flex flex-wrap items-center gap-1.5">
-                    <span className="text-xs text-muted-foreground whitespace-nowrap" suppressHydrationWarning>
-                      {t('expenses.filterByTag')}:
-                    </span>
-                    <button
-                      onClick={() => { setFilterTag('all'); setCurrentPage(1) }}
-                      className={`text-xs px-2 py-0.5 rounded-full transition-colors ${
-                        filterTag === 'all'
-                          ? 'bg-primary text-primary-foreground'
-                          : 'bg-muted text-muted-foreground hover:bg-primary/10 hover:text-primary'
-                      }`}
-                      suppressHydrationWarning
-                    >
-                      {t('expenses.allTags')}
-                    </button>
-                    {allTags.map(tag => (
-                      <button
-                        key={tag}
-                        onClick={() => { setFilterTag(tag === filterTag ? 'all' : tag); setCurrentPage(1) }}
-                        className={`text-xs px-2 py-0.5 rounded-full transition-colors ${
-                          filterTag === tag
-                            ? 'bg-primary text-primary-foreground'
-                            : 'bg-primary/10 text-primary hover:bg-primary/20'
-                        }`}
-                      >
-                        {tag}
-                      </button>
-                    ))}
-                  </div>
-                )}
               </div>
 
               {/* No results after filtering */}
@@ -1139,622 +1428,168 @@ export default function ExpensesPage() {
                   </Button>
                 </div>
               ) : (
-                <>
-                  {/* ── Mobile: Card view ── */}
-                  <motion.div
-                    className="block sm:hidden space-y-3 overflow-y-auto max-h-[60vh]"
-                    variants={{ hidden: {}, visible: { transition: { staggerChildren: 0.05 } } }}
-                    initial="hidden"
-                    animate="visible"
-                  >
-                    {pagedExpenses.map((expense) => (
-                      <motion.div
-                        key={expense.id}
-                        variants={{ hidden: { opacity: 0, y: 8 }, visible: { opacity: 1, y: 0, transition: { duration: 0.3 } } }}
-                        className={`border rounded-lg p-3 transition-colors ${
-                          selectedExpense?.id === expense.id
-                            ? 'bg-muted/40 border-primary'
-                            : 'bg-card'
-                        }`}
-                        onClick={() => handleExpenseClick(expense)}
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-1">
-                              <Checkbox
-                                checked={selectedExpenseIds.has(expense.id)}
-                                onCheckedChange={() => toggleExpenseSelection(expense.id)}
-                                onClick={(e) => e.stopPropagation()}
-                                className="h-4 w-4"
-                              />
-                              <h3 className="font-semibold text-sm truncate">
-                                {editingExpenseId === expense.id ? (
-                                  <div onClick={(e) => e.stopPropagation()} className="space-y-1">
-                                    <Input
-                                      value={editExpenseTitle}
-                                      onChange={(e) => {
-                                        setEditExpenseTitle(e.target.value)
-                                        if (e.target.value.trim()) setEditExpenseTitleError(null)
-                                      }}
-                                      onKeyDown={(e) => handleExpenseKeyDown(e, expense.id)}
-                                      className={`h-7 text-sm ${editExpenseTitleError ? 'border-destructive' : ''}`}
-                                    />
-                                    {editExpenseTitleError && (
-                                      <p className="text-destructive text-xs">{editExpenseTitleError}</p>
-                                    )}
-                                  </div>
-                                ) : expense.title}
-                              </h3>
-                            </div>
-                            <div className="flex items-center justify-between text-xs text-muted-foreground">
-                              <span>{expense.vendor || '—'}</span>
-                              <span className="font-medium text-foreground">
-                                {editingExpenseId === expense.id ? (
-                                  <div onClick={(e) => e.stopPropagation()} className="space-y-1">
-                                    <Input
-                                      value={editExpenseAmount}
-                                      onChange={(e) => {
-                                        setEditExpenseAmount(e.target.value)
-                                        if (parseFloat(e.target.value) > 0) setEditExpenseAmountError(null)
-                                      }}
-                                      onKeyDown={(e) => handleExpenseKeyDown(e, expense.id)}
-                                      type="number"
-                                      step="0.01"
-                                      min="0.01"
-                                      className={`h-6 w-20 text-xs ${editExpenseAmountError ? 'border-destructive' : ''}`}
-                                    />
-                                    {editExpenseAmountError && (
-                                      <p className="text-destructive text-xs">{editExpenseAmountError}</p>
-                                    )}
-                                  </div>
-                                ) : formatAmount(expense.amount, expense.currency || currency)}
-                              </span>
-                            </div>
-                            <div className="text-xs text-muted-foreground mt-1">
-                              {new Date(expense.date).toLocaleDateString()}
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
-                            {editingExpenseId === expense.id ? (
-                              <>
-                                <Button aria-label={t('expenses.saveEdit')} variant="ghost" size="icon" onClick={() => saveExpense(expense.id)} disabled={isSavingExpense} className="h-9 w-9 min-h-[44px] min-w-[44px]">
-                                  {isSavingExpense ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4 text-green-600" />}
-                                </Button>
-                                <Button aria-label={t('expenses.cancelEdit')} variant="ghost" size="icon" onClick={cancelEditingExpense} className="h-9 w-9 min-h-[44px] min-w-[44px]">
-                                  <X className="h-4 w-4" />
-                                </Button>
-                              </>
-                            ) : (
-                              <>
-                                <Button
-                                  aria-label={t('expenses.editExpense')}
-                                  variant="ghost"
-                                  size="icon"
-                                  onClick={(e) => { e.stopPropagation(); startEditingExpense(expense) }}
-                                  className="h-9 w-9 min-h-[44px] min-w-[44px]"
-                                >
-                                  <Edit2 className="h-3.5 w-3.5" />
-                                </Button>
-                                <Button
-                                  aria-label={t('expenses.deleteExpense')}
-                                  variant="ghost"
-                                  size="icon"
-                                  onClick={() => { setSelectedExpense(expense); setIsDeleteDialogOpen(true) }}
-                                  className="h-9 w-9 min-h-[44px] min-w-[44px]"
-                                >
-                                  <Trash2 className="h-3.5 w-3.5 text-red-500" />
-                                </Button>
-                              </>
-                            )}
+                /* ── Master-detail grid ── */
+                <div className="grid gap-4 lg:grid-cols-[1.2fr_0.9fr] items-start">
+                  {/* LEFT: expense list */}
+                  <Card>
+                    <CardContent className="p-2 sm:p-3">
+                      {/* Select all row */}
+                      <div className="flex items-center gap-2 px-2 pb-2 border-b">
+                        <Checkbox
+                          checked={
+                            pagedExpenses.length > 0 &&
+                            pagedExpenses.every(e => selectedExpenseIds.has(e.id))
+                          }
+                          onCheckedChange={toggleExpenseSelectAll}
+                          aria-label={t('expenses.selectAll')}
+                        />
+                        <span className="text-xs text-muted-foreground" suppressHydrationWarning>
+                          {t('expenses.selectAll')}
+                        </span>
+                        <span className="ml-auto text-xs text-muted-foreground tabular-nums" suppressHydrationWarning>
+                          {sortedExpenses.length} {t('expenses.results')}
+                        </span>
+                      </div>
+
+                      {/* Rows */}
+                      <div className="pt-1 space-y-0.5">
+                        <AnimatePresence initial={false}>
+                          {pagedExpenses.map((expense, idx) => {
+                            const catName = categoryNameOf(expense.categoryId)
+                            const isSelected = selectedExpense?.id === expense.id
+                            return (
+                              <motion.div
+                                key={expense.id}
+                                initial={{ opacity: 0, y: 8 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0 }}
+                                transition={{ duration: 0.25, delay: Math.min(idx * 0.03, 0.3) }}
+                                role="button"
+                                tabIndex={0}
+                                onClick={() => openExpense(expense)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openExpense(expense) }
+                                }}
+                                className={`flex items-center gap-2 rounded-lg px-2 py-2 cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 ${
+                                  isSelected ? 'bg-secondary' : 'hover:bg-muted/40'
+                                }`}
+                              >
+                                <span onClick={(e) => e.stopPropagation()} className="flex items-center">
+                                  <Checkbox
+                                    checked={selectedExpenseIds.has(expense.id)}
+                                    onCheckedChange={() => toggleExpenseSelection(expense.id)}
+                                    aria-label={expense.title}
+                                  />
+                                </span>
+                                <span className="w-12 shrink-0 text-xs text-muted-foreground tabular-nums">
+                                  {formatShortDate(expense.date)}
+                                </span>
+                                <span
+                                  className={`h-2 w-2 rounded-full shrink-0 ${
+                                    expense.categoryId
+                                      ? getCategoryColor(expense.categoryId).dot
+                                      : 'bg-muted-foreground/30'
+                                  }`}
+                                  aria-hidden="true"
+                                />
+                                <span className="min-w-0 flex-1">
+                                  <span className="block text-sm font-bold truncate">{expense.title}</span>
+                                  <span className="block text-[11px] text-muted-foreground truncate" suppressHydrationWarning>
+                                    {expense.vendor || '—'}
+                                    {catName ? ` · ${catName}` : ''}
+                                  </span>
+                                </span>
+                                <span className="text-sm font-bold tabular-nums shrink-0">
+                                  {formatAmount(expense.amount, expense.currency || currency)}
+                                </span>
+                              </motion.div>
+                            )
+                          })}
+                        </AnimatePresence>
+                      </div>
+
+                      {/* ── Pagination ── */}
+                      {totalPages > 1 && (
+                        <div className="flex items-center justify-between mt-3 pt-3 border-t text-sm px-2">
+                          <span className="text-muted-foreground text-xs" suppressHydrationWarning>
+                            {t('expenses.showing')} {pageStart + 1}–{Math.min(pageEnd, sortedExpenses.length)}{' '}
+                            {t('expenses.of')} {sortedExpenses.length} {t('expenses.results')}
+                          </span>
+                          <div className="flex items-center gap-1.5">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                              disabled={safePage === 1}
+                              className="h-8 px-2.5 text-xs gap-1"
+                              suppressHydrationWarning
+                            >
+                              <ChevronLeft className="h-3.5 w-3.5" />
+                              <span className="hidden sm:inline">{t('expenses.prevPage')}</span>
+                            </Button>
+                            <span className="text-xs text-muted-foreground px-1" suppressHydrationWarning>
+                              {t('expenses.page')} {safePage} {t('expenses.of')} {totalPages}
+                            </span>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                              disabled={safePage === totalPages}
+                              className="h-8 px-2.5 text-xs gap-1"
+                              suppressHydrationWarning
+                            >
+                              <span className="hidden sm:inline">{t('expenses.nextPage')}</span>
+                              <ChevronRight className="h-3.5 w-3.5" />
+                            </Button>
                           </div>
                         </div>
-                      </motion.div>
-                    ))}
-                  </motion.div>
+                      )}
+                    </CardContent>
+                  </Card>
 
-                  {/* ── Desktop: Table view ── */}
-                  <div className="hidden sm:block overflow-y-auto max-h-[60vh]">
-                    <Table className="w-full text-sm">
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead className="w-12">
-                            <Checkbox
-                              checked={
-                                pagedExpenses.length > 0 &&
-                                pagedExpenses.every(e => selectedExpenseIds.has(e.id))
-                              }
-                              onCheckedChange={toggleExpenseSelectAll}
-                            />
-                          </TableHead>
-                          <TableHead
-                            className="cursor-pointer select-none"
-                            onClick={() => handleSort('title')}
-                            suppressHydrationWarning
+                  {/* RIGHT: detail preview (desktop only) */}
+                  <Card className="hidden lg:block sticky top-4 self-start">
+                    <CardContent className="p-4 sm:p-5">
+                      {selectedExpense ? (
+                        <AnimatePresence mode="wait">
+                          <motion.div
+                            key={selectedExpense.id}
+                            initial={{ opacity: 0, y: 8 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0 }}
+                            transition={{ duration: 0.15 }}
                           >
-                            {t('expenses.titleCol')}
-                            <SortIcon field="title" sortField={sortField} sortDir={sortDir} />
-                          </TableHead>
-                          <TableHead
-                            className="hidden sm:table-cell cursor-pointer select-none"
-                            onClick={() => handleSort('vendor')}
-                            suppressHydrationWarning
-                          >
-                            {t('expenses.vendor')}
-                            <SortIcon field="vendor" sortField={sortField} sortDir={sortDir} />
-                          </TableHead>
-                          <TableHead
-                            className="cursor-pointer select-none"
-                            onClick={() => handleSort('amount')}
-                            suppressHydrationWarning
-                          >
-                            {t('expenses.amount')}
-                            <SortIcon field="amount" sortField={sortField} sortDir={sortDir} />
-                          </TableHead>
-                          <TableHead
-                            className="hidden md:table-cell cursor-pointer select-none"
-                            onClick={() => handleSort('date')}
-                            suppressHydrationWarning
-                          >
-                            {t('expenses.date')}
-                            <SortIcon field="date" sortField={sortField} sortDir={sortDir} />
-                          </TableHead>
-                          <TableHead className="text-right" suppressHydrationWarning>{t('expenses.actions')}</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        <AnimatePresence initial={false}>
-                          {pagedExpenses.map((expense, idx) => (
-                            <motion.tr
-                              key={expense.id}
-                              initial={{ opacity: 0, y: 8 }}
-                              animate={{ opacity: 1, y: 0 }}
-                              exit={{ opacity: 0 }}
-                              transition={{ duration: 0.3, delay: idx * 0.05 }}
-                              className={`border-b transition-colors ${
-                                selectedExpense?.id === expense.id
-                                  ? 'bg-muted/40'
-                                  : 'hover:bg-muted/20'
-                              }`}
-                            >
-                              <TableCell onClick={(e) => e.stopPropagation()}>
-                                <Checkbox
-                                  checked={selectedExpenseIds.has(expense.id)}
-                                  onCheckedChange={() => toggleExpenseSelection(expense.id)}
-                                />
-                              </TableCell>
-
-                              {/* Title cell */}
-                              <TableCell className="font-medium cursor-pointer" onClick={() => handleExpenseClick(expense)}>
-                                {editingExpenseId === expense.id ? (
-                                  <div onClick={(e) => e.stopPropagation()} className="space-y-1">
-                                    <Input
-                                      value={editExpenseTitle}
-                                      onChange={(e) => {
-                                        setEditExpenseTitle(e.target.value)
-                                        if (e.target.value.trim()) setEditExpenseTitleError(null)
-                                      }}
-                                      onKeyDown={(e) => handleExpenseKeyDown(e, expense.id)}
-                                      className={`h-8 ${editExpenseTitleError ? 'border-destructive' : ''}`}
-                                    />
-                                    {editExpenseTitleError && (
-                                      <p className="text-destructive text-xs">{editExpenseTitleError}</p>
-                                    )}
-                                  </div>
-                                ) : (
-                                  <div className="space-y-1">
-                                    <span>{expense.title}</span>
-                                    {expense.tags && expense.tags.length > 0 && (
-                                      <div className="flex flex-wrap gap-1">
-                                        {expense.tags.map(tag => (
-                                          <span
-                                            key={tag}
-                                            className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary"
-                                          >
-                                            {tag}
-                                          </span>
-                                        ))}
-                                      </div>
-                                    )}
-                                  </div>
-                                )}
-                              </TableCell>
-
-                              <TableCell className="hidden sm:table-cell cursor-pointer" onClick={() => handleExpenseClick(expense)}>
-                                {expense.vendor || '—'}
-                              </TableCell>
-
-                              {/* Amount cell */}
-                              <TableCell className="font-medium cursor-pointer" onClick={() => handleExpenseClick(expense)}>
-                                {editingExpenseId === expense.id ? (
-                                  <div onClick={(e) => e.stopPropagation()} className="space-y-1">
-                                    <Input
-                                      value={editExpenseAmount}
-                                      onChange={(e) => {
-                                        setEditExpenseAmount(e.target.value)
-                                        if (parseFloat(e.target.value) > 0) setEditExpenseAmountError(null)
-                                      }}
-                                      onKeyDown={(e) => handleExpenseKeyDown(e, expense.id)}
-                                      type="number"
-                                      step="0.01"
-                                      min="0.01"
-                                      className={`h-8 w-28 ${editExpenseAmountError ? 'border-destructive' : ''}`}
-                                    />
-                                    {editExpenseAmountError && (
-                                      <p className="text-destructive text-xs">{editExpenseAmountError}</p>
-                                    )}
-                                  </div>
-                                ) : formatAmount(expense.amount, expense.currency || currency)}
-                              </TableCell>
-
-                              <TableCell className="hidden md:table-cell cursor-pointer" onClick={() => handleExpenseClick(expense)}>
-                                {new Date(expense.date).toLocaleDateString()}
-                              </TableCell>
-
-                              {/* Actions */}
-                              <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
-                                {editingExpenseId === expense.id ? (
-                                  <div className="flex justify-end gap-1">
-                                    <Button aria-label={t('expenses.saveEdit')} variant="ghost" size="icon" onClick={() => saveExpense(expense.id)} disabled={isSavingExpense}>
-                                      {isSavingExpense ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4 text-green-600" />}
-                                    </Button>
-                                    <Button aria-label={t('expenses.cancelEdit')} variant="ghost" size="icon" onClick={cancelEditingExpense}>
-                                      <X className="h-4 w-4 text-red-500" />
-                                    </Button>
-                                  </div>
-                                ) : (
-                                  <div className="flex justify-end gap-1">
-                                    {expense.receiptId && (
-                                      <>
-                                        <Button
-                                          aria-label={t('expenses.viewEReceipt')}
-                                          variant="ghost"
-                                          size="icon"
-                                          asChild
-                                        >
-                                          <a
-                                            href={`/receipt/${expense.receiptId}`}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                          >
-                                            <ReceiptText className="h-4 w-4 text-indigo-500" />
-                                          </a>
-                                        </Button>
-                                        <Button
-                                          aria-label={t('expenses.viewReceipt')}
-                                          variant="ghost"
-                                          size="icon"
-                                          onClick={() => handleViewReceiptImage(expense.receiptId!)}
-                                        >
-                                          <ImageIcon className="h-4 w-4 text-blue-500" />
-                                        </Button>
-                                      </>
-                                    )}
-                                    <Button aria-label={t('expenses.editExpense')} variant="ghost" size="icon" onClick={() => startEditingExpense(expense)}>
-                                      <Edit2 className="h-4 w-4" />
-                                    </Button>
-                                    <Button
-                                      aria-label={t('expenses.deleteExpense')}
-                                      variant="ghost"
-                                      size="icon"
-                                      onClick={() => { setSelectedExpense(expense); setIsDeleteDialogOpen(true) }}
-                                    >
-                                      <Trash2 className="h-4 w-4 text-red-500" />
-                                    </Button>
-                                  </div>
-                                )}
-                              </TableCell>
-                            </motion.tr>
-                          ))}
+                            {renderExpenseDetail(selectedExpense)}
+                          </motion.div>
                         </AnimatePresence>
-                      </TableBody>
-                    </Table>
-                  </div>
-
-                  {/* ── Pagination ── */}
-                  {totalPages > 1 && (
-                    <div className="flex items-center justify-between mt-4 pt-4 border-t text-sm">
-                      <span className="text-muted-foreground text-xs" suppressHydrationWarning>
-                        {t('expenses.showing')} {pageStart + 1}–{Math.min(pageEnd, sortedExpenses.length)}{' '}
-                        {t('expenses.of')} {sortedExpenses.length} {t('expenses.results')}
-                      </span>
-                      <div className="flex items-center gap-1.5">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                          disabled={safePage === 1}
-                          className="h-8 px-2.5 text-xs gap-1"
-                          suppressHydrationWarning
-                        >
-                          <ChevronLeft className="h-3.5 w-3.5" />
-                          <span className="hidden sm:inline">{t('expenses.prevPage')}</span>
-                        </Button>
-                        <span className="text-xs text-muted-foreground px-1" suppressHydrationWarning>
-                          {t('expenses.page')} {safePage} {t('expenses.of')} {totalPages}
-                        </span>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                          disabled={safePage === totalPages}
-                          className="h-8 px-2.5 text-xs gap-1"
-                          suppressHydrationWarning
-                        >
-                          <span className="hidden sm:inline">{t('expenses.nextPage')}</span>
-                          <ChevronRight className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    </div>
-                  )}
-                </>
+                      ) : (
+                        <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
+                          <div className="flex h-14 w-14 items-center justify-center rounded-md border border-border bg-card text-muted-foreground shadow-[var(--nb-shadow-sm)]">
+                            <ReceiptText className="h-6 w-6" aria-hidden="true" />
+                          </div>
+                          <p className="text-sm text-muted-foreground max-w-[220px]" suppressHydrationWarning>
+                            {t('expenses.selectToPreview')}
+                          </p>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                </div>
               )}
             </motion.div>
           )}
         </section>
-
-        {/* ── Receipt Items Panel ── */}
-        <AnimatePresence>
-          {selectedExpense && (
-            <motion.section
-              key={selectedExpense.id}
-              initial={{ opacity: 0, y: 16 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 8 }}
-              transition={{ duration: 0.2 }}
-              className="w-full"
-            >
-              {selectedExpense.receiptId ? (
-                <Card className="border p-4 sm:p-6">
-                  <CardHeader className="flex flex-row items-center justify-between pb-2">
-                    <CardTitle className="text-lg sm:text-2xl font-semibold" suppressHydrationWarning>
-                      {t('expenses.receiptItems')} — {selectedExpense.title}
-                    </CardTitle>
-                    {selectedItemIndices.size > 0 && (
-                      <Button variant="destructive" size="sm" onClick={bulkDeleteItems} className="text-xs sm:text-sm" suppressHydrationWarning>
-                        <Trash2 className="mr-2 h-4 w-4" />
-                        {t('expenses.delete')} {selectedItemIndices.size}
-                      </Button>
-                    )}
-                  </CardHeader>
-                  <CardContent>
-                    {loadingReceiptItems ? (
-                      <div className="space-y-2 py-4">
-                        {Array.from({ length: 4 }).map((_, i) => (
-                          <div key={i} className="flex items-center gap-3">
-                            <Skeleton className="h-4 w-4 rounded" />
-                            <Skeleton className="h-4 flex-1 rounded" />
-                            <Skeleton className="h-4 w-20 rounded" />
-                            <Skeleton className="h-4 w-24 rounded" />
-                          </div>
-                        ))}
-                      </div>
-                    ) : receiptItems.length > 0 ? (
-                      <>
-                        {/* Mobile */}
-                        <div className="block sm:hidden space-y-2">
-                          <div className="flex items-center gap-2 pb-2 border-b">
-                            <Checkbox
-                              checked={selectedItemIndices.size === receiptItems.length && receiptItems.length > 0}
-                              onCheckedChange={toggleItemSelectAll}
-                            />
-                            <span className="text-sm font-medium" suppressHydrationWarning>{t('expenses.selectAll')}</span>
-                          </div>
-                          {receiptItems.map((item, index) => (
-                            <div key={index} className="border rounded-lg p-3">
-                              <div className="flex items-start gap-2">
-                                <Checkbox
-                                  checked={selectedItemIndices.has(index)}
-                                  onCheckedChange={() => toggleItemSelection(index)}
-                                  className="mt-1"
-                                />
-                                <div className="flex-1 space-y-1">
-                                  {editingItemIndex === index ? (
-                                    <div className="space-y-2">
-                                      <div>
-                                        <Input
-                                          value={editItemName}
-                                          onChange={(e) => {
-                                            setEditItemName(e.target.value)
-                                            if (e.target.value.trim()) setEditItemNameError(null)
-                                          }}
-                                          onKeyDown={(e) => handleItemKeyDown(e, index)}
-                                          className={`h-8 text-sm ${editItemNameError ? 'border-destructive' : ''}`}
-                                          placeholder={t('expenses.itemName')}
-                                        />
-                                        {editItemNameError && (
-                                          <p className="text-destructive text-xs mt-0.5">{editItemNameError}</p>
-                                        )}
-                                      </div>
-                                      <div>
-                                        <Input
-                                          value={editItemPrice}
-                                          onChange={(e) => {
-                                            setEditItemPrice(e.target.value)
-                                            if (parseFloat(e.target.value) >= 0) setEditItemPriceError(null)
-                                          }}
-                                          onKeyDown={(e) => handleItemKeyDown(e, index)}
-                                          type="number"
-                                          step="0.01"
-                                          min="0"
-                                          className={`h-8 text-sm ${editItemPriceError ? 'border-destructive' : ''}`}
-                                          placeholder={t('expenses.price')}
-                                        />
-                                        {editItemPriceError && (
-                                          <p className="text-destructive text-xs mt-0.5">{editItemPriceError}</p>
-                                        )}
-                                      </div>
-                                      <Select value={editItemCategory} onValueChange={setEditItemCategory}>
-                                        <SelectTrigger className="h-8 text-sm">
-                                          <SelectValue placeholder={t('expenses.category')} />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                          <SelectItem value="" suppressHydrationWarning>{t('expenses.noCategory')}</SelectItem>
-                                          {categoriesList.map(cat => (
-                                            <SelectItem key={cat.id} value={cat.id}>
-                                              {translateCategoryName(cat.name)}
-                                            </SelectItem>
-                                          ))}
-                                        </SelectContent>
-                                      </Select>
-                                    </div>
-                                  ) : (
-                                    <>
-                                      <p className="font-medium text-sm">{item.name}</p>
-                                      <p className="text-xs text-muted-foreground">
-                                        {formatAmount(item.price ?? 0, selectedExpense?.currency || currency)} · {item.categoryId
-                                          ? translateCategoryName(categories.get(item.categoryId) || 'Other')
-                                          : t('expenses.noCategory')
-                                        }
-                                      </p>
-                                    </>
-                                  )}
-                                </div>
-                                <div className="flex gap-1">
-                                  {editingItemIndex === index ? (
-                                    <>
-                                      <Button variant="ghost" size="icon" onClick={() => saveItem(index)} disabled={isSavingItem} className="h-9 w-9 min-h-[44px] min-w-[44px]" aria-label={t('expenses.saveItem')}>
-                                        {isSavingItem ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3 text-green-600" />}
-                                      </Button>
-                                      <Button variant="ghost" size="icon" onClick={cancelEditingItem} className="h-9 w-9 min-h-[44px] min-w-[44px]" aria-label={t('expenses.cancelEditItem')}>
-                                        <X className="h-3 w-3" />
-                                      </Button>
-                                    </>
-                                  ) : (
-                                    <Button variant="ghost" size="icon" onClick={() => startEditingItem(index, item)} className="h-9 w-9 min-h-[44px] min-w-[44px]" aria-label={t('expenses.editItem')}>
-                                      <Edit2 className="h-3 w-3" />
-                                    </Button>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-
-                        {/* Desktop */}
-                        <div className="hidden sm:block overflow-y-auto max-h-[50vh]">
-                          <Table>
-                            <TableHeader>
-                              <TableRow>
-                                <TableHead className="w-10">
-                                  <Checkbox
-                                    checked={selectedItemIndices.size === receiptItems.length && receiptItems.length > 0}
-                                    onCheckedChange={toggleItemSelectAll}
-                                  />
-                                </TableHead>
-                                <TableHead suppressHydrationWarning>{t('expenses.itemName')}</TableHead>
-                                <TableHead suppressHydrationWarning>{t('expenses.price')}</TableHead>
-                                <TableHead suppressHydrationWarning>{t('expenses.category')}</TableHead>
-                                <TableHead className="text-right" suppressHydrationWarning>{t('expenses.actions')}</TableHead>
-                              </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                              {receiptItems.map((item, index) => (
-                                <TableRow key={index}>
-                                  <TableCell>
-                                    <Checkbox checked={selectedItemIndices.has(index)} onCheckedChange={() => toggleItemSelection(index)} />
-                                  </TableCell>
-                                  <TableCell>
-                                    {editingItemIndex === index ? (
-                                      <div className="space-y-1">
-                                        <Input
-                                          value={editItemName}
-                                          onChange={(e) => {
-                                            setEditItemName(e.target.value)
-                                            if (e.target.value.trim()) setEditItemNameError(null)
-                                          }}
-                                          onKeyDown={(e) => handleItemKeyDown(e, index)}
-                                          className={`h-8 ${editItemNameError ? 'border-destructive' : ''}`}
-                                        />
-                                        {editItemNameError && (
-                                          <p className="text-destructive text-xs">{editItemNameError}</p>
-                                        )}
-                                      </div>
-                                    ) : <span className="font-medium">{item.name}</span>}
-                                  </TableCell>
-                                  <TableCell>
-                                    {editingItemIndex === index ? (
-                                      <div className="space-y-1">
-                                        <Input
-                                          value={editItemPrice}
-                                          onChange={(e) => {
-                                            setEditItemPrice(e.target.value)
-                                            if (parseFloat(e.target.value) >= 0) setEditItemPriceError(null)
-                                          }}
-                                          onKeyDown={(e) => handleItemKeyDown(e, index)}
-                                          type="number"
-                                          step="0.01"
-                                          min="0"
-                                          className={`h-8 w-28 ${editItemPriceError ? 'border-destructive' : ''}`}
-                                        />
-                                        {editItemPriceError && (
-                                          <p className="text-destructive text-xs">{editItemPriceError}</p>
-                                        )}
-                                      </div>
-                                    ) : formatAmount(item.price ?? 0, selectedExpense?.currency || currency)}
-                                  </TableCell>
-                                  <TableCell>
-                                    {editingItemIndex === index ? (
-                                      <Select value={editItemCategory} onValueChange={setEditItemCategory}>
-                                        <SelectTrigger className="h-8">
-                                          <SelectValue placeholder={t('expenses.category')} />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                          <SelectItem value="" suppressHydrationWarning>{t('expenses.noCategory')}</SelectItem>
-                                          {categoriesList.map(cat => (
-                                            <SelectItem key={cat.id} value={cat.id}>
-                                              {translateCategoryName(cat.name)}
-                                            </SelectItem>
-                                          ))}
-                                        </SelectContent>
-                                      </Select>
-                                    ) : item.categoryId
-                                      ? translateCategoryName(categories.get(item.categoryId) || 'Other')
-                                      : <span className="text-muted-foreground text-xs" suppressHydrationWarning>{t('expenses.noCategory')}</span>
-                                    }
-                                  </TableCell>
-                                  <TableCell className="text-right">
-                                    {editingItemIndex === index ? (
-                                      <div className="flex justify-end gap-1">
-                                        <Button variant="ghost" size="icon" onClick={() => saveItem(index)} disabled={isSavingItem} aria-label={t('expenses.saveItem')}>
-                                          {isSavingItem ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4 text-green-600" />}
-                                        </Button>
-                                        <Button variant="ghost" size="icon" onClick={cancelEditingItem} aria-label={t('expenses.cancelEditItem')}>
-                                          <X className="h-4 w-4 text-red-500" />
-                                        </Button>
-                                      </div>
-                                    ) : (
-                                      <Button variant="ghost" size="icon" onClick={() => startEditingItem(index, item)} aria-label={t('expenses.editItem')}>
-                                        <Edit2 className="h-4 w-4" />
-                                      </Button>
-                                    )}
-                                  </TableCell>
-                                </TableRow>
-                              ))}
-                            </TableBody>
-                          </Table>
-                        </div>
-                      </>
-                    ) : (
-                      <p className="text-center text-muted-foreground py-8" suppressHydrationWarning>
-                        {t('expenses.noItems')}
-                      </p>
-                    )}
-                  </CardContent>
-                </Card>
-              ) : (
-                <Card className="border p-4 sm:p-6">
-                  <CardHeader>
-                    <CardTitle className="text-lg sm:text-2xl font-semibold">{selectedExpense.title}</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <p className="text-muted-foreground" suppressHydrationWarning>{t('expenses.noReceiptAttached')}</p>
-                  </CardContent>
-                </Card>
-              )}
-            </motion.section>
-          )}
-        </AnimatePresence>
       </div>
+
+      {/* ── Mobile detail sheet (< lg) ── */}
+      <Sheet open={isDetailSheetOpen} onOpenChange={setIsDetailSheetOpen}>
+        <SheetContent side="bottom" className="lg:hidden max-h-[85vh] overflow-y-auto rounded-t-xl p-4 pt-3">
+          <SheetHeader className="p-0">
+            <SheetTitle className="sr-only">{selectedExpense?.title || t('expenses.title')}</SheetTitle>
+          </SheetHeader>
+          {selectedExpense && renderExpenseDetail(selectedExpense)}
+        </SheetContent>
+      </Sheet>
 
       {/* ── Delete single — Confirmation Dialog ── */}
       <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
