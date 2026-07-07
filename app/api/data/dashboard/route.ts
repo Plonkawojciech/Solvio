@@ -1,6 +1,6 @@
 import { auth, getHubAuth } from '@/lib/auth-compat'
 import { NextResponse } from 'next/server'
-import { db, expenses, receipts, categories, userSettings, categoryBudgets, monthlyBudgets } from '@/lib/db'
+import { db, expenses, receipts, categories, userSettings, categoryBudgets, monthlyBudgets, incomes } from '@/lib/db'
 import { eq, gte, lte, and, sql } from 'drizzle-orm'
 
 export async function GET(request: Request) {
@@ -56,7 +56,7 @@ export async function GET(request: Request) {
       ? and(eq(expenses.userId, userId), gte(expenses.date, prevMonthStartStr), lte(expenses.date, prevMonthEndStr))
       : and(eq(expenses.userId, userId), gte(expenses.date, prev30Str), lte(expenses.date, sinceStr))
 
-    const [cats, settings, budgets, exps, recsCount, prevCatTotals, monthBudget] = await Promise.all([
+    const [cats, settings, budgets, exps, recsCount, prevCatTotals, monthBudget, incomeRows] = await Promise.all([
       db.select().from(categories).where(eq(categories.userId, userId)),
       db.select().from(userSettings).where(eq(userSettings.userId, userId)).limit(1),
       db.select().from(categoryBudgets).where(eq(categoryBudgets.userId, userId)),
@@ -93,6 +93,11 @@ export async function GET(request: Request) {
         .from(monthlyBudgets)
         .where(and(eq(monthlyBudgets.userId, userId), eq(monthlyBudgets.month, currentMonth)))
         .limit(1),
+      // Przychody (tabela incomes) — fallback dla monthIncome, gdy brak
+      // wpisu w monthly_budgets; normalizowane do kwoty miesięcznej
+      db.select({ amount: incomes.amount, period: incomes.period })
+        .from(incomes)
+        .where(and(eq(incomes.userId, userId), eq(incomes.isActive, true))),
     ])
 
     const prevByCategory: Record<string, number> = {}
@@ -115,7 +120,18 @@ export async function GET(request: Request) {
       prevTotal,
       prevByCategory,
       receiptsCount: recsCount[0]?.count ?? 0,
-      monthIncome: monthBudget[0]?.totalIncome ? parseFloat(monthBudget[0].totalIncome) : null,
+      monthIncome: monthBudget[0]?.totalIncome
+        ? parseFloat(monthBudget[0].totalIncome)
+        : (() => {
+            const total = incomeRows.reduce((s, r) => {
+              const n = parseFloat(r.amount || '0')
+              if (r.period === 'weekly') return s + (n * 52) / 12
+              if (r.period === 'yearly') return s + n / 12
+              if (r.period === 'oneoff') return s
+              return s + n
+            }, 0)
+            return total > 0 ? Math.round(total * 100) / 100 : null
+          })(),
       savingsTarget: monthBudget[0]?.savingsTarget ? parseFloat(monthBudget[0].savingsTarget) : null,
     }, {
       headers: {

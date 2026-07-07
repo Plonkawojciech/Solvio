@@ -431,6 +431,49 @@ export const incomes = pgTable('incomes', {
   index('idx_incomes_user_id').on(t.userId),
 ])
 
+/**
+ * Subskrypcje zarządzane ręcznie — Wojtek chce sam oznaczać co jest
+ * płatnością cykliczną, edytować, PAUZOWAĆ (zamiast usuwać) i widzieć
+ * sumy miesięczne/roczne. Osobno od heurystycznej detekcji w
+ * /api/personal/subscriptions, która pozostaje jako "wykryte".
+ */
+export const subscriptions = pgTable('subscriptions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: text('user_id').notNull(),
+  name: varchar('name', { length: 120 }).notNull(),
+  vendor: varchar('vendor', { length: 120 }),
+  amount: decimal('amount', { precision: 12, scale: 2 }).notNull(),
+  currency: varchar('currency', { length: 3 }).default('PLN').notNull(),
+  /// 'weekly' | 'monthly' | 'quarterly' | 'yearly'
+  interval: varchar('interval', { length: 12 }).default('monthly').notNull(),
+  categoryId: uuid('category_id'),
+  /// 'active' | 'paused' — pauza wyłącza z sum, ale zachowuje historię
+  status: varchar('status', { length: 10 }).default('active').notNull(),
+  startDate: date('start_date'),
+  nextDueDate: date('next_due_date'),
+  notes: text('notes'),
+  emoji: varchar('emoji', { length: 10 }).default('🔁'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  index('idx_subscriptions_user_id').on(t.userId),
+])
+
+/**
+ * Historia cen subskrypcji — podwyżka (np. iCloud 15→25 zł) tworzy nowy
+ * wpis; KOREKTA pomyłki (150 zamiast 15) nadpisuje ostatni wpis bez
+ * śladu, bo błąd wpisu to nie zmiana ceny.
+ */
+export const subscriptionPriceHistory = pgTable('subscription_price_history', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  subscriptionId: uuid('subscription_id').notNull().references(() => subscriptions.id, { onDelete: 'cascade' }),
+  amount: decimal('amount', { precision: 12, scale: 2 }).notNull(),
+  effectiveFrom: date('effective_from').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  index('idx_sub_price_history_sub_id').on(t.subscriptionId),
+])
+
 export const financialChallenges = pgTable('financial_challenges', {
   id: uuid('id').primaryKey().defaultRandom(),
   userId: text('user_id').notNull(),

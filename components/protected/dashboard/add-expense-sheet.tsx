@@ -214,6 +214,31 @@ interface AddExpenseSheetProps {
   allExpenses?: ExpenseForSuggestion[]
 }
 
+/* Auto-tagowanie: kategoria → tag oraz słowa kluczowe sklepu/tytułu → tag.
+   Użytkownik nie musi klikać — tagi wypełniają się same, ale można je
+   poprawić (wtedy automat przestaje nadpisywać). */
+const AUTO_TAG_BY_CATEGORY: Record<string, string> = {
+  'Jedzenie': 'jedzenie', 'Food': 'jedzenie',
+  'Zakupy spożywcze': 'zakupy', 'Groceries': 'zakupy',
+  'Zdrowie': 'zdrowie', 'Health': 'zdrowie',
+  'Transport': 'transport',
+  'Zakupy': 'zakupy', 'Shopping': 'zakupy',
+  'Elektronika': 'elektronika', 'Electronics': 'elektronika',
+  'Dom i ogród': 'dom', 'Home & Garden': 'dom',
+  'Rozrywka': 'rozrywka', 'Entertainment': 'rozrywka',
+  'Rachunki i media': 'dom', 'Bills & Utilities': 'dom',
+}
+
+const AUTO_TAG_RULES: [RegExp, string][] = [
+  [/biedronka|lidl|kaufland|auchan|carrefour|żabka|zabka|aldi|netto|dino|rossmann/, 'zakupy'],
+  [/netflix|spotify|icloud|youtube|hbo|disney|prime|tidal|playstation|xbox|game pass/, 'subskrypcja'],
+  [/orlen|shell|circle k|moya|uber|bolt|freenow|pkp|ztm|mpk|parking|paliwo|benzyna/, 'transport'],
+  [/restauracj|pizzeri|pizza|kebab|sushi|mcdonald|kfc|burger|kawiarni|coffee|cafe|bistro/, 'wyjście'],
+  [/aptek|lekarz|dentyst|stomatolog|luxmed|medicover|siłowni|silowni|fitness/, 'zdrowie'],
+  [/czynsz|prąd|prad|gaz |woda|internet|energa|tauron|pge |t-mobile|orange|vectra/, 'dom'],
+  [/praca|biuro|służbow|sluzbow|delegacj|faktur/, 'praca'],
+]
+
 export function AddExpenseSheet({
   isOpen,
   onClose,
@@ -234,6 +259,9 @@ export function AddExpenseSheet({
   const [tags, setTags] = React.useState<string[]>([])
   const [tagInput, setTagInput] = React.useState('')
   const MAX_TAGS = 5
+  // Tagi dobierają się same z kategorii/sklepu/tytułu — dopóki użytkownik
+  // sam ich nie ruszy (wtedy przestajemy nadpisywać)
+  const tagsTouchedRef = React.useRef(false)
 
   // ── Merchant rules (auto-categorization) ─────────────────────────────────
   const [merchantRules, setMerchantRules] = React.useState<MerchantRule[]>([])
@@ -459,6 +487,7 @@ export function AddExpenseSheet({
       setFiles([])
       setTags([])
       setTagInput('')
+      tagsTouchedRef.current = false
       setCategoryAppliedByRule(null)
       onAction?.()
       onClose()
@@ -479,13 +508,31 @@ export function AddExpenseSheet({
   const addTag = (tag: string) => {
     const clean = tag.trim().toLowerCase()
     if (!clean || tags.includes(clean) || tags.length >= MAX_TAGS) return
+    tagsTouchedRef.current = true
     setTags(prev => [...prev, clean])
     setTagInput('')
   }
 
   const removeTag = (tag: string) => {
+    tagsTouchedRef.current = true
     setTags(prev => prev.filter(t => t !== tag))
   }
+
+  // ── Auto-tagi ────────────────────────────────────────────────────────────
+  const watchedCategoryId = form.watch('category')
+  React.useEffect(() => {
+    if (tagsTouchedRef.current) return
+    const auto = new Set<string>()
+    const catName = categories.find(c => c.id === watchedCategoryId)?.name
+    if (catName && AUTO_TAG_BY_CATEGORY[catName]) auto.add(AUTO_TAG_BY_CATEGORY[catName])
+    const text = `${debouncedVendor} ${debouncedDesc}`.toLowerCase()
+    if (text.trim().length >= 3) {
+      for (const [re, tag] of AUTO_TAG_RULES) {
+        if (re.test(text)) auto.add(tag)
+      }
+    }
+    setTags(Array.from(auto).slice(0, MAX_TAGS))
+  }, [watchedCategoryId, debouncedVendor, debouncedDesc, categories])
 
   const handleTagKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' || e.key === ',') {
@@ -504,6 +551,7 @@ export function AddExpenseSheet({
     setDebouncedDesc('')
     setTags([])
     setTagInput('')
+    tagsTouchedRef.current = false
     setCategoryAppliedByRule(null)
     onClose()
   }
@@ -702,7 +750,11 @@ export function AddExpenseSheet({
 
               {/* Tags input */}
               <div className="space-y-2">
-                <FormLabel suppressHydrationWarning>{t('expenses.tags')}</FormLabel>
+                <FormLabel suppressHydrationWarning>{t('expenses.tags')}
+                  <span className="ml-2 text-[10px] font-medium text-muted-foreground normal-case">
+                    {'· auto'}
+                  </span>
+                </FormLabel>
                 {/* Suggested tags */}
                 <div className="flex flex-wrap gap-1.5">
                   {(['praca', 'dom', 'jedzenie', 'transport', 'wyjście', 'subskrypcja'] as const).map((suggestion) => (

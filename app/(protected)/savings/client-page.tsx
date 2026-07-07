@@ -28,6 +28,10 @@ import {
   TrendingUp,
   ChevronDown,
   ChevronUp,
+  Pencil,
+  Pause,
+  Play,
+  Trash2,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
@@ -71,6 +75,27 @@ interface Challenge {
   currentProgress: string | null
   startDate: string
   endDate: string
+}
+
+interface Income {
+  id: string
+  name: string
+  amount: string
+  period: 'monthly' | 'weekly' | 'yearly' | 'oneoff'
+  emoji: string | null
+  isActive: boolean
+}
+
+/// Przeliczenie przychodu na kwotę miesięczną
+function incomeMonthly(inc: Income): number {
+  const n = parseFloat(inc.amount || '0')
+  if (!inc.isActive) return 0
+  switch (inc.period) {
+    case 'weekly': return n * 52 / 12
+    case 'yearly': return n / 12
+    case 'oneoff': return 0
+    default: return n
+  }
 }
 
 type TabKey = 'goals' | 'budget' | 'challenges' | 'deals'
@@ -223,6 +248,171 @@ function ChallengeMiniCard({ challenge }: { challenge: Challenge }) {
 }
 
 // ---- Main Hub ----
+/* ── Przychody: dodawanie / edycja / wstrzymanie / usuwanie ──
+   Wojtek: "skoro mamy wydatki powinniśmy mieć też przychody" — stąd
+   pełny CRUD tutaj, a bilans i projekcje liczą się z tych wpisów. */
+function IncomeManager({
+  incomes: list, pl, onChanged, formatAmount,
+}: {
+  incomes: Income[]
+  pl: boolean
+  onChanged: () => void
+  formatAmount: (n: number) => string
+}) {
+  const [name, setName] = useState('')
+  const [amount, setAmount] = useState('')
+  const [period, setPeriod] = useState<Income['period']>('monthly')
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+
+  const PERIOD_LABEL: Record<Income['period'], string> = {
+    monthly: pl ? 'mies.' : 'mo',
+    weekly: pl ? 'tyg.' : 'wk',
+    yearly: pl ? 'rok' : 'yr',
+    oneoff: pl ? 'jednorazowo' : 'one-off',
+  }
+
+  function startEdit(inc: Income) {
+    setEditingId(inc.id)
+    setName(inc.name)
+    setAmount(inc.amount)
+    setPeriod(inc.period)
+  }
+
+  function resetForm() {
+    setEditingId(null)
+    setName('')
+    setAmount('')
+    setPeriod('monthly')
+  }
+
+  async function save() {
+    const num = parseFloat(amount.replace(',', '.'))
+    if (!name.trim() || !num || num <= 0) {
+      toast.error(pl ? 'Podaj nazwę i kwotę.' : 'Enter a name and amount.')
+      return
+    }
+    setSaving(true)
+    try {
+      const res = await fetch('/api/personal/incomes', {
+        method: editingId ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editingId
+          ? { id: editingId, name: name.trim(), amount: num, period }
+          : { name: name.trim(), amount: num, period }),
+      })
+      if (!res.ok) throw new Error()
+      toast.success(editingId ? (pl ? 'Zapisano' : 'Saved') : (pl ? 'Przychód dodany' : 'Income added'))
+      resetForm()
+      onChanged()
+    } catch {
+      toast.error(pl ? 'Nie udało się zapisać.' : 'Save failed.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function toggleActive(inc: Income) {
+    await fetch('/api/personal/incomes', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: inc.id, isActive: !inc.isActive }),
+    })
+    onChanged()
+  }
+
+  async function remove(inc: Income) {
+    if (!confirm(pl ? `Usunąć przychód „${inc.name}"?` : `Delete income "${inc.name}"?`)) return
+    await fetch('/api/personal/incomes', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: inc.id }),
+    })
+    onChanged()
+  }
+
+  const monthlyTotal = list.reduce((s, inc) => s + incomeMonthly(inc), 0)
+
+  return (
+    <Card>
+      <CardContent className="p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <p className="text-sm font-extrabold" suppressHydrationWarning>
+            {pl ? 'Przychody' : 'Income'}
+          </p>
+          <p className="text-xs text-muted-foreground tabular-nums">
+            {pl ? 'razem' : 'total'}: <b className="text-emerald-600 dark:text-emerald-400">{formatAmount(monthlyTotal)}/{pl ? 'mies.' : 'mo'}</b>
+          </p>
+        </div>
+
+        {list.length === 0 && (
+          <p className="text-xs text-muted-foreground">
+            {pl
+              ? 'Dodaj pensję / zlecenia / wynajem — zobaczysz bilans miesiąca i projekcje celów.'
+              : 'Add salary / freelance / rent — you will see the month balance and goal projections.'}
+          </p>
+        )}
+
+        {list.map((inc) => (
+          <div key={inc.id} className={cn('flex items-center gap-2 text-sm', !inc.isActive && 'opacity-50')}>
+            <span>{inc.emoji || '💼'}</span>
+            <span className="flex-1 font-medium truncate">
+              {inc.name}
+              {!inc.isActive && <span className="ml-1.5 text-[10px] text-muted-foreground">({pl ? 'wstrzymany' : 'paused'})</span>}
+            </span>
+            <span className="tabular-nums font-bold">{formatAmount(parseFloat(inc.amount))}/{PERIOD_LABEL[inc.period]}</span>
+            <button className="p-1 text-muted-foreground hover:text-foreground" title={pl ? 'Edytuj' : 'Edit'} onClick={() => startEdit(inc)}>
+              <Pencil className="h-3.5 w-3.5" />
+            </button>
+            <button className="p-1 text-muted-foreground hover:text-foreground" title={inc.isActive ? (pl ? 'Wstrzymaj' : 'Pause') : (pl ? 'Wznów' : 'Resume')} onClick={() => toggleActive(inc)}>
+              {inc.isActive ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
+            </button>
+            <button className="p-1 text-muted-foreground hover:text-destructive" title={pl ? 'Usuń' : 'Delete'} onClick={() => remove(inc)}>
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        ))}
+
+        {/* Formularz dodawania / edycji */}
+        <div className="flex flex-wrap items-end gap-2 pt-2 border-t border-dashed border-border">
+          <div className="flex-1 min-w-[120px]">
+            <input
+              className="w-full h-9 rounded-lg border border-input bg-card px-3 text-sm"
+              placeholder={pl ? 'np. Pensja' : 'e.g. Salary'}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+          </div>
+          <div className="w-24">
+            <input
+              className="w-full h-9 rounded-lg border border-input bg-card px-3 text-sm tabular-nums"
+              placeholder="5000"
+              inputMode="decimal"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+            />
+          </div>
+          <select
+            className="h-9 rounded-lg border border-input bg-card px-2 text-sm"
+            value={period}
+            onChange={(e) => setPeriod(e.target.value as Income['period'])}
+          >
+            <option value="monthly">{pl ? 'mies.' : 'monthly'}</option>
+            <option value="weekly">{pl ? 'tyg.' : 'weekly'}</option>
+            <option value="yearly">{pl ? 'rocznie' : 'yearly'}</option>
+          </select>
+          <Button size="sm" onClick={save} disabled={saving}>
+            {editingId ? (pl ? 'Zapisz' : 'Save') : (pl ? 'Dodaj' : 'Add')}
+          </Button>
+          {editingId && (
+            <Button size="sm" variant="ghost" onClick={resetForm}>{pl ? 'Anuluj' : 'Cancel'}</Button>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
 export default function SavingsHub() {
   const { t, lang, mounted } = useTranslation()
   const { isPersonal } = useProductType()
@@ -230,6 +420,7 @@ export default function SavingsHub() {
 
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<TabKey>('goals')
+  const [incomesList, setIncomesList] = useState<Income[]>([])
   const [currency, setCurrency] = useState('PLN')
 
   // Goals state
@@ -283,12 +474,17 @@ export default function SavingsHub() {
   const fetchData = useCallback(async () => {
     setLoading(true)
     try {
-      const [settingsRes, goalsRes, budgetRes, challengesRes] = await Promise.allSettled([
+      const [settingsRes, goalsRes, budgetRes, challengesRes, incomesRes] = await Promise.allSettled([
         fetch('/api/data/settings').then(r => r.json()),
         fetch('/api/personal/goals').then(r => r.json()),
         fetch(`/api/personal/budget?month=${new Date().toISOString().slice(0, 7)}`).then(r => r.json()),
         fetch('/api/personal/challenges').then(r => r.json()),
+        fetch('/api/personal/incomes').then(r => r.json()),
       ])
+
+      if (incomesRes.status === 'fulfilled') {
+        setIncomesList(incomesRes.value.incomes || [])
+      }
 
       if (settingsRes.status === 'fulfilled') {
         const s = settingsRes.value
@@ -374,6 +570,10 @@ export default function SavingsHub() {
   const activeChallenges = challenges.filter(c => c.isActive && !c.isCompleted)
   const budgetWithAmounts = budgetCategories.filter(c => c.budgeted > 0)
 
+  // Bilans miesiąca: suma aktywnych przychodów (znormalizowana do miesiąca) − wydatki
+  const monthlyIncome = incomesList.reduce((s, inc) => s + incomeMonthly(inc), 0)
+  const monthlySurplus = monthlyIncome - totalSpent
+
   const activeGoals = goals.filter(g => !g.isCompleted)
   const completedGoals = goals.filter(g => g.isCompleted)
   const filteredGoals = filterCategory ? activeGoals.filter(g => g.category === filterCategory) : activeGoals
@@ -405,7 +605,7 @@ export default function SavingsHub() {
 
       {/* KPI strip */}
       <motion.div custom={1} initial="hidden" animate="show" variants={fadeUp}>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
           <Card className="hover:shadow-md transition-shadow">
             <CardContent className="p-4 flex items-center gap-3">
               <div className="h-10 w-10 rounded-xl bg-emerald-500/10 flex items-center justify-center shrink-0">
@@ -421,6 +621,22 @@ export default function SavingsHub() {
           </Card>
 
           <Card className="hover:shadow-md transition-shadow">
+            <CardContent className="p-4 flex items-center gap-3">
+              <div className={cn('h-10 w-10 rounded-xl flex items-center justify-center shrink-0', monthlySurplus >= 0 ? 'bg-emerald-500/10' : 'bg-red-500/10')}>
+                <TrendingUp className={cn('h-5 w-5', monthlySurplus >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 rotate-180')} />
+              </div>
+              <div>
+                <p className="text-[11px] text-muted-foreground uppercase tracking-wide font-medium">
+                  {lang === 'pl' ? 'Bilans miesiąca' : 'Month balance'}
+                </p>
+                <p className={cn('text-lg font-bold tabular-nums', monthlySurplus >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500')}>
+                  {monthlyIncome > 0 ? `${monthlySurplus >= 0 ? '+' : ''}${formatAmount(monthlySurplus)}` : '—'}
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="hover:shadow-md transition-shadow col-span-2 sm:col-span-1">
             <CardContent className="p-4 flex items-center gap-3">
               <HealthGauge score={healthScore} />
               <div>
@@ -613,17 +829,40 @@ export default function SavingsHub() {
                           .replace('%currency', currency)}
                       </p>
                     </div>
+                    {monthlyIncome > 0 && monthlySurplus > 0 && (
+                      <div className="flex items-start gap-2 bg-background/50 rounded-lg px-3 py-2.5 border border-border/40">
+                        <Wallet className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
+                        <p className="text-sm leading-relaxed">
+                          {lang === 'pl'
+                            ? `Jesteś ~${formatAmount(monthlySurplus)} na plusie miesięcznie — tyle realnie możesz odkładać.`
+                            : `You run ~${formatAmount(monthlySurplus)} surplus per month — that's what you can realistically save.`}
+                        </p>
+                      </div>
+                    )}
                     {activeGoals.slice(0, 2).map(g => {
                       const target = parseFloat(g.targetAmount || '0')
                       const current = parseFloat(g.currentAmount || '0')
                       const pct = target > 0 ? (current / target) * 100 : 0
                       const onTrack = pct >= 50 || !g.deadline
+                      const remaining = target - current
+                      const monthsToGoal = monthlySurplus > 0 && remaining > 0 ? Math.ceil(remaining / monthlySurplus) : null
+                      const etaDate = monthsToGoal !== null
+                        ? new Date(new Date().getFullYear(), new Date().getMonth() + monthsToGoal, 1)
+                            .toLocaleDateString(lang === 'pl' ? 'pl-PL' : 'en-US', { month: 'short', year: 'numeric' })
+                        : null
                       return (
                         <div key={g.id} className="flex items-start gap-2 text-xs text-muted-foreground">
                           <span className="text-base">{g.emoji}</span>
                           <span>
                             {g.name} — {onTrack ? t('goals.onTrack') : t('goals.behindSchedule')}
                             {' '}({Math.round(pct)}%)
+                            {monthsToGoal !== null && (
+                              <span className="block text-[11px] text-emerald-700 dark:text-emerald-400 font-medium">
+                                {lang === 'pl'
+                                  ? `przy obecnym plusie uzbierasz za ~${monthsToGoal} mies. (${etaDate})`
+                                  : `at your current surplus you'll get there in ~${monthsToGoal} mo (${etaDate})`}
+                              </span>
+                            )}
                           </span>
                           <Badge variant="outline" className={cn('ml-auto text-[10px]', onTrack ? 'border-emerald-500/30 text-emerald-600' : 'border-amber-500/30 text-amber-600')}>
                             {onTrack ? '✓' : '!'}
@@ -747,6 +986,14 @@ export default function SavingsHub() {
                 </Button>
               </div>
             </div>
+
+            {/* Przychody */}
+            <IncomeManager
+              incomes={incomesList}
+              pl={lang === 'pl'}
+              onChanged={fetchData}
+              formatAmount={formatAmount}
+            />
 
             {/* Budget overview card */}
             <Card>
