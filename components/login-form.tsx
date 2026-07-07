@@ -10,6 +10,7 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 export function LoginForm() {
   const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [demoLoading, setDemoLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -24,14 +25,28 @@ export function LoginForm() {
       setError(pl ? 'Wprowadź prawidłowy adres e-mail.' : 'Please enter a valid email address.')
       return
     }
+    if (password.length < 8) {
+      setError(pl ? 'Hasło musi mieć co najmniej 8 znaków.' : 'Password must be at least 8 characters.')
+      return
+    }
     setLoading(true)
     setError(null)
     try {
       const res = await fetch('/api/auth/session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim() }),
+        body: JSON.stringify({ email: email.trim(), password }),
       })
+      if (res.status === 401) {
+        const data = await res.json().catch(() => null)
+        setError(
+          data?.code === 'invalid_credentials'
+            ? (pl ? 'Nieprawidłowy e-mail lub hasło.' : 'Invalid email or password.')
+            : (pl ? 'Hasło jest wymagane.' : 'Password is required.')
+        )
+        setLoading(false)
+        return
+      }
       if (!res.ok) throw new Error('Failed')
       localStorage.setItem('solvio_email', email.trim())
       window.location.href = '/dashboard'
@@ -86,6 +101,30 @@ export function LoginForm() {
           />
         </div>
 
+        <div className="space-y-1.5">
+          <Label htmlFor="password">{pl ? 'Hasło' : 'Password'}</Label>
+          <Input
+            id="password"
+            type="password"
+            placeholder="••••••••"
+            autoComplete="current-password"
+            required
+            aria-required="true"
+            minLength={8}
+            value={password}
+            onChange={(e) => {
+              setPassword(e.target.value)
+              if (error) setError(null)
+            }}
+            disabled={loading}
+          />
+          <p className="text-[11px] text-muted-foreground leading-snug">
+            {pl
+              ? 'Nowy adres? Pierwsze logowanie utworzy konto z tym hasłem.'
+              : 'New address? Your first sign-in creates the account with this password.'}
+          </p>
+        </div>
+
         {error && (
           <div
             id="email-error"
@@ -100,7 +139,7 @@ export function LoginForm() {
         <Button
           type="submit"
           className="w-full"
-          disabled={loading || !isEmailValid}
+          disabled={loading || !isEmailValid || password.length < 8}
           aria-label={pl ? 'Zaloguj się e-mailem' : 'Sign in with email'}
         >
           {loading ? (

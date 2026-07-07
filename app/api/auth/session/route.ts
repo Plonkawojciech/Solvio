@@ -1,14 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { emailToUserId, SESSION_COOKIE, buildSignedSession } from '@/lib/session'
 import { db } from '@/lib/db'
-import { userSettings } from '@/lib/db/schema'
+import { userSettings, userCredentials } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import { rateLimit } from '@/lib/rate-limit'
 import { ensureUserSeeded } from '@/lib/db/seed-user'
+import { hashPassword, verifyPassword } from '@/lib/password'
 import { z } from 'zod'
+
+// Konto demo — jedyne logowanie bez hasła (publiczna piaskownica)
+const DEMO_EMAIL = 'demo@solvio.app'
 
 const SessionLoginSchema = z.object({
   email: z.string().email('Valid email is required'),
+  password: z.string().min(8, 'Password must be at least 8 characters').max(200).optional(),
   lang: z.enum(['pl', 'en']).optional(),
 })
 
@@ -35,6 +40,34 @@ export async function POST(req: NextRequest) {
   try {
     const normalizedEmail = parsed.data.email.trim().toLowerCase()
     const userId = emailToUserId(normalizedEmail)
+
+    // ── Hasła ──
+    // Demo loguje się bez hasła; każde inne konto wymaga hasła:
+    //  - email ma już poświadczenia → weryfikacja hasła,
+    //  - email bez poświadczeń → pierwsze logowanie USTAWIA hasło (zajęcie konta).
+    if (normalizedEmail !== DEMO_EMAIL) {
+      const password = parsed.data.password
+      if (!password) {
+        return NextResponse.json({ error: 'Password required', code: 'password_required' }, { status: 401 })
+      }
+      const [cred] = await db
+        .select({ passwordHash: userCredentials.passwordHash })
+        .from(userCredentials)
+        .where(eq(userCredentials.userId, userId))
+        .limit(1)
+      if (cred) {
+        const ok = await verifyPassword(password, cred.passwordHash)
+        if (!ok) {
+          return NextResponse.json({ error: 'Invalid email or password', code: 'invalid_credentials' }, { status: 401 })
+        }
+      } else {
+        const passwordHash = await hashPassword(password)
+        await db
+          .insert(userCredentials)
+          .values({ userId, email: normalizedEmail, passwordHash })
+          .onConflictDoNothing()
+      }
+    }
 
     // Fetch productType from user_settings (defaults to 'personal' if not found)
     let productType = 'personal'

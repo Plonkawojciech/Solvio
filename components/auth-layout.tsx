@@ -84,7 +84,7 @@ export function AuthLayout({ children }: { children: React.ReactNode }) {
         </div>
 
         <p className="font-mono text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
-          {pl ? '// 500+ AKTYWNYCH UŻYTKOWNIKÓW' : '// 500+ ACTIVE USERS'}
+          {pl ? '500+ aktywnych użytkowników' : '500+ active users'}
         </p>
       </div>
 

@@ -1,5 +1,15 @@
 import { pgTable, uuid, text, decimal, date, timestamp, boolean, jsonb, varchar, unique, index, integer, uniqueIndex } from 'drizzle-orm/pg-core'
 
+// Poświadczenia logowania — hasło ustawiane przy pierwszym logowaniu na dany
+// email ("zajęcie" konta). Konto demo nigdy nie dostaje wpisu tutaj.
+export const userCredentials = pgTable('user_credentials', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: text('user_id').unique().notNull(),
+  email: text('email').unique().notNull(),
+  passwordHash: text('password_hash').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
 export const userSettings = pgTable('user_settings', {
   id: uuid('id').primaryKey().defaultRandom(),
   userId: text('user_id').unique().notNull(),
