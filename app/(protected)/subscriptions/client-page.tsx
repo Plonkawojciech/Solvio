@@ -1,13 +1,12 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { useState, useEffect, useCallback, useMemo, Fragment } from 'react'
+import { motion } from 'framer-motion'
 import { useTranslation } from '@/lib/i18n'
 import { useProductType } from '@/hooks/use-product-type'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { Card, CardContent } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -18,8 +17,8 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import {
-  Repeat, CalendarClock, TrendingUp, ListChecks, AlertTriangle,
-  Plus, Pencil, Pause, Play, Trash2, History, Loader2,
+  Repeat, AlertTriangle,
+  Plus, Pencil, Trash2, History, Loader2, ChevronLeft, ChevronRight,
 } from 'lucide-react'
 
 /* ── Typy ── */
@@ -71,6 +70,56 @@ const DETECTED_TO_INTERVAL: Record<DetectedSub['frequency'], ManagedSub['interva
   quarterly: 'quarterly',
   annual: 'yearly',
   irregular: 'monthly',
+}
+
+/* ── Daty: następne wystąpienia płatności ── */
+
+function addInterval(d: Date, interval: ManagedSub['interval']): Date {
+  const n = new Date(d)
+  if (interval === 'weekly') n.setDate(n.getDate() + 7)
+  else if (interval === 'monthly') n.setMonth(n.getMonth() + 1)
+  else if (interval === 'quarterly') n.setMonth(n.getMonth() + 3)
+  else n.setFullYear(n.getFullYear() + 1)
+  return n
+}
+
+function startOfToday(): Date {
+  const t = new Date()
+  t.setHours(0, 0, 0, 0)
+  return t
+}
+
+/// Najbliższa płatność (≥ dziś); null gdy pauza albo brak daty
+function nextOccurrence(sub: ManagedSub): Date | null {
+  if (sub.status !== 'active' || !sub.nextDueDate) return null
+  const today = startOfToday()
+  let d = new Date(sub.nextDueDate + 'T00:00:00')
+  let guard = 0
+  while (d < today && guard++ < 400) d = addInterval(d, sub.interval)
+  return d
+}
+
+/// Wszystkie płatności subskrypcji w danym miesiącu kalendarzowym
+function occurrencesInMonth(sub: ManagedSub, year: number, month: number): Date[] {
+  if (sub.status !== 'active' || !sub.nextDueDate) return []
+  const monthStart = new Date(year, month, 1)
+  const monthEnd = new Date(year, month + 1, 1)
+  let d = new Date(sub.nextDueDate + 'T00:00:00')
+  let guard = 0
+  // cofnąć się nie możemy — bazą jest nextDueDate; roluj do przodu do początku miesiąca
+  while (d < monthStart && guard++ < 400) d = addInterval(d, sub.interval)
+  const out: Date[] = []
+  while (d < monthEnd && guard++ < 450) {
+    out.push(new Date(d))
+    d = addInterval(d, sub.interval)
+  }
+  return out
+}
+
+/// Czy ostatnia zmiana ceny była podwyżką
+function priceWentUp(sub: ManagedSub): boolean {
+  if (sub.priceHistory.length < 2) return false
+  return parseFloat(sub.priceHistory[0].amount) > parseFloat(sub.priceHistory[1].amount)
 }
 
 const fadeUp = {
@@ -241,6 +290,22 @@ function SubscriptionDialog({
   )
 }
 
+/* ── Przełącznik aktywna/pauza w wierszu księgi ── */
+
+function PauseSwitch({ on, onToggle, pl }: { on: boolean; onToggle: () => void; pl: boolean }) {
+  return (
+    <button
+      role="switch"
+      aria-checked={on}
+      title={on ? (pl ? 'Wstrzymaj' : 'Pause') : (pl ? 'Wznów' : 'Resume')}
+      onClick={onToggle}
+      className={`relative h-[18px] w-[34px] rounded-full transition-colors ${on ? 'bg-[#3f9c74]' : 'bg-muted-foreground/30'}`}
+    >
+      <span className={`absolute top-[2px] h-[14px] w-[14px] rounded-full bg-white shadow transition-all ${on ? 'left-[18px]' : 'left-[2px]'}`} />
+    </button>
+  )
+}
+
 /* ── Strona ── */
 
 export default function SubscriptionsClient() {
@@ -256,6 +321,11 @@ export default function SubscriptionsClient() {
   const [currency, setCurrency] = useState('PLN')
   const [dialog, setDialog] = useState<DialogState>({ open: false, editing: null })
   const [expandedHistory, setExpandedHistory] = useState<string | null>(null)
+  // Wyświetlany miesiąc kalendarza (rok, miesiąc 0-11)
+  const [calMonth, setCalMonth] = useState(() => {
+    const n = new Date()
+    return { y: n.getFullYear(), m: n.getMonth() }
+  })
 
   useEffect(() => {
     if (mounted && !isPersonal) router.push('/dashboard')
@@ -290,11 +360,49 @@ export default function SubscriptionsClient() {
 
   useEffect(() => { refresh() }, [refresh])
 
+  /* Pochodne: kalendarz, kolejka najbliższych, "zejdzie do końca miesiąca" */
+  const derived = useMemo(() => {
+    const today = startOfToday()
+
+    // Płatności w wyświetlanym miesiącu (dzień → wpisy)
+    const byDay = new Map<number, { sub: ManagedSub; date: Date }[]>()
+    for (const sub of managed) {
+      for (const d of occurrencesInMonth(sub, calMonth.y, calMonth.m)) {
+        const arr = byDay.get(d.getDate()) || []
+        arr.push({ sub, date: d })
+        byDay.set(d.getDate(), arr)
+      }
+    }
+
+    // Kolejka najbliższych (niezależnie od wyświetlanego miesiąca)
+    const upcoming = managed
+      .map((sub) => ({ sub, next: nextOccurrence(sub) }))
+      .filter((x): x is { sub: ManagedSub; next: Date } => x.next !== null)
+      .sort((a, b) => a.next.getTime() - b.next.getTime())
+
+    // Ile jeszcze zejdzie do końca BIEŻĄCEGO miesiąca
+    let remainingThisMonth = 0
+    const now = new Date()
+    for (const sub of managed) {
+      for (const d of occurrencesInMonth(sub, now.getFullYear(), now.getMonth())) {
+        if (d >= today) remainingThisMonth += parseFloat(sub.amount)
+      }
+    }
+
+    const withoutDate = managed.filter((s) => s.status === 'active' && !s.nextDueDate).length
+
+    return { byDay, upcoming, remainingThisMonth, withoutDate }
+  }, [managed, calMonth])
+
   if (!mounted) return null
 
   const fmt = (n: number) =>
     n.toLocaleString(pl ? 'pl-PL' : 'en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-  const fmtDate = (s: string | null) => (s ? new Date(s).toLocaleDateString(pl ? 'pl-PL' : 'en-US') : '—')
+  const fmtDate = (d: Date | string | null) => {
+    if (!d) return '—'
+    const dt = typeof d === 'string' ? new Date(d) : d
+    return dt.toLocaleDateString(pl ? 'pl-PL' : 'en-US', { day: 'numeric', month: 'short' })
+  }
 
   const INTERVAL_LABEL: Record<ManagedSub['interval'], string> = {
     weekly: pl ? 'co tydzień' : 'weekly',
@@ -332,14 +440,25 @@ export default function SubscriptionsClient() {
     d => !managed.some(m => m.name.toLowerCase() === d.title.toLowerCase() || (d.vendor && m.vendor?.toLowerCase() === d.vendor.toLowerCase()))
   )
 
-  const kpis = [
-    { icon: CalendarClock, label: pl ? 'Miesięcznie' : 'Monthly', value: `${fmt(totals.monthly)} ${currency}`, color: 'text-primary' },
-    { icon: TrendingUp, label: pl ? 'Rocznie' : 'Yearly', value: `${fmt(totals.yearly)} ${currency}`, color: 'text-[#b3402c] dark:text-red-400' },
-    { icon: ListChecks, label: pl ? 'Aktywne' : 'Active', value: pausedCount > 0 ? `${activeCount} (+${pausedCount} ⏸)` : String(activeCount), color: 'text-foreground' },
-  ]
+  /* Kalendarz wyświetlanego miesiąca */
+  const daysInCal = new Date(calMonth.y, calMonth.m + 1, 0).getDate()
+  const firstDow = (new Date(calMonth.y, calMonth.m, 1).getDay() + 6) % 7 // pon=0
+  const isCurrentCalMonth = calMonth.y === new Date().getFullYear() && calMonth.m === new Date().getMonth()
+  const todayDate = new Date().getDate()
+  const calLabel = new Date(calMonth.y, calMonth.m, 1).toLocaleDateString(pl ? 'pl-PL' : 'en-US', { month: 'long', year: 'numeric' })
+  const DOW = pl ? ['Pn', 'Wt', 'Śr', 'Cz', 'Pt', 'So', 'Nd'] : ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su']
+
+  const daysUntil = (d: Date) => Math.round((d.getTime() - startOfToday().getTime()) / 86_400_000)
+  const daysUntilLabel = (n: number) =>
+    n === 0 ? (pl ? 'dziś' : 'today') : n === 1 ? (pl ? 'jutro' : 'tomorrow') : pl ? `za ${n} dni` : `in ${n} days`
+
+  const sortedForLedger = [...managed].sort((a, b) => {
+    if (a.status !== b.status) return a.status === 'active' ? -1 : 1
+    return parseFloat(b.amount) * MONTHLY_FACTOR[b.interval] - parseFloat(a.amount) * MONTHLY_FACTOR[a.interval]
+  })
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-5">
       {/* Nagłówek */}
       <motion.div custom={0} initial="hidden" animate="show" variants={fadeUp} className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-col gap-1">
@@ -357,131 +476,238 @@ export default function SubscriptionsClient() {
 
       {/* KPI */}
       <motion.div custom={1} initial="hidden" animate="show" variants={fadeUp}>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          {kpis.map((kpi, i) => (
-            <Card key={i}>
-              <CardContent className="p-4">
-                <p className="text-xs font-bold text-muted-foreground flex items-center gap-1.5 uppercase tracking-wide">
-                  <kpi.icon className="h-3.5 w-3.5" />
-                  {kpi.label}
-                </p>
-                <div className={`mt-1 text-xl font-extrabold tabular-nums ${kpi.color}`}>{kpi.value}</div>
-              </CardContent>
-            </Card>
-          ))}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <Card>
+            <CardContent className="p-4">
+              <p className="nb-label">{pl ? 'Miesięcznie' : 'Monthly'}</p>
+              <div className="mt-1 text-xl font-extrabold tabular-nums text-primary">{fmt(totals.monthly)} {currency}</div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <p className="nb-label">{pl ? 'Rocznie' : 'Yearly'}</p>
+              <div className="mt-1 text-xl font-extrabold tabular-nums text-[#b3402c] dark:text-red-400">{fmt(totals.yearly)} {currency}</div>
+            </CardContent>
+          </Card>
+          <Card className="border-primary/40">
+            <CardContent className="p-4">
+              <p className="nb-label">{pl ? 'Do końca miesiąca zejdzie' : 'Left to pay this month'}</p>
+              <div className="mt-1 text-xl font-extrabold tabular-nums">{fmt(derived.remainingThisMonth)} {currency}</div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <p className="nb-label">{pl ? 'Aktywne' : 'Active'}</p>
+              <div className="mt-1 text-xl font-extrabold tabular-nums">
+                {activeCount}{pausedCount > 0 && <span className="text-sm text-muted-foreground font-bold"> (+{pausedCount} ⏸)</span>}
+              </div>
+            </CardContent>
+          </Card>
         </div>
       </motion.div>
 
-      {/* Zarządzane subskrypcje */}
-      <motion.div custom={2} initial="hidden" animate="show" variants={fadeUp} className="space-y-3">
-        {!loading && managed.length === 0 && (
+      {/* Kalendarz + najbliższe płatności */}
+      <motion.div custom={2} initial="hidden" animate="show" variants={fadeUp}>
+        <div className="grid lg:grid-cols-[1.5fr_1fr] gap-4">
+          {/* Kalendarz — ukryty na mobile */}
+          <Card className="hidden md:block">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-1">
+                  <button onClick={() => setCalMonth(({ y, m }) => (m === 0 ? { y: y - 1, m: 11 } : { y, m: m - 1 }))}
+                    className="h-6 w-6 rounded-md flex items-center justify-center text-muted-foreground hover:bg-secondary" aria-label="previous month">
+                    <ChevronLeft className="h-4 w-4" />
+                  </button>
+                  <span className="text-sm font-extrabold capitalize min-w-[130px] text-center">{calLabel}</span>
+                  <button onClick={() => setCalMonth(({ y, m }) => (m === 11 ? { y: y + 1, m: 0 } : { y, m: m + 1 }))}
+                    className="h-6 w-6 rounded-md flex items-center justify-center text-muted-foreground hover:bg-secondary" aria-label="next month">
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                </div>
+                <span className="text-[11px] text-muted-foreground">{pl ? 'kwoty = dni płatności' : 'amounts = payment days'}</span>
+              </div>
+              <div className="grid grid-cols-7 gap-1">
+                {DOW.map((d) => (
+                  <div key={d} className="text-center text-[10px] font-extrabold uppercase text-muted-foreground">{d}</div>
+                ))}
+                {Array.from({ length: firstDow }).map((_, i) => <div key={`b${i}`} />)}
+                {Array.from({ length: daysInCal }).map((_, i) => {
+                  const day = i + 1
+                  const entries = derived.byDay.get(day) || []
+                  const isToday = isCurrentCalMonth && day === todayDate
+                  return (
+                    <div key={day} className={`min-h-[52px] rounded-lg bg-muted/40 p-1 text-[10px] ${isToday ? 'ring-2 ring-foreground' : ''}`}>
+                      <span className="font-extrabold text-muted-foreground">{day}</span>
+                      {entries.slice(0, 2).map((e, j) => (
+                        <div key={j} className="mt-0.5 truncate rounded-md bg-secondary px-1 py-px font-extrabold text-secondary-foreground tabular-nums" title={`${e.sub.name} — ${fmt(parseFloat(e.sub.amount))} ${e.sub.currency}`}>
+                          {e.sub.emoji || '🔁'} {Math.round(parseFloat(e.sub.amount))}
+                        </div>
+                      ))}
+                      {entries.length > 2 && <div className="text-[9px] text-muted-foreground">+{entries.length - 2}</div>}
+                    </div>
+                  )
+                })}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Najbliższe płatności */}
           <Card>
+            <CardContent className="p-4 flex flex-col gap-2.5">
+              <p className="nb-label">{pl ? 'Najbliższe płatności' : 'Upcoming payments'}</p>
+              {derived.upcoming.length === 0 && (
+                <p className="text-xs text-muted-foreground">
+                  {pl
+                    ? 'Brak zaplanowanych płatności — ustaw „najbliższą płatność" w edycji subskrypcji.'
+                    : 'No scheduled payments — set the "next payment" date when editing a subscription.'}
+                </p>
+              )}
+              {derived.upcoming.slice(0, 6).map(({ sub, next }) => {
+                const n = daysUntil(next)
+                return (
+                  <div key={sub.id} className="flex items-center gap-2.5 text-sm">
+                    <span className={`w-[64px] shrink-0 text-[11px] font-extrabold ${n <= 3 ? 'text-[#93591a] dark:text-amber-400' : 'text-muted-foreground'}`}>
+                      {daysUntilLabel(n)}
+                    </span>
+                    <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-muted text-sm shrink-0">{sub.emoji || '🔁'}</span>
+                    <span className="flex-1 truncate font-bold">{sub.name}</span>
+                    <span className="tabular-nums font-extrabold">{fmt(parseFloat(sub.amount))}</span>
+                  </div>
+                )
+              })}
+              <div className="mt-auto border-t border-dashed border-border pt-2.5 text-xs text-muted-foreground">
+                {pl ? 'Do końca miesiąca zejdzie jeszcze ' : 'Still leaving your account this month: '}
+                <b className="text-foreground tabular-nums">{fmt(derived.remainingThisMonth)} {currency}</b>
+                {derived.withoutDate > 0 && (
+                  <span className="block mt-1">
+                    {pl ? `${derived.withoutDate} subskrypcje bez daty — nie widać ich tutaj` : `${derived.withoutDate} subscriptions have no date and are not shown here`}
+                  </span>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </motion.div>
+
+      {/* Księga kosztów */}
+      <motion.div custom={3} initial="hidden" animate="show" variants={fadeUp}>
+        <Card className="overflow-hidden">
+          {loading && (
+            <CardContent className="p-8 text-center text-sm text-muted-foreground">…</CardContent>
+          )}
+          {!loading && managed.length === 0 && (
             <CardContent className="p-8 text-center text-sm text-muted-foreground">
               {pl
                 ? 'Nie masz jeszcze żadnych subskrypcji. Dodaj pierwszą albo skorzystaj z wykrytych poniżej.'
                 : 'No subscriptions yet. Add your first one or pick from the detected list below.'}
             </CardContent>
-          </Card>
-        )}
-
-        {managed.map((sub) => {
-          const monthlyEq = parseFloat(sub.amount) * MONTHLY_FACTOR[sub.interval]
-          const paused = sub.status === 'paused'
-          const historyOpen = expandedHistory === sub.id
-          return (
-            <Card key={sub.id} className={paused ? 'opacity-60' : ''}>
-              <CardContent className="p-4">
-                <div className="flex flex-wrap items-center gap-3">
-                  <span className="text-xl shrink-0">{sub.emoji || '🔁'}</span>
-                  <div className="flex-1 min-w-[140px]">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="text-sm font-extrabold leading-tight">{sub.name}</p>
-                      {paused && (
-                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-muted text-muted-foreground">
-                          {pl ? 'Wstrzymana' : 'Paused'}
-                        </Badge>
-                      )}
-                    </div>
-                    <p className="text-[11px] text-muted-foreground">
-                      {INTERVAL_LABEL[sub.interval]}
-                      {sub.nextDueDate ? ` · ${pl ? 'następna' : 'next'}: ${fmtDate(sub.nextDueDate)}` : ''}
-                      {sub.notes ? ` · ${sub.notes}` : ''}
-                    </p>
-                  </div>
-
-                  <div className="text-right shrink-0">
-                    <p className="text-base font-extrabold tabular-nums">{fmt(parseFloat(sub.amount))} {sub.currency}</p>
-                    {sub.interval !== 'monthly' && (
-                      <p className="text-[11px] text-muted-foreground tabular-nums">≈ {fmt(monthlyEq)} {sub.currency}/{pl ? 'mies.' : 'mo'}</p>
-                    )}
-                  </div>
-
-                  <div className="flex items-center gap-1 shrink-0">
-                    {sub.priceHistory.length > 1 && (
-                      <Button variant="ghost" size="icon-sm" title={pl ? 'Historia cen' : 'Price history'}
-                        onClick={() => setExpandedHistory(historyOpen ? null : sub.id)}>
-                        <History className="h-4 w-4" />
-                      </Button>
-                    )}
-                    <Button variant="ghost" size="icon-sm" title={pl ? 'Edytuj' : 'Edit'}
-                      onClick={() => setDialog({ open: true, editing: sub })}>
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                    <Button variant="ghost" size="icon-sm" title={paused ? (pl ? 'Wznów' : 'Resume') : (pl ? 'Wstrzymaj' : 'Pause')}
-                      onClick={() => togglePause(sub)}>
-                      {paused ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
-                    </Button>
-                    <Button variant="ghost" size="icon-sm" className="text-muted-foreground hover:text-destructive" title={pl ? 'Usuń' : 'Delete'}
-                      onClick={() => remove(sub)}>
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-
-                {/* Historia cen */}
-                <AnimatePresence>
-                  {historyOpen && (
-                    <motion.div
-                      initial={{ height: 0, opacity: 0 }}
-                      animate={{ height: 'auto', opacity: 1 }}
-                      exit={{ height: 0, opacity: 0 }}
-                      className="overflow-hidden"
-                    >
-                      <div className="mt-3 pt-3 border-t border-dashed border-border space-y-1.5">
-                        <p className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
-                          {pl ? 'Historia cen' : 'Price history'}
-                        </p>
-                        {sub.priceHistory.map((h, i) => {
-                          const prev = sub.priceHistory[i + 1]
-                          const diff = prev ? parseFloat(h.amount) - parseFloat(prev.amount) : 0
-                          return (
-                            <div key={h.id} className="flex items-center gap-3 text-xs tabular-nums">
-                              <span className="text-muted-foreground w-24">{fmtDate(h.effectiveFrom)}</span>
-                              <span className="font-bold">{fmt(parseFloat(h.amount))} {sub.currency}</span>
-                              {prev && diff !== 0 && (
-                                <span className={`font-extrabold ${diff > 0 ? 'text-[#b3402c] dark:text-red-400' : 'text-[#1e6b2f] dark:text-emerald-400'}`}>
-                                  {diff > 0 ? '▲' : '▼'} {fmt(Math.abs(diff))}
-                                </span>
+          )}
+          {!loading && managed.length > 0 && (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-muted/40 text-left">
+                    <th className="px-4 py-2.5 nb-label font-extrabold">{pl ? 'Nazwa' : 'Name'}</th>
+                    <th className="px-3 py-2.5 nb-label font-extrabold">{pl ? 'Cykl' : 'Cycle'}</th>
+                    <th className="px-3 py-2.5 nb-label font-extrabold text-right">{pl ? 'Kwota' : 'Amount'}</th>
+                    <th className="px-3 py-2.5 nb-label font-extrabold text-right hidden sm:table-cell">/ {pl ? 'mies' : 'mo'}</th>
+                    <th className="px-3 py-2.5 nb-label font-extrabold text-right hidden sm:table-cell">/ {pl ? 'rok' : 'yr'}</th>
+                    <th className="px-3 py-2.5 nb-label font-extrabold hidden md:table-cell">{pl ? 'Następna' : 'Next'}</th>
+                    <th className="px-3 py-2.5 nb-label font-extrabold">{pl ? 'Aktywna' : 'Active'}</th>
+                    <th className="px-3 py-2.5"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedForLedger.map((sub) => {
+                    const paused = sub.status === 'paused'
+                    const monthlyEq = parseFloat(sub.amount) * MONTHLY_FACTOR[sub.interval]
+                    const next = nextOccurrence(sub)
+                    const historyOpen = expandedHistory === sub.id
+                    return (
+                      <Fragment key={sub.id}>
+                        <tr className={`border-t border-border/60 ${paused ? 'opacity-50' : ''}`}>
+                          <td className="px-4 py-2.5">
+                            <span className="flex items-center gap-2 font-bold">
+                              <span>{sub.emoji || '🔁'}</span>
+                              <span className="truncate max-w-[160px]">{sub.name}</span>
+                              {priceWentUp(sub) && (
+                                <span className="text-[10px] font-extrabold px-1.5 py-px rounded-full bg-[#fde3dc] text-[#b3402c] dark:bg-red-500/15 dark:text-red-400" title={pl ? 'Ostatnio podrożała' : 'Recently went up'}>▲</span>
                               )}
-                              {i === 0 && (
-                                <span className="text-[10px] text-muted-foreground">({pl ? 'obecna' : 'current'})</span>
+                            </span>
+                          </td>
+                          <td className="px-3 py-2.5 text-muted-foreground">{INTERVAL_LABEL[sub.interval]}</td>
+                          <td className="px-3 py-2.5 text-right font-extrabold tabular-nums">{fmt(parseFloat(sub.amount))}</td>
+                          <td className="px-3 py-2.5 text-right text-muted-foreground tabular-nums hidden sm:table-cell">{paused ? '—' : fmt(monthlyEq)}</td>
+                          <td className="px-3 py-2.5 text-right text-muted-foreground tabular-nums hidden sm:table-cell">{paused ? '—' : fmt(monthlyEq * 12)}</td>
+                          <td className="px-3 py-2.5 text-muted-foreground hidden md:table-cell">{paused ? '⏸' : fmtDate(next)}</td>
+                          <td className="px-3 py-2.5"><PauseSwitch on={!paused} onToggle={() => togglePause(sub)} pl={pl} /></td>
+                          <td className="px-3 py-2.5">
+                            <span className="flex items-center gap-0.5 justify-end">
+                              {sub.priceHistory.length > 1 && (
+                                <Button variant="ghost" size="icon-sm" title={pl ? 'Historia cen' : 'Price history'}
+                                  onClick={() => setExpandedHistory(historyOpen ? null : sub.id)}>
+                                  <History className="h-4 w-4" />
+                                </Button>
                               )}
-                            </div>
-                          )
-                        })}
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </CardContent>
-            </Card>
-          )
-        })}
+                              <Button variant="ghost" size="icon-sm" title={pl ? 'Edytuj' : 'Edit'}
+                                onClick={() => setDialog({ open: true, editing: sub })}>
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                              <Button variant="ghost" size="icon-sm" className="text-muted-foreground hover:text-destructive" title={pl ? 'Usuń' : 'Delete'}
+                                onClick={() => remove(sub)}>
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </span>
+                          </td>
+                        </tr>
+                        {historyOpen && (
+                          <tr className="border-t border-dashed border-border/60 bg-muted/20">
+                            <td colSpan={8} className="px-4 py-3">
+                              <p className="nb-label mb-1.5">{pl ? 'Historia cen' : 'Price history'}</p>
+                              <div className="space-y-1">
+                                {sub.priceHistory.map((h, i) => {
+                                  const prev = sub.priceHistory[i + 1]
+                                  const diff = prev ? parseFloat(h.amount) - parseFloat(prev.amount) : 0
+                                  return (
+                                    <div key={h.id} className="flex items-center gap-3 text-xs tabular-nums">
+                                      <span className="text-muted-foreground w-24">{fmtDate(h.effectiveFrom)}</span>
+                                      <span className="font-bold">{fmt(parseFloat(h.amount))} {sub.currency}</span>
+                                      {prev && diff !== 0 && (
+                                        <span className={`font-extrabold ${diff > 0 ? 'text-[#b3402c] dark:text-red-400' : 'text-[#1e6b2f] dark:text-emerald-400'}`}>
+                                          {diff > 0 ? '▲' : '▼'} {fmt(Math.abs(diff))}
+                                        </span>
+                                      )}
+                                      {i === 0 && <span className="text-[10px] text-muted-foreground">({pl ? 'obecna' : 'current'})</span>}
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
+                    )
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t-2 border-border bg-muted/40 font-extrabold">
+                    <td className="px-4 py-2.5">{activeCount} {pl ? 'aktywnych' : 'active'}</td>
+                    <td></td>
+                    <td></td>
+                    <td className="px-3 py-2.5 text-right tabular-nums hidden sm:table-cell">{fmt(totals.monthly)}</td>
+                    <td className="px-3 py-2.5 text-right tabular-nums hidden sm:table-cell">{fmt(totals.yearly)}</td>
+                    <td colSpan={3} className="px-3 py-2.5 text-muted-foreground font-semibold">{currency}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          )}
+        </Card>
       </motion.div>
 
       {/* Wykryte automatycznie */}
       {detectedNotAdded.length > 0 && (
-        <motion.div custom={3} initial="hidden" animate="show" variants={fadeUp} className="space-y-3">
+        <motion.div custom={4} initial="hidden" animate="show" variants={fadeUp} className="space-y-3">
           <div className="pt-2">
             <h2 className="text-sm font-extrabold uppercase tracking-wide text-muted-foreground">
               {pl ? 'Wykryte w Twoich wydatkach' : 'Detected in your expenses'}
