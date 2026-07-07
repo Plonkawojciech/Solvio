@@ -12,11 +12,10 @@ CREATE USER solvio WITH PASSWORD 'TU_SILNE_HASLO';
 CREATE DATABASE solvio OWNER solvio;
 ```
 
-Schemat wypychasz Drizzle'em (jednorazowo, z laptopa albo z kontenera):
-
-```bash
-DATABASE_URL="postgres://solvio:HASLO@HOST:5432/solvio" npx drizzle-kit push
-```
+**Tabele tworzą się same** — kontener przy każdym starcie odpala
+`drizzle-kit push` (patrz `docker-entrypoint.sh`): na pustej bazie tworzy
+schemat, na istniejącej dociąga tylko zmiany. Nie musisz nic robić ręcznie.
+Wyłączenie automatu: env `SKIP_DB_PUSH=1`.
 
 Aplikacja sama wykrywa zwykłego Postgresa (driver `pg`); Neona używa tylko dla
 URL-i `*.neon.tech` albo gdy ustawisz `DATABASE_PROVIDER=neon`.

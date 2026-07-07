@@ -35,11 +35,28 @@ ENV HOSTNAME=0.0.0.0
 
 RUN addgroup -S nodejs -g 1001 && adduser -S nextjs -u 1001
 
+# Mini-środowisko do migracji schematu przy starcie kontenera
+# (drizzle-kit push tworzy/aktualizuje tabele — patrz docker-entrypoint.sh)
+WORKDIR /migrate
+COPY package.json /tmp/app-package.json
+RUN npm init -y >/dev/null \
+  && npm install --no-audit --no-fund \
+       "drizzle-kit@$(node -p "require('/tmp/app-package.json').devDependencies['drizzle-kit']")" \
+       "drizzle-orm@$(node -p "require('/tmp/app-package.json').dependencies['drizzle-orm']")" \
+       "pg@$(node -p "require('/tmp/app-package.json').dependencies['pg']")" \
+  && rm /tmp/app-package.json \
+  && chown -R nextjs:nodejs /migrate
+COPY --chown=nextjs:nodejs drizzle.config.ts ./
+COPY --chown=nextjs:nodejs lib/db/schema.ts ./lib/db/schema.ts
+
+WORKDIR /app
 # standalone zawiera server.js + minimalny node_modules
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=builder --chown=nextjs:nodejs /app/public ./public
+COPY --chown=nextjs:nodejs docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
 
 USER nextjs
 EXPOSE 3000
-CMD ["node", "server.js"]
+CMD ["/docker-entrypoint.sh"]
