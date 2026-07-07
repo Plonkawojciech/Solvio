@@ -23,37 +23,20 @@ type Expense = {
   currency?: string
 }
 
-const CATEGORY_ICONS: Record<string, string> = {
-  Food: '🍽️',
-  Groceries: '🛒',
-  Health: '💊',
-  Transport: '🚗',
-  Shopping: '🛍️',
-  Electronics: '💻',
-  'Home & Garden': '🏡',
-  Entertainment: '🎬',
-  'Bills & Utilities': '📋',
-  Other: '📦',
-}
-
 function CategoryBadge({
   categoryId,
-  rawName,
   displayName,
 }: {
   categoryId: string
-  rawName: string
   displayName: string
 }) {
   // Color is determined by the stable category ID so the same category always
   // receives the same color across every component in the app.
   const colorClass = getCategoryBadgeClass(categoryId)
-  const icon = CATEGORY_ICONS[rawName] || '📦'
   return (
     <span
       className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${colorClass}`}
     >
-      <span>{icon}</span>
       <span>{displayName}</span>
     </span>
   )
@@ -96,12 +79,9 @@ export function RecentExpensesTable({
       <TableBody>
         {data.map((expense, index) => {
           const displayCategory = expense.category || ''
-          // Derive the English raw name for icon lookup; fall back to display name
-          const rawName =
-            Object.keys(CATEGORY_ICONS).find((k) => k === displayCategory) || displayCategory
-          // Use categoryId for stable color hashing; fall back to rawName so the
-          // color is still deterministic even if categoryId is missing.
-          const colorKey = expense.categoryId || rawName
+          // Use categoryId for stable color hashing; fall back to the display
+          // name so the color is still deterministic even without categoryId.
+          const colorKey = expense.categoryId || displayCategory
 
           return (
             <motion.tr
@@ -127,7 +107,6 @@ export function RecentExpensesTable({
                   <div className="mt-1 md:hidden">
                     <CategoryBadge
                       categoryId={colorKey}
-                      rawName={rawName}
                       displayName={displayCategory}
                     />
                   </div>
@@ -137,7 +116,6 @@ export function RecentExpensesTable({
                 {displayCategory ? (
                   <CategoryBadge
                     categoryId={colorKey}
-                    rawName={rawName}
                     displayName={displayCategory}
                   />
                 ) : (

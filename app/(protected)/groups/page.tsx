@@ -18,6 +18,7 @@ import {
   Clock,
 } from 'lucide-react'
 import { NewGroupSheet } from '@/components/protected/groups/new-group-sheet'
+import { AppIcon } from '@/lib/app-icons'
 import { QuickSplitSheet } from '@/components/protected/groups/quick-split-sheet'
 
 const MEMBER_COLORS = [
@@ -111,9 +112,9 @@ const MODE_BADGE_STYLES: Record<string, string> = {
   household: 'bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800',
 }
 
-const MODE_EMOJI: Record<string, string> = {
-  trip: '✈️',
-  household: '🏠',
+const MODE_ICON: Record<string, string> = {
+  trip: 'plane',
+  household: 'home',
 }
 
 export default function GroupsPage() {
@@ -283,9 +284,7 @@ export default function GroupsPage() {
                     <div className="flex items-start justify-between gap-3">
                       {/* Left: emoji + name + member count */}
                       <div className="flex items-center gap-3 flex-1 min-w-0">
-                        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-2xl">
-                          {group.emoji || '👥'}
-                        </div>
+                        <AppIcon value={group.emoji} fallback="globe" size="lg" chipClassName="bg-primary/10 text-primary" />
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-1.5">
                             <p className="font-semibold truncate leading-tight">{group.name}</p>
@@ -295,7 +294,7 @@ export default function GroupsPage() {
                                   MODE_BADGE_STYLES[group.mode] || ''
                                 }`}
                               >
-                                {MODE_EMOJI[group.mode] || ''}
+                                {MODE_ICON[group.mode] ? <AppIcon value={MODE_ICON[group.mode]} size="sm" chipClassName="bg-transparent text-current" /> : null}
                               </span>
                             )}
                           </div>
@@ -375,7 +374,7 @@ export default function GroupsPage() {
                   <Card className="overflow-hidden hover:shadow-sm transition-shadow">
                     <CardContent className="p-3">
                       <div className="flex items-center gap-2 mb-2">
-                        <span className="text-lg">{group.emoji || '👥'}</span>
+                        <AppIcon value={group.emoji} fallback="globe" size="sm" />
                         <span className="text-xs font-semibold truncate">{group.name}</span>
                       </div>
                       <p

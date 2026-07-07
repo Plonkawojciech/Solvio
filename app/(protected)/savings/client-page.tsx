@@ -32,10 +32,12 @@ import {
   Pause,
   Play,
   Trash2,
+  Check,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import { AppIcon } from '@/lib/app-icons'
 
 // ---- Types ----
 interface SavingsGoal {
@@ -107,14 +109,14 @@ const TABS: { key: TabKey; icon: typeof Target }[] = [
   { key: 'deals', icon: Tag },
 ]
 
-const CATEGORY_EMOJIS: Record<string, string> = {
-  electronics: '🎮',
-  travel: '✈️',
-  emergency: '🚨',
-  education: '📚',
-  car: '🚗',
-  home: '🏠',
-  custom: '🎁',
+const CATEGORY_ICONS: Record<string, string> = {
+  electronics: 'gamepad',
+  travel: 'plane',
+  emergency: 'umbrella',
+  education: 'book',
+  car: 'car',
+  home: 'home',
+  custom: 'gift',
 }
 
 // ---- Skeleton ----
@@ -184,9 +186,7 @@ function BudgetMiniRow({ cat, currency, locale }: { cat: CategoryBudget; currenc
 
   return (
     <div className="flex items-center gap-3 py-2">
-      <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0 text-sm">
-        {cat.icon || '📂'}
-      </div>
+      <AppIcon value={cat.icon} chipClassName="bg-primary/10 text-primary" />
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between text-sm mb-1">
           <span className="font-medium truncate">{cat.name}</span>
@@ -215,7 +215,7 @@ function ChallengeMiniCard({ challenge }: { challenge: Challenge }) {
     <div className="rounded-xl border bg-card p-3.5 hover:shadow-md hover:-translate-y-0.5 transition-all duration-300">
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">
-          <span className="text-lg">{challenge.emoji || '💪'}</span>
+          <AppIcon value={challenge.emoji} fallback="dumbbell" size="sm" />
           <span className="text-sm font-medium truncate max-w-[160px]">{challenge.name}</span>
         </div>
         <Badge
@@ -355,7 +355,7 @@ function IncomeManager({
 
         {list.map((inc) => (
           <div key={inc.id} className={cn('flex items-center gap-2 text-sm', !inc.isActive && 'opacity-50')}>
-            <span>{inc.emoji || '💼'}</span>
+            <AppIcon value={inc.emoji} fallback="briefcase" size="sm" />
             <span className="flex-1 font-medium truncate">
               {inc.name}
               {!inc.isActive && <span className="ml-1.5 text-[10px] text-muted-foreground">({pl ? 'wstrzymany' : 'paused'})</span>}
@@ -753,7 +753,7 @@ export default function SavingsHub() {
                 >
                   {t('goals.allCategories')}
                 </button>
-                {Object.entries(CATEGORY_EMOJIS).map(([key, emo]) => (
+                {Object.entries(CATEGORY_ICONS).map(([key, iconName]) => (
                   <button
                     key={key}
                     onClick={() => setFilterCategory(filterCategory === key ? null : key)}
@@ -762,7 +762,7 @@ export default function SavingsHub() {
                       filterCategory === key ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-muted/80 text-muted-foreground'
                     )}
                   >
-                    <span>{emo}</span>
+                    <AppIcon value={iconName} size="sm" chipClassName="bg-transparent text-current" />
                     {t(`goals.category.${key}` as Parameters<typeof t>[0])}
                   </button>
                 ))}
@@ -852,7 +852,7 @@ export default function SavingsHub() {
                         : null
                       return (
                         <div key={g.id} className="flex items-start gap-2 text-xs text-muted-foreground">
-                          <span className="text-base">{g.emoji}</span>
+                          <AppIcon value={g.emoji} fallback="target" size="sm" />
                           <span>
                             {g.name} — {onTrack ? t('goals.onTrack') : t('goals.behindSchedule')}
                             {' '}({Math.round(pct)}%)
@@ -865,7 +865,7 @@ export default function SavingsHub() {
                             )}
                           </span>
                           <Badge variant="outline" className={cn('ml-auto text-[10px]', onTrack ? 'border-emerald-500/30 text-emerald-600' : 'border-amber-500/30 text-amber-600')}>
-                            {onTrack ? '✓' : '!'}
+                            {onTrack ? <Check className="h-3 w-3" /> : '!'}
                           </Badge>
                         </div>
                       )
@@ -924,7 +924,7 @@ export default function SavingsHub() {
                               : null
                             return (
                               <div key={g.id} className="flex items-center gap-3 py-3">
-                                <span className="text-xl">{g.emoji || '🎯'}</span>
+                                <AppIcon value={g.emoji} fallback="target" />
                                 <div className="flex-1 min-w-0">
                                   <p className="text-sm font-semibold">{g.name}</p>
                                   <p className="text-xs text-muted-foreground">
@@ -944,8 +944,7 @@ export default function SavingsHub() {
                                   )}
                                 </div>
                                 <Badge className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/20 text-[10px]">
-                                  <ShieldCheck className="h-3 w-3 mr-0.5" />
-                                  ✓
+                                  <ShieldCheck className="h-3 w-3" />
                                 </Badge>
                               </div>
                             )

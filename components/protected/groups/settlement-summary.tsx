@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { AppIcon } from '@/lib/app-icons'
 import { toast } from 'sonner'
 import { useTranslation } from '@/lib/i18n'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -232,9 +233,7 @@ export function SettlementSummary({ groupId }: { groupId: string }) {
         <Card className="overflow-hidden">
           <div className="bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 p-5 text-white">
             <div className="flex items-center gap-3 mb-4">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/20 text-xl backdrop-blur-sm">
-                {group.emoji || '💰'}
-              </div>
+              <AppIcon value={group.emoji} fallback="piggy-bank" size="lg" chipClassName="bg-white/20 text-white backdrop-blur-sm" />
               <div>
                 <h3 className="font-bold text-lg">{group.name}</h3>
                 {group.mode === 'trip' && group.startDate && group.endDate && (

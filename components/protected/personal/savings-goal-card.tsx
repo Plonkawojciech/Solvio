@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { GoalProgressRing } from './goal-progress-ring'
 import { useTranslation } from '@/lib/i18n'
 import { Plus, Calendar, Trash2 } from 'lucide-react'
+import { AppIcon } from '@/lib/app-icons'
 
 interface SavingsGoal {
   id: string
@@ -75,7 +76,7 @@ export function SavingsGoalCard({ goal, index, onAddFunds, onDelete, currency }:
           {/* Header: emoji + name + priority */}
           <div className="flex items-start justify-between gap-2">
             <div className="flex items-center gap-2 min-w-0 flex-1">
-              <span className="text-2xl shrink-0">{goal.emoji || '🎯'}</span>
+              <AppIcon value={goal.emoji} fallback="target" />
               <h3 className="font-bold text-sm leading-tight line-clamp-2">{goal.name}</h3>
             </div>
             <div className="flex items-center gap-1.5 shrink-0">

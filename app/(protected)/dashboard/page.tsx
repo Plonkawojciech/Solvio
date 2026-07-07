@@ -526,7 +526,7 @@ export default function ProtectedPage() {
       })
       .map(cat => ({
         name: translateCategoryName(cat.name),
-        icon: cat.icon || '📊',
+        icon: cat.icon || null,
         ratio: (spentByCatId.get(cat.id) || 0) / (prevSpentByCatId.get(cat.id) || 1),
       }))
       .sort((a, b) => b.ratio - a.ratio)
@@ -657,7 +657,7 @@ export default function ProtectedPage() {
       {/* ── Nagłówek strony: powitanie + akcje ── */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl md:text-2xl" suppressHydrationWarning>{t('dashboard.goodMorning')} 👋</h1>
+          <h1 className="text-xl md:text-2xl" suppressHydrationWarning>{t('dashboard.goodMorning')}</h1>
           {/* Przełącznik miesiąca */}
           <div className="mt-0.5 flex items-center gap-1">
             <button
@@ -775,7 +775,7 @@ export default function ProtectedPage() {
               <p className={`text-xs font-bold mt-0.5 ${monthlyForecast > totalBudget ? 'text-[#b3402c] dark:text-red-400' : 'text-[#1e6b2f] dark:text-emerald-400'}`} suppressHydrationWarning>
                 {monthlyForecast > totalBudget
                   ? `▲ ${formatAmount(monthlyForecast - totalBudget)} ${t('dashboard.over')}`
-                  : `✓ ${formatAmount(totalBudget - monthlyForecast)} ${t('dashboard.remainingBudget')}`}
+                  : `${formatAmount(totalBudget - monthlyForecast)} ${t('dashboard.remainingBudget')}`}
               </p>
             )}
           </div>

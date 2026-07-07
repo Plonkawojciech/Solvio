@@ -9,6 +9,7 @@ import { useTranslation } from '@/lib/i18n'
 import { GoalProgressRing } from './goal-progress-ring'
 import { Loader2, Plus } from 'lucide-react'
 import { toast } from 'sonner'
+import { AppIcon } from '@/lib/app-icons'
 
 interface GoalInfo {
   id: string
@@ -88,7 +89,7 @@ export function AddFundsSheet({ open, onOpenChange, goal, onDeposited, currency 
       <SheetContent side="right" className="w-full sm:max-w-md">
         <SheetHeader>
           <SheetTitle className="flex items-center gap-2">
-            <span className="text-2xl">{g.emoji || '🎯'}</span>
+            <AppIcon value={g.emoji} fallback="target" />
             {g.name}
           </SheetTitle>
         </SheetHeader>

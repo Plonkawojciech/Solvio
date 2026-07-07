@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { useTranslation } from '@/lib/i18n'
 import { CheckCircle2, Flame, Trash2, Calendar } from 'lucide-react'
+import { AppIcon } from '@/lib/app-icons'
 
 interface Challenge {
   id: string
@@ -62,7 +63,7 @@ export function ChallengeCard({ challenge, index, onCheckIn, onDelete, currency 
           {/* Header */}
           <div className="flex items-start justify-between gap-2">
             <div className="flex items-center gap-2 min-w-0 flex-1">
-              <span className="text-2xl shrink-0">{challenge.emoji || '💪'}</span>
+              <AppIcon value={challenge.emoji} fallback="dumbbell" />
               <div className="min-w-0">
                 <h3 className="font-bold text-sm leading-tight line-clamp-2">{challenge.name}</h3>
                 <div className="flex items-center gap-1.5 mt-1">

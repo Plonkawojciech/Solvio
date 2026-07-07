@@ -17,6 +17,7 @@ import { toast } from 'sonner'
 import { format } from 'date-fns'
 import { cn } from '@/lib/utils'
 import { useTranslation } from '@/lib/i18n'
+import { AppIcon } from '@/lib/app-icons'
 
 import {
   Sheet,
@@ -644,7 +645,7 @@ export function AddExpenseSheet({
                           <option value="">{t('addExpense.selectCategory')}</option>
                           {categories.map((cat) => (
                             <option key={cat.id} value={cat.id}>
-                              {cat.icon ? `${cat.icon} ${cat.name}` : cat.name}
+                              {cat.name}
                             </option>
                           ))}
                         </select>
@@ -726,9 +727,10 @@ export function AddExpenseSheet({
                     <button
                       type="button"
                       onClick={() => form.setValue('category', suggestedCategory.id, { shouldValidate: true })}
-                      className="font-extrabold underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/50 rounded-md px-1"
+                      className="inline-flex items-center gap-1.5 font-extrabold underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/50 rounded-md px-1"
                     >
-                      {suggestedCategory.icon ? `${suggestedCategory.icon} ${suggestedCategory.name}` : suggestedCategory.name}
+                      <AppIcon value={suggestedCategory.icon} size="sm" />
+                      {suggestedCategory.name}
                     </button>
                   </div>
                 </Alert>

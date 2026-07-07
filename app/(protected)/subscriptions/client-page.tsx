@@ -18,8 +18,9 @@ import {
 } from '@/components/ui/select'
 import {
   Repeat, AlertTriangle,
-  Plus, Pencil, Trash2, History, Loader2, ChevronLeft, ChevronRight,
+  Plus, Pencil, Trash2, History, Loader2, ChevronLeft, ChevronRight, Pause,
 } from 'lucide-react'
+import { AppIcon, IconPicker } from '@/lib/app-icons'
 
 /* ── Typy ── */
 
@@ -150,7 +151,7 @@ function SubscriptionDialog({
 }) {
   const editing = state.editing
   const [name, setName] = useState('')
-  const [emoji, setEmoji] = useState('🔁')
+  const [emoji, setEmoji] = useState('repeat')
   const [amount, setAmount] = useState('')
   const [interval, setInterval] = useState<ManagedSub['interval']>('monthly')
   const [nextDueDate, setNextDueDate] = useState('')
@@ -161,7 +162,7 @@ function SubscriptionDialog({
   useEffect(() => {
     if (!state.open) return
     setName(editing?.name ?? state.prefill?.name ?? '')
-    setEmoji(editing?.emoji ?? '🔁')
+    setEmoji(editing?.emoji ?? 'repeat')
     setAmount(editing ? editing.amount : state.prefill?.amount != null ? String(Math.round(state.prefill.amount * 100) / 100) : '')
     setInterval(editing?.interval ?? state.prefill?.interval ?? 'monthly')
     setNextDueDate(editing?.nextDueDate ?? '')
@@ -217,9 +218,9 @@ function SubscriptionDialog({
 
         <div className="space-y-4">
           <div className="flex gap-2">
-            <div className="w-16 space-y-1.5">
-              <Label>Emoji</Label>
-              <Input value={emoji} onChange={(e) => setEmoji(e.target.value)} maxLength={4} className="text-center" />
+            <div className="space-y-1.5">
+              <Label>{pl ? 'Ikona' : 'Icon'}</Label>
+              <IconPicker value={emoji} onChange={setEmoji} pl={pl} />
             </div>
             <div className="flex-1 space-y-1.5">
               <Label>{pl ? 'Nazwa' : 'Name'}</Label>
@@ -499,7 +500,7 @@ export default function SubscriptionsClient() {
             <CardContent className="p-4">
               <p className="nb-label">{pl ? 'Aktywne' : 'Active'}</p>
               <div className="mt-1 text-xl font-extrabold tabular-nums">
-                {activeCount}{pausedCount > 0 && <span className="text-sm text-muted-foreground font-bold"> (+{pausedCount} ⏸)</span>}
+                {activeCount}{pausedCount > 0 && <span className="inline-flex items-center gap-0.5 text-sm text-muted-foreground font-bold"> (+{pausedCount} <Pause className="h-3.5 w-3.5" aria-hidden="true" />)</span>}
               </div>
             </CardContent>
           </Card>
@@ -540,7 +541,7 @@ export default function SubscriptionsClient() {
                       <span className="font-extrabold text-muted-foreground">{day}</span>
                       {entries.slice(0, 2).map((e, j) => (
                         <div key={j} className="mt-0.5 truncate rounded-md bg-secondary px-1 py-px font-extrabold text-secondary-foreground tabular-nums" title={`${e.sub.name} — ${fmt(parseFloat(e.sub.amount))} ${e.sub.currency}`}>
-                          {e.sub.emoji || '🔁'} {Math.round(parseFloat(e.sub.amount))}
+                          {Math.round(parseFloat(e.sub.amount))}
                         </div>
                       ))}
                       {entries.length > 2 && <div className="text-[9px] text-muted-foreground">+{entries.length - 2}</div>}
@@ -569,7 +570,7 @@ export default function SubscriptionsClient() {
                     <span className={`w-[64px] shrink-0 text-[11px] font-extrabold ${n <= 3 ? 'text-[#93591a] dark:text-amber-400' : 'text-muted-foreground'}`}>
                       {daysUntilLabel(n)}
                     </span>
-                    <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-muted text-sm shrink-0">{sub.emoji || '🔁'}</span>
+                    <AppIcon value={sub.emoji} fallback="repeat" size="sm" chipClassName="bg-secondary text-secondary-foreground" />
                     <span className="flex-1 truncate font-bold">{sub.name}</span>
                     <span className="tabular-nums font-extrabold">{fmt(parseFloat(sub.amount))}</span>
                   </div>
@@ -628,7 +629,7 @@ export default function SubscriptionsClient() {
                         <tr className={`border-t border-border/60 ${paused ? 'opacity-50' : ''}`}>
                           <td className="px-4 py-2.5">
                             <span className="flex items-center gap-2 font-bold">
-                              <span>{sub.emoji || '🔁'}</span>
+                              <AppIcon value={sub.emoji} fallback="repeat" size="sm" chipClassName="bg-secondary text-secondary-foreground" />
                               <span className="truncate max-w-[160px]">{sub.name}</span>
                               {priceWentUp(sub) && (
                                 <span className="text-[10px] font-extrabold px-1.5 py-px rounded-full bg-[#fde3dc] text-[#b3402c] dark:bg-red-500/15 dark:text-red-400" title={pl ? 'Ostatnio podrożała' : 'Recently went up'}>▲</span>
@@ -639,7 +640,7 @@ export default function SubscriptionsClient() {
                           <td className="px-3 py-2.5 text-right font-extrabold tabular-nums">{fmt(parseFloat(sub.amount))}</td>
                           <td className="px-3 py-2.5 text-right text-muted-foreground tabular-nums hidden sm:table-cell">{paused ? '—' : fmt(monthlyEq)}</td>
                           <td className="px-3 py-2.5 text-right text-muted-foreground tabular-nums hidden sm:table-cell">{paused ? '—' : fmt(monthlyEq * 12)}</td>
-                          <td className="px-3 py-2.5 text-muted-foreground hidden md:table-cell">{paused ? '⏸' : fmtDate(next)}</td>
+                          <td className="px-3 py-2.5 text-muted-foreground hidden md:table-cell">{paused ? <Pause className="h-3.5 w-3.5" aria-hidden="true" /> : fmtDate(next)}</td>
                           <td className="px-3 py-2.5"><PauseSwitch on={!paused} onToggle={() => togglePause(sub)} pl={pl} /></td>
                           <td className="px-3 py-2.5">
                             <span className="flex items-center gap-0.5 justify-end">

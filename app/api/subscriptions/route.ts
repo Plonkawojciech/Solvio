@@ -113,7 +113,7 @@ export async function POST(req: NextRequest) {
       startDate: d.startDate || today(),
       nextDueDate: d.nextDueDate || null,
       notes: d.notes || null,
-      emoji: d.emoji || '🔁',
+      emoji: d.emoji || 'repeat',
     })
     .returning()
 

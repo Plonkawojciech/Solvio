@@ -9,84 +9,18 @@ import { Label } from '@/components/ui/label'
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table'
-import { Plus, Trash2, Edit2, Check, X, RefreshCw, Smile, Loader2 } from 'lucide-react'
+import { Plus, Trash2, Edit2, Check, X, RefreshCw, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import {
-  Popover, PopoverContent, PopoverTrigger,
-} from '@/components/ui/popover'
-
-// Curated emoji icon palette
-const CATEGORY_ICONS = [
-  '🍔', '🛒', '💊', '🚗', '👕', '💻', '🏠', '🎬', '💡', '📦',
-  '☕', '🍕', '🍺', '🎮', '🏋️', '✈️', '🎁', '📚', '🐾', '💰',
-  '🏥', '🚌', '⛽', '🛍️', '🍰', '🎵', '🧴', '🧹', '🌿', '🔧',
-  '📱', '🖥️', '📷', '👶', '🐶', '🌎', '🏖️', '🎯', '💳', '🏦',
-]
+import { AppIcon, IconPicker } from '@/lib/app-icons'
 
 interface Category {
   id: string
   name: string
   icon?: string | null
-}
-
-function IconPicker({
-  value,
-  onChange,
-}: {
-  value: string
-  onChange: (icon: string) => void
-}) {
-  const [open, setOpen] = useState(false)
-  const { t } = useTranslation()
-
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button
-          type="button"
-          variant="outline"
-          size="icon"
-          className="h-10 w-10 shrink-0 text-lg"
-          aria-label="Pick emoji icon"
-        >
-          {value || <Smile className="h-4 w-4 text-muted-foreground" />}
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent className="w-[18rem] p-3" align="start">
-        <p className="font-mono text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-2">{t('settings.pickIcon')}</p>
-        <div className="grid grid-cols-6 gap-1.5 sm:grid-cols-8">
-          {/* Empty / clear option */}
-          <Button
-            type="button"
-            variant={!value ? 'secondary' : 'ghost'}
-            size="icon-sm"
-            className="text-muted-foreground"
-            onClick={() => { onChange(''); setOpen(false) }}
-            aria-label="Clear icon"
-          >
-            <X className="h-3 w-3" />
-          </Button>
-          {CATEGORY_ICONS.map(emoji => (
-            <Button
-              key={emoji}
-              type="button"
-              variant={value === emoji ? 'secondary' : 'ghost'}
-              size="icon-sm"
-              className="text-base"
-              onClick={() => { onChange(emoji); setOpen(false) }}
-              aria-label={`Select ${emoji}`}
-            >
-              {emoji}
-            </Button>
-          ))}
-        </div>
-      </PopoverContent>
-    </Popover>
-  )
 }
 
 const rowVariants = {
@@ -97,7 +31,7 @@ const rowVariants = {
 } as any
 
 export function CategoriesManager({ initialCategories }: { initialCategories: Category[] }) {
-  const { t } = useTranslation()
+  const { t, lang } = useTranslation()
   const [categories, setCategories] = useState<Category[]>(initialCategories)
   const [newCategoryName, setNewCategoryName] = useState('')
   const [newCategoryIcon, setNewCategoryIcon] = useState('')
@@ -250,8 +184,8 @@ export function CategoriesManager({ initialCategories }: { initialCategories: Ca
       {/* Add New Category */}
       <div className="flex gap-2 items-end">
         <div className="shrink-0">
-          <Label className="sr-only">Icon</Label>
-          <IconPicker value={newCategoryIcon} onChange={setNewCategoryIcon} />
+          <Label className="sr-only">{lang === 'pl' ? 'Ikona' : 'Icon'}</Label>
+          <IconPicker value={newCategoryIcon} onChange={setNewCategoryIcon} pl={lang === 'pl'} />
         </div>
         <div className="flex-1">
           <Label htmlFor="new-category" className="sr-only">{t('settings.categoryName')}</Label>
@@ -308,11 +242,9 @@ export function CategoriesManager({ initialCategories }: { initialCategories: Ca
                     {/* Icon cell */}
                     <TableCell className="pl-4 py-3 w-12">
                       {editingId === cat.id ? (
-                        <IconPicker value={editIcon} onChange={setEditIcon} />
+                        <IconPicker value={editIcon} onChange={setEditIcon} pl={lang === 'pl'} />
                       ) : (
-                        <span className="text-xl leading-none">
-                          {cat.icon || <span className="text-muted-foreground text-sm">—</span>}
-                        </span>
+                        <AppIcon value={cat.icon} />
                       )}
                     </TableCell>
 

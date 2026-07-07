@@ -776,7 +776,7 @@ export function ScanReceiptSheet({
                 )}
                 {reviewMeta?.detectedLanguage && reviewMeta.detectedLanguage !== 'pl' && reviewMeta.detectedLanguage !== 'en' && (
                   <span className="text-xs bg-blue-500/10 text-blue-600 dark:text-blue-400 px-1.5 py-0.5 rounded-full">
-                    {({ es: '🇪🇸', de: '🇩🇪', fr: '🇫🇷', it: '🇮🇹', pt: '🇵🇹' } as Record<string, string>)[reviewMeta.detectedLanguage] ?? '🌍'} {reviewMeta.detectedLanguage.toUpperCase()}
+                    {reviewMeta.detectedLanguage.toUpperCase()}
                   </span>
                 )}
               </span>

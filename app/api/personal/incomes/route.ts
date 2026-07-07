@@ -65,7 +65,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'name + amount required' }, { status: 400 })
   }
   const period = typeof body.period === 'string' && VALID_PERIODS.has(body.period) ? body.period : 'monthly'
-  const emoji = typeof body.emoji === 'string' && body.emoji.length > 0 ? body.emoji.slice(0, 10) : '💼'
+  const emoji = typeof body.emoji === 'string' && body.emoji.length > 0 ? body.emoji.slice(0, 24) : 'briefcase'
 
   const inserted = await db
     .insert(incomes)

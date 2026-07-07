@@ -57,12 +57,12 @@ interface ChallengeTemplate {
 }
 
 const TEMPLATES: ChallengeTemplate[] = [
-  { key: 'noEatingOut', emoji: '🍕', type: 'no_spend', defaultDays: 7, icon: Pizza },
-  { key: 'noCoffee', emoji: '☕', type: 'no_spend', defaultDays: 7, icon: Coffee },
-  { key: 'groceryBudget', emoji: '🛒', type: 'limit', defaultDays: 7, targetAmount: 300, icon: ShoppingCart },
-  { key: 'saveFifty', emoji: '💰', type: 'save', defaultDays: 30, targetAmount: 1500, icon: Wallet },
-  { key: 'noImpulse', emoji: '🚫', type: 'no_spend', defaultDays: 14, icon: Ban },
-  { key: 'walkMore', emoji: '🚶', type: 'custom', defaultDays: 7, icon: Footprints },
+  { key: 'noEatingOut', emoji: 'pizza', type: 'no_spend', defaultDays: 7, icon: Pizza },
+  { key: 'noCoffee', emoji: 'coffee', type: 'no_spend', defaultDays: 7, icon: Coffee },
+  { key: 'groceryBudget', emoji: 'shopping-cart', type: 'limit', defaultDays: 7, targetAmount: 300, icon: ShoppingCart },
+  { key: 'saveFifty', emoji: 'piggy-bank', type: 'save', defaultDays: 30, targetAmount: 1500, icon: Wallet },
+  { key: 'noImpulse', emoji: 'shopping-bag', type: 'no_spend', defaultDays: 14, icon: Ban },
+  { key: 'walkMore', emoji: 'heart-pulse', type: 'custom', defaultDays: 7, icon: Footprints },
 ]
 
 export default function ChallengesPage() {
@@ -77,7 +77,7 @@ export default function ChallengesPage() {
 
   // Form state
   const [formName, setFormName] = useState('')
-  const [formEmoji, setFormEmoji] = useState('💪')
+  const [formEmoji, setFormEmoji] = useState('dumbbell')
   const [formType, setFormType] = useState('no_spend')
   const [formTargetCategory, setFormTargetCategory] = useState('')
   const [formTargetAmount, setFormTargetAmount] = useState('')
@@ -161,7 +161,7 @@ export default function ChallengesPage() {
       if (!res.ok) throw new Error()
       toast.success(t('challenges.newChallenge'), { description: formName })
       setFormName('')
-      setFormEmoji('💪')
+      setFormEmoji('dumbbell')
       setFormType('no_spend')
       setFormTargetCategory('')
       setFormTargetAmount('')
@@ -326,7 +326,7 @@ export default function ChallengesPage() {
                     onClick={() => applyTemplate(tmpl)}
                     className="flex flex-col items-center gap-2 p-3 rounded-xl border border-border/40 hover:border-primary/30 hover:bg-primary/5 transition-all min-h-[80px]"
                   >
-                    <span className="text-2xl">{tmpl.emoji}</span>
+                    <tmpl.icon className="h-6 w-6" aria-hidden="true" />
                     <span className="text-[11px] text-center font-medium leading-tight">
                       {t(`challenges.templates.${tmpl.key}` as Parameters<typeof t>[0])}
                     </span>

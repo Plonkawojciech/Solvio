@@ -155,7 +155,7 @@ export const groups = pgTable('groups', {
   description: text('description'),
   createdBy: text('created_by').notNull(),
   currency: text('currency').notNull().default('PLN'),
-  emoji: text('emoji').default('👥'),
+  emoji: text('emoji').default('globe'),
   mode: varchar('mode', { length: 15 }).default('default').notNull(), // 'default' | 'trip' | 'household'
   startDate: date('start_date'),
   endDate: date('end_date'),
@@ -366,7 +366,7 @@ export const savingsGoals = pgTable('savings_goals', {
   id: uuid('id').primaryKey().defaultRandom(),
   userId: text('user_id').notNull(),
   name: varchar('name', { length: 255 }).notNull(),
-  emoji: varchar('emoji', { length: 10 }).default('🎯'),
+  emoji: varchar('emoji', { length: 24 }).default('target'),
   targetAmount: decimal('target_amount', { precision: 14, scale: 2 }).notNull(),
   currentAmount: decimal('current_amount', { precision: 14, scale: 2 }).default('0').notNull(),
   currency: varchar('currency', { length: 3 }).default('PLN'),
@@ -423,7 +423,7 @@ export const incomes = pgTable('incomes', {
   /// 'monthly' | 'weekly' | 'yearly' | 'oneoff'. Drives the
   /// normalisation to a per-month figure in the AI / dashboard math.
   period: varchar('period', { length: 12 }).default('monthly').notNull(),
-  emoji: varchar('emoji', { length: 10 }).default('💼'),
+  emoji: varchar('emoji', { length: 24 }).default('briefcase'),
   isActive: boolean('is_active').default(true).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
@@ -452,7 +452,7 @@ export const subscriptions = pgTable('subscriptions', {
   startDate: date('start_date'),
   nextDueDate: date('next_due_date'),
   notes: text('notes'),
-  emoji: varchar('emoji', { length: 10 }).default('🔁'),
+  emoji: varchar('emoji', { length: 24 }).default('repeat'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 }, (t) => [
@@ -478,7 +478,7 @@ export const financialChallenges = pgTable('financial_challenges', {
   id: uuid('id').primaryKey().defaultRandom(),
   userId: text('user_id').notNull(),
   name: varchar('name', { length: 255 }).notNull(),
-  emoji: varchar('emoji', { length: 10 }).default('💪'),
+  emoji: varchar('emoji', { length: 24 }).default('dumbbell'),
   type: varchar('type', { length: 20 }).notNull(),
   targetCategory: varchar('target_category', { length: 100 }),
   targetAmount: decimal('target_amount', { precision: 12, scale: 2 }),

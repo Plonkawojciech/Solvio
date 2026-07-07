@@ -19,7 +19,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
   Sparkles, TrendingUp, TrendingDown, Minus,
-  AlertTriangle, Lightbulb,
+  AlertTriangle, Lightbulb, Flame,
   RefreshCcw, Loader2, Brain,
   Target, Zap, PiggyBank, BarChart2, AlertCircle, Landmark,
   ChevronUp, ChevronDown, ShoppingCart, Store,
@@ -731,7 +731,7 @@ export default function AnalysisPage() {
             >
               {spendingStreak >= 2 && (
                 <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-orange-500/30 bg-orange-500/8 text-sm font-semibold text-orange-600 dark:text-orange-400">
-                  <span>🔥</span>
+                  <Flame className="h-4 w-4" aria-hidden="true" />
                   <span suppressHydrationWarning>
                     {spendingStreak} {t('analysis.daysInARow')}
                   </span>

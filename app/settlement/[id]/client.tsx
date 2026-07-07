@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { AppIcon } from '@/lib/app-icons'
 import { CheckCircle2, Clock, XCircle, Copy, ArrowRight, Loader2 } from 'lucide-react'
 import { formatAmount, formatDate } from '@/lib/format'
 
@@ -134,7 +135,7 @@ export function SettlementPageClient({
             {/* Group info */}
             {data.group && (
               <p className="text-white/60 text-xs tracking-[0.15em] uppercase mb-2">
-                {data.group.emoji} {data.group.name}
+                <AppIcon value={data.group.emoji} fallback="globe" size="sm" chipClassName="bg-transparent text-white/60" /> {data.group.name}
                 {data.group.mode === 'trip' && data.group.startDate && data.group.endDate && (
                   <span className="block mt-0.5 tracking-normal normal-case text-white/40">
                     {formatDate(data.group.startDate)} — {formatDate(data.group.endDate)}

@@ -11,7 +11,7 @@ import {
   BrainCircuit, FileText, Users,
   Building2, User, Landmark,
   Receipt, Calculator, Shield, UserPlus,
-  CreditCard, Check, X, CheckCircle2,
+  CreditCard, Check, X, CheckCircle2, Star,
 } from 'lucide-react'
 
 function FadeUp({ children, delay = 0, className = '' }: { children: React.ReactNode; delay?: number; className?: string }) {
@@ -352,8 +352,9 @@ export default function LandingPage() {
             <FadeUp delay={2}>
               <div className="relative h-full rounded-2xl border border-border bg-card p-8 shadow-[var(--nb-shadow-lg)] border-t-4 border-t-primary">
                 <div className="absolute -top-3 right-6">
-                  <span className="text-[10px] font-extrabold uppercase tracking-widest bg-primary text-primary-foreground rounded-md px-3 py-1 shadow-[var(--nb-shadow-sm)]">
-                    {lang === 'pl' ? '★ Popularne' : '★ Popular'}
+                  <span className="inline-flex items-center gap-1 text-[10px] font-extrabold uppercase tracking-widest bg-primary text-primary-foreground rounded-md px-3 py-1 shadow-[var(--nb-shadow-sm)]">
+                    <Star className="h-3 w-3 fill-current" aria-hidden="true" />
+                    {lang === 'pl' ? 'Popularne' : 'Popular'}
                   </span>
                 </div>
                 <div className="mb-4 inline-flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10 text-primary">
