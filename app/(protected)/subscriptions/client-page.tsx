@@ -19,7 +19,7 @@ import {
 } from '@/components/ui/select'
 import {
   Repeat, CalendarClock, TrendingUp, ListChecks, AlertTriangle,
-  Plus, Pencil, Pause, Play, Trash2, ChevronDown, History, Loader2,
+  Plus, Pencil, Pause, Play, Trash2, History, Loader2,
 } from 'lucide-react'
 
 /* ── Typy ── */
