@@ -28,6 +28,32 @@ function normalizeMember(m: { id: string; displayName: string; email?: string | 
   return { ...m, name: m.displayName }
 }
 
+/**
+ * Salda netto per członek (nierozliczone porcje): dodatnie = inni są mu
+ * winni, ujemne = wisi innym. Zasila karty grup (mini-paski) i "Twoje saldo".
+ */
+function computeMemberBalances(
+  memberIds: string[],
+  splits: Array<{
+    paidByMemberId: string
+    splits: Array<{ memberId: string; amount: number; settled: boolean }> | unknown
+  }>
+): Record<string, number> {
+  const net: Record<string, number> = {}
+  for (const id of memberIds) net[id] = 0
+  for (const split of splits) {
+    const portions = Array.isArray(split.splits) ? split.splits : []
+    for (const portion of portions as Array<{ memberId: string; amount: number; settled: boolean }>) {
+      if (portion.memberId === split.paidByMemberId) continue
+      if (!portion.settled) {
+        if (net[split.paidByMemberId] !== undefined) net[split.paidByMemberId] += portion.amount
+        if (net[portion.memberId] !== undefined) net[portion.memberId] -= portion.amount
+      }
+    }
+  }
+  return net
+}
+
 /** Compute unsettled net balance across all splits for a group */
 function computeTotalBalance(
   memberIds: string[],
@@ -96,7 +122,17 @@ export async function GET() {
       const rawSplits = splitsByGroup.get(group.id) || []
       const memberIds = members.map((m) => m.id)
       const totalBalance = computeTotalBalance(memberIds, rawSplits)
-      return { ...group, members: members.map(normalizeMember), totalBalance }
+      const balances = computeMemberBalances(memberIds, rawSplits)
+      // "Twoje saldo" = suma sald członków powiązanych z zalogowanym userem
+      const myBalance = members
+        .filter((m) => m.userId === userId)
+        .reduce((s, m) => s + (balances[m.id] || 0), 0)
+      return {
+        ...group,
+        members: members.map((m) => ({ ...normalizeMember(m), balance: Math.round((balances[m.id] || 0) * 100) / 100 })),
+        totalBalance,
+        myBalance: Math.round(myBalance * 100) / 100,
+      }
     })
 
     return NextResponse.json(result)

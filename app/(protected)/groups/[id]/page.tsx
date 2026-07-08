@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { useParams } from 'next/navigation'
+import { useParams, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { motion, AnimatePresence } from 'framer-motion'
 import { toast } from 'sonner'
@@ -246,13 +246,18 @@ export default function GroupDetailPage() {
   const { t } = useTranslation()
   const params = useParams()
   const groupId = params?.id as string
+  // Deep-linki z kart grup: ?add=1 otwiera dodawanie wydatku, ?tab=settlements zakładkę rozliczeń
+  const searchParams = useSearchParams()
 
   const [group, setGroup] = useState<Group | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
   const [settlingId, setSettlingId] = useState<string | null>(null)
-  const [splitSheetOpen, setSplitSheetOpen] = useState(false)
-  const [activeTab, setActiveTab] = useState<TabId>('overview')
+  const [splitSheetOpen, setSplitSheetOpen] = useState(() => searchParams?.get('add') === '1')
+  const [activeTab, setActiveTab] = useState<TabId>(() => {
+    const tab = searchParams?.get('tab')
+    return tab && ['overview', 'receipts', 'balances', 'settlements', 'timeline'].includes(tab) ? (tab as TabId) : 'overview'
+  })
 
   // Receipts state
   const [groupReceipts, setGroupReceipts] = useState<GroupReceipt[]>([])

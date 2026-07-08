@@ -10,12 +10,10 @@ import { Skeleton } from '@/components/ui/skeleton'
 import {
   Users,
   Plus,
-  ArrowRight,
   AlertCircle,
-  Sparkles,
   Zap,
-  X,
-  Clock,
+  History,
+  ArrowRight,
 } from 'lucide-react'
 import { NewGroupSheet } from '@/components/protected/groups/new-group-sheet'
 import { AppIcon } from '@/lib/app-icons'
@@ -30,6 +28,8 @@ interface GroupMember {
   id: string
   name: string
   email?: string | null
+  userId?: string | null
+  balance?: number
 }
 
 interface Group {
@@ -41,6 +41,7 @@ interface Group {
   startDate: string | null
   endDate: string | null
   totalBalance: number
+  myBalance?: number
   members: GroupMember[]
   createdAt: string
 }
@@ -54,48 +55,20 @@ function getInitials(name: string): string {
     .toUpperCase()
 }
 
-function MemberAvatars({ members }: { members: GroupMember[] }) {
-  const visible = members.slice(0, 5)
-  const overflow = members.length - 5
-  return (
-    <div className="flex -space-x-2">
-      {visible.map((m, idx) => (
-        <div
-          key={m.id}
-          title={m.name}
-          className="h-8 w-8 rounded-full border border-background flex items-center justify-center text-xs font-semibold text-white shrink-0"
-          style={{ backgroundColor: MEMBER_COLORS[idx % MEMBER_COLORS.length] }}
-        >
-          {getInitials(m.name)}
-        </div>
-      ))}
-      {overflow > 0 && (
-        <div className="h-8 w-8 rounded-full border border-background bg-muted flex items-center justify-center text-xs font-semibold text-muted-foreground">
-          +{overflow}
-        </div>
-      )}
-    </div>
-  )
-}
-
 function GroupCardSkeleton() {
   return (
     <Card className="overflow-hidden">
-      <CardContent className="p-5">
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex items-center gap-3 flex-1 min-w-0">
-            <Skeleton className="h-12 w-12 rounded-xl shrink-0" />
-            <div className="flex-1 min-w-0 space-y-2">
-              <Skeleton className="h-5 w-32" />
-              <Skeleton className="h-4 w-20" />
-            </div>
-          </div>
-          <Skeleton className="h-9 w-20 shrink-0" />
+      <CardContent className="p-5 space-y-4">
+        <div className="flex items-center gap-3">
+          <Skeleton className="h-9 w-9 rounded-xl shrink-0" />
+          <Skeleton className="h-5 w-32" />
         </div>
-        <div className="mt-4 pt-4 border-t flex items-center justify-between">
-          <Skeleton className="h-8 w-24" />
-          <Skeleton className="h-5 w-16" />
+        <Skeleton className="h-7 w-28" />
+        <div className="space-y-2">
+          <Skeleton className="h-4 w-full" />
+          <Skeleton className="h-4 w-4/5" />
         </div>
+        <Skeleton className="h-9 w-full" />
       </CardContent>
     </Card>
   )
@@ -107,24 +80,19 @@ const cardVariants = {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 } as any
 
-const MODE_BADGE_STYLES: Record<string, string> = {
-  trip: 'bg-sky-50 dark:bg-sky-900/20 text-sky-700 dark:text-sky-300 border-sky-200 dark:border-sky-800',
-  household: 'bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800',
-}
-
 const MODE_ICON: Record<string, string> = {
   trip: 'plane',
   household: 'home',
 }
 
 export default function GroupsPage() {
-  const { t } = useTranslation()
+  const { t, lang } = useTranslation()
+  const pl = lang === 'pl'
   const [groups, setGroups] = useState<Group[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
   const [sheetOpen, setSheetOpen] = useState(false)
   const [quickSplitOpen, setQuickSplitOpen] = useState(false)
-  const [tipDismissed, setTipDismissed] = useState(false)
 
   const fetchGroups = useCallback(async () => {
     setLoading(true)
@@ -145,26 +113,37 @@ export default function GroupsPage() {
     fetchGroups()
   }, [fetchGroups])
 
-  // Compute total unsettled debts across all groups
-  const totalUnsettled = groups.reduce((sum, g) => {
-    const balance = Math.abs(Number(g.totalBalance) || 0)
-    return sum + balance
-  }, 0)
-  const unsettledGroupCount = groups.filter(
-    (g) => Math.abs(Number(g.totalBalance) || 0) > 0
-  ).length
+  const fmt = (n: number) =>
+    Math.abs(n).toLocaleString(pl ? 'pl-PL' : 'en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+  // Bilans łącznie ze wszystkich grup (Twoje saldo)
+  const totalMyBalance = groups.reduce((s, g) => s + (Number(g.myBalance) || 0), 0)
+
+  // Aktywne (z saldami) najpierw, rozliczone na końcu
+  const sorted = [...groups].sort((a, b) => {
+    const av = Math.abs(Number(a.myBalance) || 0) > 0.004 ? 0 : 1
+    const bv = Math.abs(Number(b.myBalance) || 0) > 0.004 ? 0 : 1
+    return av - bv
+  })
 
   return (
-    <div className="space-y-6 max-w-3xl mx-auto">
-      {/* Header */}
+    <div className="space-y-5">
+      {/* Nagłówek */}
       <motion.div
         initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3 }}
-        className="flex items-center justify-between gap-4"
+        className="flex items-center justify-between gap-4 flex-wrap"
       >
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold tracking-tight">{t('groups.title')}</h1>
+          <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight">
+            {t('groups.title')}
+            {groups.length > 0 && Math.abs(totalMyBalance) > 0.004 && (
+              <span className={`ml-2 text-sm font-bold tabular-nums ${totalMyBalance > 0 ? 'text-[#1e6b2f] dark:text-emerald-400' : 'text-[#b3402c] dark:text-red-400'}`}>
+                · {pl ? 'bilans' : 'balance'} {totalMyBalance > 0 ? '+' : '−'}{fmt(totalMyBalance)} zł
+              </span>
+            )}
+          </h1>
           <p className="text-muted-foreground text-sm mt-0.5">
             {t('groups.subtitle')}
           </p>
@@ -185,34 +164,9 @@ export default function GroupsPage() {
         </div>
       </motion.div>
 
-      {/* AI tip banner — unsettled debts */}
-      {!loading && !error && unsettledGroupCount > 0 && !tipDismissed && (
-        <motion.div
-          initial={{ opacity: 0, y: -8 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="flex items-center gap-3 rounded-xl border border-violet-200 dark:border-violet-800 bg-violet-50/50 dark:bg-violet-900/10 p-3.5"
-        >
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-violet-100 dark:bg-violet-800/30">
-            <Sparkles className="h-4 w-4 text-violet-600 dark:text-violet-400" />
-          </div>
-          <p className="text-sm font-medium text-violet-700 dark:text-violet-300 flex-1">
-            {t('groups.unsettledDebts')}: {unsettledGroupCount}{' '}
-            {unsettledGroupCount === 1 ? t('groups.member') : t('groups.members')} —{' '}
-            {totalUnsettled.toFixed(2)} PLN
-          </p>
-          <button
-            onClick={() => setTipDismissed(true)}
-            aria-label={t('groups.dismissBanner')}
-            className="p-1 rounded-md hover:bg-violet-200 dark:hover:bg-violet-800/40 text-violet-500 transition-colors shrink-0"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </motion.div>
-      )}
-
-      {/* Content */}
+      {/* Zawartość */}
       {loading ? (
-        <div className="space-y-3">
+        <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-4">
           {[...Array(3)].map((_, i) => (
             <GroupCardSkeleton key={i} />
           ))}
@@ -240,9 +194,6 @@ export default function GroupsPage() {
           transition={{ duration: 0.4 }}
           className="flex flex-col items-center justify-center py-20 sm:py-28 gap-5 text-center"
         >
-          <div className="font-mono text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-            {t('groups.emptyTitle')}
-          </div>
           <div className="flex h-16 w-16 items-center justify-center rounded-md border border-border bg-card text-foreground shadow-[var(--nb-shadow-sm)]">
             <Users className="h-7 w-7" aria-hidden="true" />
           </div>
@@ -269,130 +220,124 @@ export default function GroupsPage() {
         </motion.div>
       ) : (
         <AnimatePresence>
-          <div className="space-y-3">
-            {groups.map((group, i) => (
-              <motion.div
-                key={group.id}
-                custom={i}
-                variants={cardVariants}
-                initial="hidden"
-                animate="visible"
-                exit={{ opacity: 0, y: -10, transition: { duration: 0.2 } }}
-              >
-                <Card className="overflow-hidden hover:shadow-md transition-shadow duration-200 group/card">
-                  <CardContent className="p-5">
-                    <div className="flex items-start justify-between gap-3">
-                      {/* Left: emoji + name + member count */}
-                      <div className="flex items-center gap-3 flex-1 min-w-0">
+          <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-4 items-start">
+            {sorted.map((group, i) => {
+              const myBalance = Number(group.myBalance) || 0
+              const isSettled = Math.abs(myBalance) <= 0.004 &&
+                group.members.every((m) => Math.abs(Number(m.balance) || 0) <= 0.004)
+              // Skala mini-pasków względem największego |salda| w grupie
+              const maxAbs = Math.max(1, ...group.members.map((m) => Math.abs(Number(m.balance) || 0)))
+              return (
+                <motion.div
+                  key={group.id}
+                  custom={i}
+                  variants={cardVariants}
+                  initial="hidden"
+                  animate="visible"
+                  exit={{ opacity: 0, y: -10, transition: { duration: 0.2 } }}
+                >
+                  <Card className={`overflow-hidden hover:shadow-[var(--nb-shadow-lg)] transition-shadow duration-200 ${isSettled ? 'opacity-65' : ''}`}>
+                    <CardContent className="p-5 flex flex-col gap-3.5">
+                      {/* Góra: ikona + nazwa + tryb */}
+                      <div className="flex items-center gap-2.5">
                         <AppIcon value={group.emoji} fallback="globe" size="lg" chipClassName="bg-primary/10 text-primary" />
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-1.5">
-                            <p className="font-semibold truncate leading-tight">{group.name}</p>
-                            {group.mode && group.mode !== 'default' && (
-                              <span
-                                className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold border shrink-0 ${
-                                  MODE_BADGE_STYLES[group.mode] || ''
-                                }`}
-                              >
-                                {MODE_ICON[group.mode] ? <AppIcon value={MODE_ICON[group.mode]} size="sm" chipClassName="bg-transparent text-current" /> : null}
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-xs text-muted-foreground mt-0.5">
-                            {group.members.length}{' '}
-                            {group.members.length === 1
-                              ? t('groups.member')
-                              : t('groups.members')}
-                          </p>
-                        </div>
-                      </div>
-                      {/* Open button */}
-                      <Button
-                        asChild
-                        size="sm"
-                        variant="outline"
-                        className="shrink-0 group-hover/card:bg-primary group-hover/card:text-primary-foreground group-hover/card:border-primary transition-colors"
-                      >
-                        <Link href={`/groups/${group.id}`}>
-                          {t('groups.open')}
-                          <ArrowRight className="h-3.5 w-3.5 ml-1.5" />
+                        <Link href={`/groups/${group.id}`} className="flex-1 min-w-0 font-extrabold text-[15px] truncate hover:text-primary transition-colors">
+                          {group.name}
                         </Link>
-                      </Button>
-                    </div>
-
-                    {/* Bottom: avatars + balance */}
-                    <div className="mt-4 pt-4 border-t flex items-center justify-between gap-3">
-                      <MemberAvatars members={group.members} />
-                      <div className="text-right">
-                        {group.totalBalance === 0 ? (
-                          <span className="text-xs font-medium text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
-                            {t('groups.settled')}
+                        {group.mode && group.mode !== 'default' && MODE_ICON[group.mode] && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-[10px] font-extrabold text-secondary-foreground shrink-0">
+                            <AppIcon value={MODE_ICON[group.mode]} size="sm" chipClassName="bg-transparent text-current h-3.5 w-3.5" />
                           </span>
-                        ) : (
-                          <div>
-                            <p className="text-xs text-muted-foreground">{t('groups.balance')}</p>
-                            <p
-                              className={`text-sm font-semibold tabular-nums ${
-                                Number(group.totalBalance) > 0
-                                  ? 'text-emerald-600 dark:text-emerald-400'
-                                  : 'text-red-500 dark:text-red-400'
-                              }`}
-                            >
-                              {Number(group.totalBalance) > 0 ? '+' : ''}
-                              {group.currency} {Math.abs(Number(group.totalBalance)).toFixed(2)}
-                            </p>
-                          </div>
                         )}
                       </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              </motion.div>
-            ))}
-          </div>
-        </AnimatePresence>
-      )}
 
-      {/* Recent activity section */}
-      {!loading && !error && groups.length > 0 && (
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3, duration: 0.3 }}
-          className="space-y-3"
-        >
-          <div className="flex items-center gap-2">
-            <Clock className="h-4 w-4 text-muted-foreground" />
-            <h3 className="text-sm font-semibold">{t('groups.recentActivity')}</h3>
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-            {groups
-              .filter((g) => Math.abs(Number(g.totalBalance) || 0) > 0)
-              .slice(0, 3)
-              .map((group) => (
-                <Link key={group.id} href={`/groups/${group.id}`}>
-                  <Card className="overflow-hidden hover:shadow-sm transition-shadow">
-                    <CardContent className="p-3">
-                      <div className="flex items-center gap-2 mb-2">
-                        <AppIcon value={group.emoji} fallback="globe" size="sm" />
-                        <span className="text-xs font-semibold truncate">{group.name}</span>
+                      {/* Twoje saldo */}
+                      <div>
+                        <p className="nb-label">{pl ? 'Twoje saldo' : 'Your balance'}</p>
+                        {isSettled ? (
+                          <p className="text-xl font-extrabold tabular-nums text-muted-foreground">0,00 {group.currency}</p>
+                        ) : (
+                          <p className={`text-xl font-extrabold tabular-nums ${myBalance >= 0 ? 'text-[#1e6b2f] dark:text-emerald-400' : 'text-[#b3402c] dark:text-red-400'}`}>
+                            {myBalance >= 0 ? '+' : '−'}{fmt(myBalance)} {group.currency}
+                          </p>
+                        )}
                       </div>
-                      <p
-                        className={`text-sm font-bold tabular-nums ${
-                          Number(group.totalBalance) > 0
-                            ? 'text-emerald-600 dark:text-emerald-400'
-                            : 'text-red-500 dark:text-red-400'
-                        }`}
-                      >
-                        {Number(group.totalBalance) > 0 ? '+' : ''}
-                        {Math.abs(Number(group.totalBalance)).toFixed(2)} {group.currency}
-                      </p>
+
+                      {/* Salda członków — mini-paski */}
+                      {isSettled ? (
+                        <p className="text-xs text-muted-foreground">
+                          {pl ? 'Wszystko wyrównane' : 'All settled up'} · {group.members.length} {group.members.length === 1 ? t('groups.member') : t('groups.members')}
+                        </p>
+                      ) : (
+                        <div className="space-y-1.5">
+                          {group.members.slice(0, 4).map((m, idx) => {
+                            const bal = Number(m.balance) || 0
+                            const color = MEMBER_COLORS[idx % MEMBER_COLORS.length]
+                            return (
+                              <div key={m.id} className="flex items-center gap-2 text-[11.5px] font-semibold">
+                                <span
+                                  title={m.name}
+                                  className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full text-[9px] font-extrabold text-white"
+                                  style={{ backgroundColor: color }}
+                                >
+                                  {getInitials(m.name)}
+                                </span>
+                                <span className="w-[64px] truncate">{m.name}</span>
+                                <span className="flex-1 h-[5px] rounded-[3px] bg-muted overflow-hidden">
+                                  <span
+                                    className="block h-full rounded-[3px]"
+                                    style={{ width: `${Math.min(100, (Math.abs(bal) / maxAbs) * 100)}%`, backgroundColor: color }}
+                                  />
+                                </span>
+                                <span className={`w-[56px] text-right tabular-nums font-extrabold ${bal > 0.004 ? 'text-[#1e6b2f] dark:text-emerald-400' : bal < -0.004 ? 'text-[#b3402c] dark:text-red-400' : 'text-muted-foreground'}`}>
+                                  {bal > 0.004 ? '+' : bal < -0.004 ? '−' : ''}{Math.abs(bal) > 0.004 ? fmt(bal) : '0'}
+                                </span>
+                              </div>
+                            )
+                          })}
+                          {group.members.length > 4 && (
+                            <p className="text-[10.5px] text-muted-foreground">+{group.members.length - 4} {t('groups.members')}</p>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Akcje */}
+                      <div className="mt-auto flex gap-2 border-t border-dashed border-border pt-3">
+                        {isSettled ? (
+                          <>
+                            <Button asChild variant="outline" size="sm" className="flex-1 gap-1.5">
+                              <Link href={`/groups/${group.id}?tab=timeline`}>
+                                <History className="h-3.5 w-3.5" />
+                                {pl ? 'Historia' : 'History'}
+                              </Link>
+                            </Button>
+                            <Button asChild variant="ghost" size="sm" className="flex-1 gap-1.5">
+                              <Link href={`/groups/${group.id}`}>
+                                {t('groups.open')}
+                                <ArrowRight className="h-3.5 w-3.5" />
+                              </Link>
+                            </Button>
+                          </>
+                        ) : (
+                          <>
+                            <Button asChild variant="outline" size="sm" className="flex-1">
+                              <Link href={`/groups/${group.id}?add=1`}>+ {pl ? 'Wydatek' : 'Expense'}</Link>
+                            </Button>
+                            <Button asChild size="sm" className="flex-1">
+                              <Link href={`/groups/${group.id}?tab=settlements`}>
+                                {myBalance < -0.004 ? (pl ? `Oddaj ${fmt(myBalance)}` : `Pay ${fmt(myBalance)}`) : (pl ? 'Rozlicz' : 'Settle')}
+                              </Link>
+                            </Button>
+                          </>
+                        )}
+                      </div>
                     </CardContent>
                   </Card>
-                </Link>
-              ))}
+                </motion.div>
+              )
+            })}
           </div>
-        </motion.div>
+        </AnimatePresence>
       )}
 
       <NewGroupSheet
