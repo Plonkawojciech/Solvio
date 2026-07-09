@@ -512,9 +512,12 @@ export default function ProtectedPage() {
       .sort((a, b) => b.pct - a.pct)
       .slice(0, 3);
 
-    // Savings rate
+    // Bilans miesiąca: przychody − wydatki. Ujemny = deficyt (nie ukrywamy go).
+    const monthBalance = monthIncome && monthIncome > 0 ? monthIncome - totalSpent : null;
+
+    // Wskaźnik oszczędności — może być ujemny, gdy wydatki przekraczają przychody
     const savingsRate = monthIncome && monthIncome > 0
-      ? Math.max(0, Math.round(((monthIncome - totalSpent) / monthIncome) * 100))
+      ? Math.round(((monthIncome - totalSpent) / monthIncome) * 100)
       : null;
 
     // Spending anomaly detection
@@ -590,6 +593,7 @@ export default function ProtectedPage() {
       momChange, monthlyForecast, thisWeekSpent, overBudgetCategories, savingsRate,
       anomalies, wellnessScore, wellnessGrade, savingsScore, budgetScore, trendScore,
       monthProgress, daysLeft, dailyAllowance, comparisonData, isCurrentMonth,
+      monthIncome, monthBalance,
     };
   }, [loading, categories, expenses, prevExpenses, serverPrevTotal, serverPrevByCategory, receiptsCount, settings, budgets, lang, monthIncome, translateCategoryName, selectedMonth]);
 
@@ -604,10 +608,11 @@ export default function ProtectedPage() {
 
   const {
     currency, locale, recentExpenses, totalSpent, totalTransactions, avgDaily,
-    mostExpensive, receiptsScanned,
+    mostExpensive,
     totalBudget, budgetRemaining, budgetProgress,
     momChange, monthlyForecast, thisWeekSpent, overBudgetCategories, savingsRate,
     monthProgress, daysLeft, dailyAllowance, comparisonData, isCurrentMonth,
+    monthIncome: incomeThisMonth, monthBalance,
   } = calculatedData!;
 
   function formatAmount(amount: number) {
@@ -891,8 +896,31 @@ export default function ProtectedPage() {
         </Card>
       </div>
 
-      {/* ── Dolny rząd KPI: oszczędności / tydzień / największy zakup / paragony ── */}
+      {/* ── Dolny rząd KPI: bilans / oszczędności / tydzień / największy zakup ── */}
       <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
+        {/* Bilans miesiąca — przychody minus wydatki; bez przychodów zachęta do wpisania */}
+        <Card className={monthBalance !== null && monthBalance < 0 ? 'border-[#f0c9bf] dark:border-red-500/30' : ''}>
+          <div className="p-3 md:p-5">
+            <p className="nb-label flex items-center gap-1.5" suppressHydrationWarning>
+              <Wallet className="h-3.5 w-3.5" aria-hidden="true" />{t('dashboard.monthBalance')}
+            </p>
+            {monthBalance !== null ? (
+              <>
+                <p className={`mt-1 text-lg md:text-xl font-extrabold tabular-nums ${monthBalance >= 0 ? 'text-[#1e6b2f] dark:text-emerald-400' : 'text-[#b3402c] dark:text-red-400'}`}>
+                  {monthBalance >= 0 ? '+' : '−'}{formatAmount(Math.abs(monthBalance))}
+                </p>
+                <p className="text-[11px] text-muted-foreground mt-0.5 tabular-nums" suppressHydrationWarning>
+                  {formatAmount(incomeThisMonth!)} − {formatAmount(totalSpent)}
+                </p>
+              </>
+            ) : (
+              <Link href="/savings" className="mt-1 inline-flex items-center gap-1 text-sm font-bold text-primary hover:underline">
+                <span suppressHydrationWarning>{t('dashboard.addIncome')}</span>
+                <ArrowUpRight className="h-3.5 w-3.5" aria-hidden="true" />
+              </Link>
+            )}
+          </div>
+        </Card>
         <Card>
           <div className="p-3 md:p-5">
             <p className="nb-label flex items-center gap-1.5" suppressHydrationWarning>
@@ -913,12 +941,6 @@ export default function ProtectedPage() {
           <div className="p-3 md:p-5">
             <p className="nb-label" suppressHydrationWarning>{t('dashboard.biggestPurchase')}</p>
             <p className="mt-1 text-lg md:text-xl font-extrabold tabular-nums">{formatAmount(mostExpensive)}</p>
-          </div>
-        </Card>
-        <Card>
-          <div className="p-3 md:p-5">
-            <p className="nb-label" suppressHydrationWarning>{t('dashboard.receiptsScanned')}</p>
-            <p className="mt-1 text-lg md:text-xl font-extrabold tabular-nums">{receiptsScanned}</p>
           </div>
         </Card>
       </div>

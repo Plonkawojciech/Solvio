@@ -6,14 +6,20 @@ import { useTranslation } from '@/lib/i18n'
 import { useProductType } from '@/hooks/use-product-type'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
-import { SavingsGoalCard } from '@/components/protected/personal/savings-goal-card'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import {
+  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
+} from '@/components/ui/dialog'
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select'
 import { NewGoalSheet } from '@/components/protected/personal/new-goal-sheet'
 import { AddFundsSheet } from '@/components/protected/personal/add-funds-sheet'
-import { FinancialHealthScore } from '@/components/protected/personal/financial-health-score'
 import {
   Target,
   PiggyBank,
@@ -32,12 +38,11 @@ import {
   Pause,
   Play,
   Trash2,
-  Check,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
-import { AppIcon } from '@/lib/app-icons'
+import { AppIcon, IconPicker } from '@/lib/app-icons'
 
 // ---- Types ----
 interface SavingsGoal {
@@ -100,14 +105,17 @@ function incomeMonthly(inc: Income): number {
   }
 }
 
-type TabKey = 'goals' | 'budget' | 'challenges' | 'deals'
+// Paleta kategorii (spójna z dashboardem) — kolory segmentów paska przepływu
+const CAT_COLORS = ['#e2493a', '#e29a2f', '#3f9c74', '#4f79e2', '#9a5fd1', '#c9c2b2']
+// Kolor segmentu „Zostaje"
+const LEFTOVER_COLOR = '#2e7a58'
 
-const TABS: { key: TabKey; icon: typeof Target }[] = [
-  { key: 'goals', icon: Target },
-  { key: 'budget', icon: PiggyBank },
-  { key: 'challenges', icon: Trophy },
-  { key: 'deals', icon: Tag },
-]
+// Klasa paska budżetu wg zapełnienia (jak na dashboardzie)
+function barPctClass(pct: number): string {
+  if (pct >= 100) return 'pb-fill pb-fill-bad'
+  if (pct >= 75) return 'pb-fill pb-fill-warn'
+  return 'pb-fill pb-fill-ok'
+}
 
 const CATEGORY_ICONS: Record<string, string> = {
   electronics: 'gamepad',
@@ -127,15 +135,15 @@ function SavingsHubSkeleton() {
         <Skeleton className="h-9 w-56" />
         <Skeleton className="h-5 w-72" />
       </div>
-      <div className="grid grid-cols-2 gap-3">
-        <Skeleton className="h-24 rounded-xl" />
-        <Skeleton className="h-24 rounded-xl" />
-      </div>
-      <Skeleton className="h-10 w-full rounded-lg" />
-      <div className="space-y-3">
-        {Array.from({ length: 3 }).map((_, i) => (
-          <Skeleton key={i} className="h-28 rounded-xl" />
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <Skeleton key={i} className="h-24 rounded-xl" />
         ))}
+      </div>
+      <Skeleton className="h-28 w-full rounded-xl" />
+      <div className="grid lg:grid-cols-[1.25fr_1fr] gap-4">
+        <Skeleton className="h-72 rounded-xl" />
+        <Skeleton className="h-72 rounded-xl" />
       </div>
     </div>
   )
@@ -144,33 +152,21 @@ function SavingsHubSkeleton() {
 // ---- Health Score Mini Gauge ----
 function HealthGauge({ score }: { score: number }) {
   const color = score >= 70 ? 'text-emerald-500' : score >= 40 ? 'text-yellow-500' : 'text-red-500'
-  const bgColor = score >= 70 ? 'bg-emerald-500' : score >= 40 ? 'bg-yellow-500' : 'bg-red-500'
 
   return (
-    <div className="flex items-center gap-2">
-      <div className="relative h-10 w-10">
-        <svg viewBox="0 0 36 36" className="h-10 w-10 -rotate-90">
-          <circle cx="18" cy="18" r="15" fill="none" stroke="currentColor" strokeWidth="3" className="text-muted/30" />
-          <circle
-            cx="18" cy="18" r="15" fill="none" strokeWidth="3"
-            className={color}
-            stroke="currentColor"
-            strokeDasharray={`${(score / 100) * 94.25} 94.25`}
-            strokeLinecap="round"
-          />
-        </svg>
-        <div className="absolute inset-0 flex items-center justify-center">
-          <span className={cn('text-[10px] font-bold', color)}>{score}</span>
-        </div>
-      </div>
-      <div className="h-2 flex-1 rounded-full bg-muted/30 overflow-hidden max-w-24 hidden sm:block">
-        <motion.div
-          initial={{ width: 0 }}
-          animate={{ width: `${score}%` }}
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] as any }}
-          className={cn('h-full rounded-full', bgColor)}
+    <div className="relative h-10 w-10 shrink-0">
+      <svg viewBox="0 0 36 36" className="h-10 w-10 -rotate-90">
+        <circle cx="18" cy="18" r="15" fill="none" stroke="currentColor" strokeWidth="3" className="text-muted/30" />
+        <circle
+          cx="18" cy="18" r="15" fill="none" strokeWidth="3"
+          className={color}
+          stroke="currentColor"
+          strokeDasharray={`${(score / 100) * 94.25} 94.25`}
+          strokeLinecap="round"
         />
+      </svg>
+      <div className="absolute inset-0 flex items-center justify-center">
+        <span className={cn('text-[10px] font-bold', color)}>{score}</span>
       </div>
     </div>
   )
@@ -247,169 +243,127 @@ function ChallengeMiniCard({ challenge }: { challenge: Challenge }) {
   )
 }
 
-// ---- Main Hub ----
-/* ── Przychody: dodawanie / edycja / wstrzymanie / usuwanie ──
-   Wojtek: "skoro mamy wydatki powinniśmy mieć też przychody" — stąd
-   pełny CRUD tutaj, a bilans i projekcje liczą się z tych wpisów. */
-function IncomeManager({
-  incomes: list, pl, onChanged, formatAmount,
+// ---- Income Dialog: dodawanie / edycja przychodu ----
+/* Wojtek: „słabo się wpisuje" — gołe inputy zamienione na porządny dialog
+   z pickerem ikony, walidacją i toastami. POST/PUT na /api/personal/incomes. */
+function IncomeDialog({
+  open, onOpenChange, editing, pl, onSaved,
 }: {
-  incomes: Income[]
+  open: boolean
+  onOpenChange: (o: boolean) => void
+  editing: Income | null
   pl: boolean
-  onChanged: () => void
-  formatAmount: (n: number) => string
+  onSaved: () => void
 }) {
+  const { t } = useTranslation()
+  const [emoji, setEmoji] = useState('briefcase')
   const [name, setName] = useState('')
   const [amount, setAmount] = useState('')
   const [period, setPeriod] = useState<Income['period']>('monthly')
-  const [editingId, setEditingId] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
-  const PERIOD_LABEL: Record<Income['period'], string> = {
-    monthly: pl ? 'mies.' : 'mo',
-    weekly: pl ? 'tyg.' : 'wk',
-    yearly: pl ? 'rok' : 'yr',
-    oneoff: pl ? 'jednorazowo' : 'one-off',
-  }
-
-  function startEdit(inc: Income) {
-    setEditingId(inc.id)
-    setName(inc.name)
-    setAmount(inc.amount)
-    setPeriod(inc.period)
-  }
-
-  function resetForm() {
-    setEditingId(null)
-    setName('')
-    setAmount('')
-    setPeriod('monthly')
-  }
+  useEffect(() => {
+    if (!open) return
+    if (editing) {
+      setEmoji(editing.emoji || 'briefcase')
+      setName(editing.name)
+      setAmount(editing.amount)
+      setPeriod(editing.period === 'oneoff' ? 'monthly' : editing.period)
+    } else {
+      setEmoji('briefcase')
+      setName('')
+      setAmount('')
+      setPeriod('monthly')
+    }
+  }, [open, editing])
 
   async function save() {
     const num = parseFloat(amount.replace(',', '.'))
     if (!name.trim() || !num || num <= 0) {
-      toast.error(pl ? 'Podaj nazwę i kwotę.' : 'Enter a name and amount.')
+      toast.error(t('savings.incomeNameAmountRequired'))
       return
     }
     setSaving(true)
     try {
       const res = await fetch('/api/personal/incomes', {
-        method: editingId ? 'PUT' : 'POST',
+        method: editing ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(editingId
-          ? { id: editingId, name: name.trim(), amount: num, period }
-          : { name: name.trim(), amount: num, period }),
+        body: JSON.stringify(editing
+          ? { id: editing.id, name: name.trim(), amount: num, period, emoji, isActive: editing.isActive }
+          : { name: name.trim(), amount: num, period, emoji }),
       })
       if (!res.ok) throw new Error()
-      toast.success(editingId ? (pl ? 'Zapisano' : 'Saved') : (pl ? 'Przychód dodany' : 'Income added'))
-      resetForm()
-      onChanged()
+      toast.success(editing ? t('savings.incomeSaved') : t('savings.incomeAdded'))
+      onOpenChange(false)
+      onSaved()
     } catch {
-      toast.error(pl ? 'Nie udało się zapisać.' : 'Save failed.')
+      toast.error(t('savings.incomeSaveFailed'))
     } finally {
       setSaving(false)
     }
   }
 
-  async function toggleActive(inc: Income) {
-    await fetch('/api/personal/incomes', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: inc.id, isActive: !inc.isActive }),
-    })
-    onChanged()
-  }
-
-  async function remove(inc: Income) {
-    if (!confirm(pl ? `Usunąć przychód „${inc.name}"?` : `Delete income "${inc.name}"?`)) return
-    await fetch('/api/personal/incomes', {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: inc.id }),
-    })
-    onChanged()
-  }
-
-  const monthlyTotal = list.reduce((s, inc) => s + incomeMonthly(inc), 0)
-
   return (
-    <Card>
-      <CardContent className="p-4 space-y-3">
-        <div className="flex items-center justify-between">
-          <p className="text-sm font-extrabold" suppressHydrationWarning>
-            {pl ? 'Przychody' : 'Income'}
-          </p>
-          <p className="text-xs text-muted-foreground tabular-nums">
-            {pl ? 'razem' : 'total'}: <b className="text-emerald-600 dark:text-emerald-400">{formatAmount(monthlyTotal)}/{pl ? 'mies.' : 'mo'}</b>
-          </p>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle suppressHydrationWarning>
+            {editing ? t('savings.editIncome') : t('savings.addIncome')}
+          </DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 py-1">
+          <div className="flex gap-3">
+            <div className="space-y-1.5">
+              <Label suppressHydrationWarning>{t('savings.pickIcon')}</Label>
+              <IconPicker value={emoji} onChange={setEmoji} pl={pl} />
+            </div>
+            <div className="flex-1 space-y-1.5">
+              <Label htmlFor="income-name" suppressHydrationWarning>{t('savings.incomeName')}</Label>
+              <Input
+                id="income-name"
+                placeholder={pl ? 'np. Pensja' : 'e.g. Salary'}
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="income-amount" suppressHydrationWarning>{t('savings.incomeAmount')}</Label>
+              <Input
+                id="income-amount"
+                inputMode="decimal"
+                placeholder="5000"
+                className="tabular-nums"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label suppressHydrationWarning>{t('savings.incomeCycle')}</Label>
+              <Select value={period} onValueChange={(v) => setPeriod(v as Income['period'])}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="monthly">{t('savings.cycleMonthly')}</SelectItem>
+                  <SelectItem value="weekly">{t('savings.cycleWeekly')}</SelectItem>
+                  <SelectItem value="yearly">{t('savings.cycleYearly')}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
         </div>
-
-        {list.length === 0 && (
-          <p className="text-xs text-muted-foreground">
-            {pl
-              ? 'Dodaj pensję / zlecenia / wynajem — zobaczysz bilans miesiąca i projekcje celów.'
-              : 'Add salary / freelance / rent — you will see the month balance and goal projections.'}
-          </p>
-        )}
-
-        {list.map((inc) => (
-          <div key={inc.id} className={cn('flex items-center gap-2 text-sm', !inc.isActive && 'opacity-50')}>
-            <AppIcon value={inc.emoji} fallback="briefcase" size="sm" />
-            <span className="flex-1 font-medium truncate">
-              {inc.name}
-              {!inc.isActive && <span className="ml-1.5 text-[10px] text-muted-foreground">({pl ? 'wstrzymany' : 'paused'})</span>}
-            </span>
-            <span className="tabular-nums font-bold">{formatAmount(parseFloat(inc.amount))}/{PERIOD_LABEL[inc.period]}</span>
-            <button className="p-1 text-muted-foreground hover:text-foreground" title={pl ? 'Edytuj' : 'Edit'} onClick={() => startEdit(inc)}>
-              <Pencil className="h-3.5 w-3.5" />
-            </button>
-            <button className="p-1 text-muted-foreground hover:text-foreground" title={inc.isActive ? (pl ? 'Wstrzymaj' : 'Pause') : (pl ? 'Wznów' : 'Resume')} onClick={() => toggleActive(inc)}>
-              {inc.isActive ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
-            </button>
-            <button className="p-1 text-muted-foreground hover:text-destructive" title={pl ? 'Usuń' : 'Delete'} onClick={() => remove(inc)}>
-              <Trash2 className="h-3.5 w-3.5" />
-            </button>
-          </div>
-        ))}
-
-        {/* Formularz dodawania / edycji */}
-        <div className="flex flex-wrap items-end gap-2 pt-2 border-t border-dashed border-border">
-          <div className="flex-1 min-w-[120px]">
-            <input
-              className="w-full h-9 rounded-lg border border-input bg-card px-3 text-sm"
-              placeholder={pl ? 'np. Pensja' : 'e.g. Salary'}
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
-          </div>
-          <div className="w-24">
-            <input
-              className="w-full h-9 rounded-lg border border-input bg-card px-3 text-sm tabular-nums"
-              placeholder="5000"
-              inputMode="decimal"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-            />
-          </div>
-          <select
-            className="h-9 rounded-lg border border-input bg-card px-2 text-sm"
-            value={period}
-            onChange={(e) => setPeriod(e.target.value as Income['period'])}
-          >
-            <option value="monthly">{pl ? 'mies.' : 'monthly'}</option>
-            <option value="weekly">{pl ? 'tyg.' : 'weekly'}</option>
-            <option value="yearly">{pl ? 'rocznie' : 'yearly'}</option>
-          </select>
-          <Button size="sm" onClick={save} disabled={saving}>
-            {editingId ? (pl ? 'Zapisz' : 'Save') : (pl ? 'Dodaj' : 'Add')}
+        <DialogFooter>
+          <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={saving} suppressHydrationWarning>
+            {t('common.cancel')}
           </Button>
-          {editingId && (
-            <Button size="sm" variant="ghost" onClick={resetForm}>{pl ? 'Anuluj' : 'Cancel'}</Button>
-          )}
-        </div>
-      </CardContent>
-    </Card>
+          <Button onClick={save} disabled={saving} suppressHydrationWarning>
+            {t('common.save')}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 
@@ -419,7 +373,6 @@ export default function SavingsHub() {
   const router = useRouter()
 
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<TabKey>('goals')
   const [incomesList, setIncomesList] = useState<Income[]>([])
   const [currency, setCurrency] = useState('PLN')
 
@@ -440,6 +393,10 @@ export default function SavingsHub() {
   const [goalToDelete, setGoalToDelete] = useState<string | null>(null)
   const [deletingGoal, setDeletingGoal] = useState(false)
 
+  // Income dialog state
+  const [incomeDialogOpen, setIncomeDialogOpen] = useState(false)
+  const [editingIncome, setEditingIncome] = useState<Income | null>(null)
+
   // Budget state
   const [budgetCategories, setBudgetCategories] = useState<CategoryBudget[]>([])
   const [totalSpent, setTotalSpent] = useState(0)
@@ -452,16 +409,6 @@ export default function SavingsHub() {
   const [healthScore, setHealthScore] = useState(65)
 
   const locale = lang === 'pl' ? 'pl-PL' : 'en-US'
-
-  // Read hash for initial tab
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const hash = window.location.hash.replace('#', '') as TabKey
-      if (['goals', 'budget', 'challenges', 'deals'].includes(hash)) {
-        setActiveTab(hash)
-      }
-    }
-  }, [])
 
   // Redirect business users
   useEffect(() => {
@@ -544,17 +491,43 @@ export default function SavingsHub() {
     }
   }
 
+  // ── Income actions ──
+  function openAddIncome() {
+    setEditingIncome(null)
+    setIncomeDialogOpen(true)
+  }
+  function openEditIncome(inc: Income) {
+    setEditingIncome(inc)
+    setIncomeDialogOpen(true)
+  }
+  async function toggleIncomeActive(inc: Income) {
+    await fetch('/api/personal/incomes', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: inc.id, isActive: !inc.isActive }),
+    })
+    fetchData()
+  }
+  async function removeIncome(inc: Income) {
+    if (!confirm(t('savings.deleteIncomeConfirm').replace('%name', inc.name))) return
+    await fetch('/api/personal/incomes', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: inc.id }),
+    })
+    fetchData()
+  }
+
   const totalSaved = goals.reduce((sum, g) => sum + parseFloat(g.currentAmount || '0'), 0)
 
   const formatAmount = (v: number) =>
     new Intl.NumberFormat(locale, { style: 'currency', currency, minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(v)
 
-  const handleTabChange = (tab: TabKey) => {
-    setActiveTab(tab)
-    if (typeof window !== 'undefined') {
-      window.history.replaceState(null, '', `#${tab}`)
-    }
-  }
+  const cycleLabel = (p: Income['period']) =>
+    p === 'weekly' ? t('savings.cycleWeekly')
+      : p === 'yearly' ? t('savings.cycleYearly')
+      : p === 'oneoff' ? t('savings.cycleOneoff')
+      : t('savings.cycleMonthly')
 
   if (!isPersonal) return null
   if (loading) return <SavingsHubSkeleton />
@@ -573,6 +546,7 @@ export default function SavingsHub() {
   // Bilans miesiąca: suma aktywnych przychodów (znormalizowana do miesiąca) − wydatki
   const monthlyIncome = incomesList.reduce((s, inc) => s + incomeMonthly(inc), 0)
   const monthlySurplus = monthlyIncome - totalSpent
+  const savingRate = monthlyIncome > 0 ? Math.round((monthlySurplus / monthlyIncome) * 100) : null
 
   const activeGoals = goals.filter(g => !g.isCompleted)
   const completedGoals = goals.filter(g => g.isCompleted)
@@ -591,193 +565,240 @@ export default function SavingsHub() {
     return sum + remaining / 12
   }, 0)
 
+  // ETA celu — z nadwyżki miesięcznej, w ostateczności z terminu
+  const goalEta = (g: SavingsGoal): string | null => {
+    const remaining = parseFloat(g.targetAmount || '0') - parseFloat(g.currentAmount || '0')
+    if (remaining <= 0) return null
+    if (monthlySurplus > 0) {
+      const m = Math.ceil(remaining / monthlySurplus)
+      return new Date(new Date().getFullYear(), new Date().getMonth() + m, 1)
+        .toLocaleDateString(locale, { month: 'short', year: 'numeric' })
+    }
+    if (g.deadline) {
+      return new Date(g.deadline).toLocaleDateString(locale, { month: 'short', year: 'numeric' })
+    }
+    return null
+  }
+
+  // Segmenty paska przepływu: największe kategorie wydatków + „Zostaje"
+  const flowSegments: { label: string; value: number; color: string; pct: number }[] = []
+  if (monthlyIncome > 0) {
+    const spentCats = budgetCategories.filter(c => c.spent > 0).sort((a, b) => b.spent - a.spent)
+    const top = spentCats.slice(0, 5)
+    top.forEach((c, i) => {
+      flowSegments.push({ label: c.name, value: c.spent, color: CAT_COLORS[i % CAT_COLORS.length], pct: (c.spent / monthlyIncome) * 100 })
+    })
+    const otherSpent = totalSpent - top.reduce((s, c) => s + c.spent, 0)
+    if (otherSpent > 0.5) {
+      flowSegments.push({ label: t('categories.other'), value: otherSpent, color: CAT_COLORS[5], pct: (otherSpent / monthlyIncome) * 100 })
+    }
+    if (monthlySurplus > 0) {
+      flowSegments.push({ label: t('savings.flowLeft'), value: monthlySurplus, color: LEFTOVER_COLOR, pct: (monthlySurplus / monthlyIncome) * 100 })
+    }
+  }
+
+  const incomeMonthlyTotal = incomesList.reduce((s, inc) => s + incomeMonthly(inc), 0)
+  const budgetPct = totalBudgeted > 0 ? (totalSpent / totalBudgeted) * 100 : 0
+
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.35 }} className="flex flex-col gap-4 sm:gap-6">
       {/* Header */}
-      <motion.div custom={0} initial="hidden" animate="show" variants={fadeUp}>
-        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight" suppressHydrationWarning>
-          {t('savings.title')}
-        </h1>
-        <p className="text-sm text-muted-foreground mt-1" suppressHydrationWarning>
-          {t('savings.subtitle')}
-        </p>
+      <motion.div custom={0} initial="hidden" animate="show" variants={fadeUp} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div>
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight" suppressHydrationWarning>
+            {t('savings.title')}
+          </h1>
+          <p className="text-sm text-muted-foreground mt-1" suppressHydrationWarning>
+            {t('savings.subtitle')}
+          </p>
+        </div>
+        <div className="flex gap-2 shrink-0">
+          <Button variant="outline" size="sm" onClick={openAddIncome}>
+            <Plus className="h-3.5 w-3.5 mr-1" />
+            <span suppressHydrationWarning>{t('savings.addIncome')}</span>
+          </Button>
+          <Button size="sm" onClick={() => setNewGoalOpen(true)}>
+            <Plus className="h-3.5 w-3.5 mr-1" />
+            <span suppressHydrationWarning>{t('goals.newGoal')}</span>
+          </Button>
+        </div>
       </motion.div>
 
-      {/* KPI strip */}
+      {/* KPI strip (4) */}
       <motion.div custom={1} initial="hidden" animate="show" variants={fadeUp}>
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-          <Card className="hover:shadow-md transition-shadow">
-            <CardContent className="p-4 flex items-center gap-3">
-              <div className="h-10 w-10 rounded-xl bg-emerald-500/10 flex items-center justify-center shrink-0">
-                <Wallet className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
-              </div>
-              <div>
-                <p className="text-[11px] text-muted-foreground uppercase tracking-wide font-medium" suppressHydrationWarning>
-                  {t('savings.totalSaved')}
-                </p>
-                <p className="text-lg font-bold tabular-nums">{formatAmount(totalSaved)}</p>
-              </div>
-            </CardContent>
-          </Card>
-
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          {/* Zostaje w tym miesiącu */}
           <Card className="hover:shadow-md transition-shadow">
             <CardContent className="p-4 flex items-center gap-3">
               <div className={cn('h-10 w-10 rounded-xl flex items-center justify-center shrink-0', monthlySurplus >= 0 ? 'bg-emerald-500/10' : 'bg-red-500/10')}>
                 <TrendingUp className={cn('h-5 w-5', monthlySurplus >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 rotate-180')} />
               </div>
-              <div>
-                <p className="text-[11px] text-muted-foreground uppercase tracking-wide font-medium">
-                  {lang === 'pl' ? 'Bilans miesiąca' : 'Month balance'}
-                </p>
-                <p className={cn('text-lg font-bold tabular-nums', monthlySurplus >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500')}>
+              <div className="min-w-0">
+                <p className="nb-label truncate" suppressHydrationWarning>{t('savings.leftThisMonth')}</p>
+                <p className={cn('text-lg font-extrabold tabular-nums', monthlySurplus >= 0 ? 'text-[#1e6b2f] dark:text-emerald-400' : 'text-[#b3402c] dark:text-red-400')}>
                   {monthlyIncome > 0 ? `${monthlySurplus >= 0 ? '+' : ''}${formatAmount(monthlySurplus)}` : '—'}
                 </p>
               </div>
             </CardContent>
           </Card>
 
-          <Card className="hover:shadow-md transition-shadow col-span-2 sm:col-span-1">
+          {/* Łącznie odłożone */}
+          <Card className="hover:shadow-md transition-shadow">
+            <CardContent className="p-4 flex items-center gap-3">
+              <div className="h-10 w-10 rounded-xl bg-emerald-500/10 flex items-center justify-center shrink-0">
+                <Wallet className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+              </div>
+              <div className="min-w-0">
+                <p className="nb-label truncate" suppressHydrationWarning>{t('savings.totalSaved')}</p>
+                <p className="text-lg font-extrabold tabular-nums">{formatAmount(totalSaved)}</p>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Odkładasz % */}
+          <Card className="hover:shadow-md transition-shadow">
+            <CardContent className="p-4 flex items-center gap-3">
+              <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
+                <PiggyBank className="h-5 w-5 text-primary" />
+              </div>
+              <div className="min-w-0">
+                <p className="nb-label truncate" suppressHydrationWarning>{t('savings.savingRate')}</p>
+                <p className="text-lg font-extrabold tabular-nums">
+                  {savingRate !== null ? `${Math.max(0, savingRate)}%` : '—'}
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Zdrowie finansowe */}
+          <Card className="hover:shadow-md transition-shadow">
             <CardContent className="p-4 flex items-center gap-3">
               <HealthGauge score={healthScore} />
-              <div>
-                <p className="text-[11px] text-muted-foreground uppercase tracking-wide font-medium" suppressHydrationWarning>
-                  {t('savings.healthScore')}
-                </p>
-                <p className="text-lg font-bold tabular-nums">{healthScore}/100</p>
+              <div className="min-w-0">
+                <p className="nb-label truncate" suppressHydrationWarning>{t('savings.healthScore')}</p>
+                <p className="text-lg font-extrabold tabular-nums">{healthScore}/100</p>
               </div>
             </CardContent>
           </Card>
         </div>
       </motion.div>
 
-      {/* AI Tip Banner */}
+      {/* Flow card — hero równanie */}
       <motion.div custom={2} initial="hidden" animate="show" variants={fadeUp}>
-        <div className="rounded-xl border bg-gradient-to-r from-primary/5 via-violet-500/5 to-emerald-500/5 p-3.5 flex items-start gap-3">
-          <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0 mt-0.5">
-            <Sparkles className="h-4 w-4 text-primary" />
-          </div>
-          <div className="min-w-0">
-            <p className="text-xs font-semibold text-primary mb-0.5" suppressHydrationWarning>{t('savings.aiTip')}</p>
-            <p className="text-sm text-muted-foreground leading-relaxed" suppressHydrationWarning>
-              {t('savings.aiTipText')}
-            </p>
-          </div>
-        </div>
-      </motion.div>
+        <Card>
+          <CardContent className="p-4 sm:p-5 space-y-4">
+            {monthlyIncome > 0 ? (
+              <>
+                <div className="flex flex-wrap items-end justify-center gap-x-5 gap-y-2 sm:justify-start">
+                  <div>
+                    <p className="nb-label" suppressHydrationWarning>{t('savings.flowIn')}</p>
+                    <p className="text-lg font-extrabold tabular-nums text-[#1e6b2f] dark:text-emerald-400">{formatAmount(monthlyIncome)}</p>
+                  </div>
+                  <span className="text-2xl font-bold text-muted-foreground pb-1">−</span>
+                  <div>
+                    <p className="nb-label" suppressHydrationWarning>{t('savings.flowOut')}</p>
+                    <p className="text-lg font-extrabold tabular-nums text-[#b3402c] dark:text-red-400">{formatAmount(totalSpent)}</p>
+                  </div>
+                  <span className="text-2xl font-bold text-muted-foreground pb-1">=</span>
+                  <div>
+                    <p className="nb-label" suppressHydrationWarning>{t('savings.flowLeft')}</p>
+                    <p className={cn('text-xl font-extrabold tabular-nums', monthlySurplus >= 0 ? 'text-[#1e6b2f] dark:text-emerald-400' : 'text-[#b3402c] dark:text-red-400')}>
+                      {monthlySurplus >= 0 ? '+' : ''}{formatAmount(monthlySurplus)}
+                    </p>
+                  </div>
+                </div>
 
-      {/* Tabs */}
-      <motion.div custom={3} initial="hidden" animate="show" variants={fadeUp}>
-        <div className="flex gap-1 p-1 bg-muted/50 rounded-lg">
-          {TABS.map(tab => {
-            const Icon = tab.icon
-            const isActive = activeTab === tab.key
-            return (
-              <button
-                key={tab.key}
-                onClick={() => handleTabChange(tab.key)}
-                className={cn(
-                  'flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium transition-all flex-1 justify-center',
-                  isActive
-                    ? 'bg-background shadow-sm text-foreground'
-                    : 'text-muted-foreground hover:text-foreground'
+                {flowSegments.length > 0 && (
+                  <div>
+                    <div className="flex h-3.5 w-full overflow-hidden rounded-full bg-muted/40">
+                      {flowSegments.map((s, i) => (
+                        <div
+                          key={i}
+                          title={`${s.label} · ${formatAmount(s.value)}`}
+                          style={{ width: `${s.pct}%`, backgroundColor: s.color }}
+                          className="h-full"
+                        />
+                      ))}
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
+                      {flowSegments.map((s, i) => (
+                        <span key={i} className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
+                          <span className="h-2 w-2 rounded-[3px]" style={{ backgroundColor: s.color }} />
+                          {s.label} <span className="tabular-nums">{Math.round(s.pct)}%</span>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
                 )}
-                suppressHydrationWarning
-              >
-                <Icon className="h-4 w-4" />
-                <span className="hidden sm:inline">{t(`savings.tabs.${tab.key}`)}</span>
-              </button>
-            )
-          })}
-        </div>
+              </>
+            ) : (
+              <div className="flex flex-col items-center gap-3 py-3 text-center sm:flex-row sm:justify-between sm:text-left">
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
+                    <Wallet className="h-5 w-5 text-primary" />
+                  </div>
+                  <p className="text-sm text-muted-foreground max-w-md" suppressHydrationWarning>{t('savings.noIncomeCta')}</p>
+                </div>
+                <Button size="sm" onClick={openAddIncome} className="shrink-0">
+                  <Plus className="h-3.5 w-3.5 mr-1" />
+                  <span suppressHydrationWarning>{t('savings.addIncome')}</span>
+                </Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </motion.div>
 
-      {/* Tab Content */}
-      <AnimatePresence mode="wait">
-        {activeTab === 'goals' && (
-          <motion.div
-            key="goals"
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -12 }}
-            transition={{ duration: 0.3 }}
-            className="space-y-4"
-          >
-            {/* Goals header */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div>
-                <h2 className="text-lg font-semibold" suppressHydrationWarning>{t('savings.tabs.goals')}</h2>
+      {/* Main grid */}
+      <motion.div custom={3} initial="hidden" animate="show" variants={fadeUp} className="grid lg:grid-cols-[1.25fr_1fr] gap-4">
+        {/* LEFT column */}
+        <div className="flex flex-col gap-4">
+          {/* Cele */}
+          <Card>
+            <CardContent className="p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="nb-label" suppressHydrationWarning>{t('savings.tabs.goals')}</p>
                 {activeGoals.length > 0 && (
-                  <p className="text-sm text-muted-foreground" suppressHydrationWarning>{t('goals.subtitle')}</p>
+                  <span className="text-xs text-muted-foreground tabular-nums">
+                    {activeGoals.length} · <b className="text-amber-600 dark:text-amber-400">{formatAmount(monthlyNeeded)}</b>/{t('savings.perMonthShort')}
+                  </span>
                 )}
               </div>
-              <Button size="sm" onClick={() => setNewGoalOpen(true)} className="shrink-0">
-                <Plus className="h-3.5 w-3.5 mr-1" />
-                <span suppressHydrationWarning>{t('goals.newGoal')}</span>
-              </Button>
-            </div>
 
-            {/* KPI strip for goals */}
-            {activeGoals.length > 0 && (
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                {[
-                  { icon: PiggyBank, label: t('goals.totalSaved'), value: formatAmount(totalSaved), color: 'text-emerald-600 dark:text-emerald-400' },
-                  { icon: Target, label: t('goals.activeGoals'), value: String(activeGoals.length), color: 'text-primary' },
-                  { icon: TrendingUp, label: t('goals.perMonth'), value: formatAmount(monthlyNeeded), color: 'text-amber-600 dark:text-amber-400' },
-                  { icon: Sparkles, label: t('goals.completed'), value: String(completedGoals.length), color: 'text-purple-600 dark:text-purple-400' },
-                ].map((kpi, i) => (
-                  <Card key={i} className="hover:shadow-sm transition-shadow">
-                    <CardHeader className="pb-1 pt-3 px-3">
-                      <CardTitle className="text-[11px] font-medium text-muted-foreground flex items-center gap-1">
-                        <kpi.icon className="h-3 w-3" />
-                        <span suppressHydrationWarning>{kpi.label}</span>
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="px-3 pb-3 pt-0">
-                      <div className={cn('text-base font-bold', kpi.color)}>{kpi.value}</div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            )}
-
-            {/* Category filter */}
-            {activeGoals.length > 0 && (
-              <div className="flex flex-wrap gap-2">
-                <button
-                  onClick={() => setFilterCategory(null)}
-                  className={cn(
-                    'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all min-h-[36px]',
-                    !filterCategory ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-muted/80 text-muted-foreground'
-                  )}
-                  suppressHydrationWarning
-                >
-                  {t('goals.allCategories')}
-                </button>
-                {Object.entries(CATEGORY_ICONS).map(([key, iconName]) => (
+              {/* Category filter */}
+              {activeGoals.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
                   <button
-                    key={key}
-                    onClick={() => setFilterCategory(filterCategory === key ? null : key)}
+                    onClick={() => setFilterCategory(null)}
                     className={cn(
-                      'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all min-h-[36px]',
-                      filterCategory === key ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-muted/80 text-muted-foreground'
+                      'flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-all',
+                      !filterCategory ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-muted/80 text-muted-foreground'
                     )}
+                    suppressHydrationWarning
                   >
-                    <AppIcon value={iconName} size="sm" chipClassName="bg-transparent text-current" />
-                    {t(`goals.category.${key}` as Parameters<typeof t>[0])}
+                    {t('goals.allCategories')}
                   </button>
-                ))}
-              </div>
-            )}
+                  {Object.entries(CATEGORY_ICONS).map(([key, iconName]) => (
+                    <button
+                      key={key}
+                      onClick={() => setFilterCategory(filterCategory === key ? null : key)}
+                      className={cn(
+                        'flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-all',
+                        filterCategory === key ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-muted/80 text-muted-foreground'
+                      )}
+                    >
+                      <AppIcon value={iconName} size="sm" chipClassName="bg-transparent text-current" />
+                      {t(`goals.category.${key}` as Parameters<typeof t>[0])}
+                    </button>
+                  ))}
+                </div>
+              )}
 
-            {/* Empty state */}
-            {goals.length === 0 && (
-              <Card>
-                <CardContent className="p-8 text-center">
-                  <p className="font-mono text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-3" suppressHydrationWarning>
-                    {t('goals.emptyTitle')}
-                  </p>
-                  <div className="mx-auto mb-4 h-16 w-16 border border-border bg-secondary shadow-[var(--nb-shadow-sm)] rounded-md flex items-center justify-center">
-                    <Target className="h-8 w-8 text-foreground" />
+              {/* Empty state */}
+              {goals.length === 0 && (
+                <div className="py-6 text-center">
+                  <div className="mx-auto mb-3 h-14 w-14 border border-border bg-secondary shadow-[var(--nb-shadow-sm)] rounded-md flex items-center justify-center">
+                    <Target className="h-7 w-7 text-foreground" />
                   </div>
                   <h3 className="font-semibold mb-1" suppressHydrationWarning>{t('goals.emptyTitle')}</h3>
                   <p className="text-sm text-muted-foreground mb-4" suppressHydrationWarning>{t('goals.emptyDesc')}</p>
@@ -785,400 +806,295 @@ export default function SavingsHub() {
                     <Plus className="h-3.5 w-3.5 mr-1.5" />
                     <span suppressHydrationWarning>{t('goals.newGoal')}</span>
                   </Button>
-                </CardContent>
-              </Card>
-            )}
+                </div>
+              )}
 
-            {/* Active goals grid */}
-            {filteredGoals.length > 0 && (
-              <motion.div
-                className="grid sm:grid-cols-2 xl:grid-cols-3 gap-4"
-                variants={{ hidden: {}, visible: { transition: { staggerChildren: 0.05 } } }}
-                initial="hidden"
-                animate="visible"
-              >
-                {filteredGoals.map((goal, i) => (
-                  <SavingsGoalCard
-                    key={goal.id}
-                    goal={goal}
-                    index={i}
-                    onAddFunds={g => setAddFundsGoal({ id: g.id, name: g.name, emoji: g.emoji, targetAmount: g.targetAmount, currentAmount: g.currentAmount, color: g.color, currency: g.currency })}
-                    onDelete={(gid: string) => setGoalToDelete(gid)}
-                    currency={currency}
-                  />
-                ))}
-              </motion.div>
-            )}
-
-            {/* AI Coach + Financial Health — shown when goals exist */}
-            {activeGoals.length > 0 && (
-              <div className="grid md:grid-cols-2 gap-4">
-                <Card className="border-primary/20 bg-gradient-to-br from-primary/5 to-emerald-500/5">
-                  <CardHeader className="pb-3">
-                    <CardTitle className="flex items-center gap-2 text-base">
-                      <Sparkles className="h-5 w-5 text-primary" />
-                      {t('goals.aiCoach')}
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    <div className="flex items-start gap-2 bg-background/50 rounded-lg px-3 py-2.5 border border-border/40">
-                      <TrendingUp className="h-4 w-4 text-primary shrink-0 mt-0.5" />
-                      <p className="text-sm leading-relaxed">
-                        {t('goals.aiCoachSaveMonthly')
-                          .replace('%amount', monthlyNeeded.toFixed(0))
-                          .replace('%currency', currency)}
-                      </p>
-                    </div>
-                    {monthlyIncome > 0 && monthlySurplus > 0 && (
-                      <div className="flex items-start gap-2 bg-background/50 rounded-lg px-3 py-2.5 border border-border/40">
-                        <Wallet className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
-                        <p className="text-sm leading-relaxed">
-                          {lang === 'pl'
-                            ? `Jesteś ~${formatAmount(monthlySurplus)} na plusie miesięcznie — tyle realnie możesz odkładać.`
-                            : `You run ~${formatAmount(monthlySurplus)} surplus per month — that's what you can realistically save.`}
-                        </p>
-                      </div>
-                    )}
-                    {activeGoals.slice(0, 2).map(g => {
-                      const target = parseFloat(g.targetAmount || '0')
-                      const current = parseFloat(g.currentAmount || '0')
-                      const pct = target > 0 ? (current / target) * 100 : 0
-                      const onTrack = pct >= 50 || !g.deadline
-                      const remaining = target - current
-                      const monthsToGoal = monthlySurplus > 0 && remaining > 0 ? Math.ceil(remaining / monthlySurplus) : null
-                      const etaDate = monthsToGoal !== null
-                        ? new Date(new Date().getFullYear(), new Date().getMonth() + monthsToGoal, 1)
-                            .toLocaleDateString(lang === 'pl' ? 'pl-PL' : 'en-US', { month: 'short', year: 'numeric' })
-                        : null
-                      return (
-                        <div key={g.id} className="flex items-start gap-2 text-xs text-muted-foreground">
-                          <AppIcon value={g.emoji} fallback="target" size="sm" />
-                          <span>
-                            {g.name} — {onTrack ? t('goals.onTrack') : t('goals.behindSchedule')}
-                            {' '}({Math.round(pct)}%)
-                            {monthsToGoal !== null && (
-                              <span className="block text-[11px] text-emerald-700 dark:text-emerald-400 font-medium">
-                                {lang === 'pl'
-                                  ? `przy obecnym plusie uzbierasz za ~${monthsToGoal} mies. (${etaDate})`
-                                  : `at your current surplus you'll get there in ~${monthsToGoal} mo (${etaDate})`}
-                              </span>
-                            )}
-                          </span>
-                          <Badge variant="outline" className={cn('ml-auto text-[10px]', onTrack ? 'border-emerald-500/30 text-emerald-600' : 'border-amber-500/30 text-amber-600')}>
-                            {onTrack ? <Check className="h-3 w-3" /> : '!'}
-                          </Badge>
+              {/* Compact goal rows */}
+              {filteredGoals.length > 0 && (
+                <div className="divide-y divide-border/40">
+                  {filteredGoals.map(g => {
+                    const target = parseFloat(g.targetAmount || '0')
+                    const current = parseFloat(g.currentAmount || '0')
+                    const pct = target > 0 ? Math.min(Math.round((current / target) * 100), 100) : 0
+                    const eta = goalEta(g)
+                    return (
+                      <div key={g.id} className="flex items-center gap-3 py-2.5">
+                        <AppIcon value={g.emoji} fallback="target" />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between gap-2 mb-1">
+                            <span className="text-sm font-semibold truncate">{g.name}</span>
+                            <span className="text-xs tabular-nums text-muted-foreground shrink-0">
+                              {formatAmount(current)} / {formatAmount(target)}
+                              {eta && <> · {t('savings.ready')} {eta}</>}
+                            </span>
+                          </div>
+                          <div className="h-1.5 rounded-full bg-muted/50 overflow-hidden">
+                            <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${pct}%` }} />
+                          </div>
                         </div>
-                      )
-                    })}
-                    {activeGoals[0]?.aiTips && activeGoals[0].aiTips.length > 0 && (
-                      <div className="pt-2 border-t border-border/40 space-y-1.5">
-                        {activeGoals[0].aiTips.slice(0, 2).map((tip, i) => (
-                          <p key={i} className="text-xs text-muted-foreground flex items-start gap-1.5">
-                            <span className="text-primary mt-0.5">•</span>
-                            {tip}
-                          </p>
-                        ))}
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-8 shrink-0 px-2"
+                          onClick={() => setAddFundsGoal({ id: g.id, name: g.name, emoji: g.emoji, targetAmount: g.targetAmount, currentAmount: g.currentAmount, color: g.color, currency: g.currency })}
+                        >
+                          <Plus className="h-3.5 w-3.5 sm:mr-1" />
+                          <span className="hidden sm:inline" suppressHydrationWarning>{t('goals.addFunds')}</span>
+                        </Button>
+                        <button
+                          className="p-1 text-muted-foreground hover:text-destructive shrink-0"
+                          title={t('goals.deleteGoal')}
+                          onClick={() => setGoalToDelete(g.id)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
                       </div>
-                    )}
-                  </CardContent>
-                </Card>
-                <FinancialHealthScore />
-              </div>
-            )}
+                    )
+                  })}
+                </div>
+              )}
 
-            {/* Completed goals */}
-            {completedGoals.length > 0 && (
-              <Card>
-                <CardHeader className="pb-3">
+              {/* AI Coach footer */}
+              {activeGoals.length > 0 && (
+                <div className="pt-3 border-t border-border/40 space-y-2">
+                  <p className="text-xs font-semibold text-primary flex items-center gap-1.5" suppressHydrationWarning>
+                    <Sparkles className="h-3.5 w-3.5" />
+                    {t('goals.aiCoach')}
+                  </p>
+                  <p className="text-sm text-muted-foreground leading-relaxed flex items-start gap-1.5">
+                    <TrendingUp className="h-4 w-4 text-primary shrink-0 mt-0.5" />
+                    <span>
+                      {t('goals.aiCoachSaveMonthly')
+                        .replace('%amount', monthlyNeeded.toFixed(0))
+                        .replace('%currency', currency)}
+                    </span>
+                  </p>
+                  {monthlyIncome > 0 && monthlySurplus > 0 && (
+                    <p className="text-sm text-muted-foreground leading-relaxed flex items-start gap-1.5">
+                      <Wallet className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
+                      <span>
+                        {lang === 'pl'
+                          ? `Jesteś ~${formatAmount(monthlySurplus)} na plusie miesięcznie — tyle realnie możesz odkładać.`
+                          : `You run ~${formatAmount(monthlySurplus)} surplus per month — that's what you can realistically save.`}
+                      </span>
+                    </p>
+                  )}
+                  {activeGoals[0]?.aiTips && activeGoals[0].aiTips.length > 0 && (
+                    <div className="space-y-1">
+                      {activeGoals[0].aiTips.slice(0, 2).map((tip, i) => (
+                        <p key={i} className="text-xs text-muted-foreground flex items-start gap-1.5">
+                          <span className="text-primary mt-0.5">•</span>
+                          {tip}
+                        </p>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Completed goals */}
+              {completedGoals.length > 0 && (
+                <div className="pt-3 border-t border-border/40">
                   <button
                     onClick={() => setShowCompleted(!showCompleted)}
                     className="flex items-center justify-between w-full"
                   >
-                    <CardTitle className="text-base flex items-center gap-2">
-                      <Sparkles className="h-5 w-5 text-purple-500" />
+                    <span className="text-sm font-semibold flex items-center gap-2">
+                      <Sparkles className="h-4 w-4 text-purple-500" />
                       {t('goals.completedGoals')} ({completedGoals.length})
-                    </CardTitle>
+                    </span>
                     {showCompleted ? (
                       <ChevronUp className="h-4 w-4 text-muted-foreground" />
                     ) : (
                       <ChevronDown className="h-4 w-4 text-muted-foreground" />
                     )}
                   </button>
-                </CardHeader>
-                <AnimatePresence>
-                  {showCompleted && (
-                    <motion.div
-                      initial={{ height: 0, opacity: 0 }}
-                      animate={{ height: 'auto', opacity: 1 }}
-                      exit={{ height: 0, opacity: 0 }}
-                      transition={{ duration: 0.3 }}
-                      className="overflow-hidden"
-                    >
-                      <CardContent className="pt-0">
-                        <div className="divide-y divide-border/40">
+                  <AnimatePresence>
+                    {showCompleted && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.3 }}
+                        className="overflow-hidden"
+                      >
+                        <div className="divide-y divide-border/40 pt-1">
                           {completedGoals.map(g => {
-                            const createdDate = new Date(g.createdAt)
                             const completedDate = g.completedAt ? new Date(g.completedAt) : null
-                            const daysTaken = completedDate
-                              ? Math.ceil((completedDate.getTime() - createdDate.getTime()) / (1000 * 60 * 60 * 24))
-                              : null
                             return (
-                              <div key={g.id} className="flex items-center gap-3 py-3">
+                              <div key={g.id} className="flex items-center gap-3 py-2.5">
                                 <AppIcon value={g.emoji} fallback="target" />
                                 <div className="flex-1 min-w-0">
-                                  <p className="text-sm font-semibold">{g.name}</p>
-                                  <p className="text-xs text-muted-foreground">
-                                    {parseFloat(g.targetAmount).toLocaleString('pl-PL', { minimumFractionDigits: 2 })} {g.currency || currency}
+                                  <p className="text-sm font-semibold truncate">{g.name}</p>
+                                  <p className="text-xs text-muted-foreground tabular-nums">
+                                    {formatAmount(parseFloat(g.targetAmount || '0'))}
                                   </p>
                                 </div>
-                                <div className="text-right shrink-0">
-                                  {completedDate && (
-                                    <p className="text-xs text-muted-foreground">
-                                      {t('goals.reachedOn')} {completedDate.toLocaleDateString(lang === 'pl' ? 'pl-PL' : 'en-US')}
-                                    </p>
-                                  )}
-                                  {daysTaken !== null && (
-                                    <p className="text-[10px] text-muted-foreground">
-                                      {daysTaken} {t('goals.days')}
-                                    </p>
-                                  )}
-                                </div>
-                                <Badge className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/20 text-[10px]">
+                                {completedDate && (
+                                  <p className="text-xs text-muted-foreground shrink-0">
+                                    {t('goals.reachedOn')} {completedDate.toLocaleDateString(locale)}
+                                  </p>
+                                )}
+                                <Badge className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/20 text-[10px] shrink-0">
                                   <ShieldCheck className="h-3 w-3" />
                                 </Badge>
                               </div>
                             )
                           })}
                         </div>
-                      </CardContent>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </Card>
-            )}
-          </motion.div>
-        )}
-
-        {activeTab === 'budget' && (
-          <motion.div
-            key="budget"
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -12 }}
-            transition={{ duration: 0.3 }}
-            className="space-y-4"
-          >
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold" suppressHydrationWarning>{t('savings.monthOverview')}</h2>
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" asChild>
-                  <Link href="/budget">
-                    <span suppressHydrationWarning>{t('savings.viewAll')}</span>
-                    <ArrowRight className="h-3.5 w-3.5 ml-1.5" />
-                  </Link>
-                </Button>
-                <Button size="sm" variant="secondary" asChild>
-                  <Link href="/budget">
-                    <Wallet className="h-3.5 w-3.5 mr-1.5" />
-                    <span suppressHydrationWarning>{t('savings.canIAfford')}</span>
-                  </Link>
-                </Button>
-              </div>
-            </div>
-
-            {/* Przychody */}
-            <IncomeManager
-              incomes={incomesList}
-              pl={lang === 'pl'}
-              onChanged={fetchData}
-              formatAmount={formatAmount}
-            />
-
-            {/* Budget overview card */}
-            <Card>
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between mb-4">
-                  <div>
-                    <p className="text-xs text-muted-foreground" suppressHydrationWarning>{t('dashboard.totalSpent')}</p>
-                    <p className="text-xl font-bold tabular-nums">{formatAmount(totalSpent)}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-xs text-muted-foreground" suppressHydrationWarning>{t('dashboard.budgetProgress')}</p>
-                    <p className="text-xl font-bold tabular-nums">{formatAmount(totalBudgeted)}</p>
-                  </div>
-                </div>
-
-                {/* Overall progress bar */}
-                {totalBudgeted > 0 && (
-                  <div className="mb-4">
-                    <div
-                      className="h-2 rounded-full bg-muted/50 overflow-hidden"
-                      role="progressbar"
-                      aria-valuenow={Math.round((totalSpent / totalBudgeted) * 100)}
-                      aria-valuemin={0}
-                      aria-valuemax={100}
-                      aria-label={t('dashboard.budgetProgress') || 'Budget progress'}
-                    >
-                      <motion.div
-                        initial={{ width: 0 }}
-                        animate={{ width: `${Math.min((totalSpent / totalBudgeted) * 100, 100)}%` }}
-                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                        transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] as any }}
-                        className={cn(
-                          'h-full rounded-full',
-                          totalSpent > totalBudgeted ? 'bg-red-500' : 'bg-primary'
-                        )}
-                      />
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-1 text-right">
-                      {Math.round((totalSpent / totalBudgeted) * 100)}% {t('dashboard.used')}
-                    </p>
-                  </div>
-                )}
-
-                {budgetWithAmounts.length === 0 ? (
-                  <p className="text-sm text-muted-foreground text-center py-4" suppressHydrationWarning>
-                    {t('savings.budgetEmpty')}
-                  </p>
-                ) : (
-                  <motion.div
-                    className="divide-y"
-                    variants={{ hidden: {}, visible: { transition: { staggerChildren: 0.05 } } }}
-                    initial="hidden"
-                    animate="visible"
-                  >
-                    {budgetWithAmounts.slice(0, 5).map(cat => (
-                      <motion.div key={cat.id} variants={{ hidden: { opacity: 0, y: 8 }, visible: { opacity: 1, y: 0, transition: { duration: 0.3 } } }}>
-                        <BudgetMiniRow cat={cat} currency={currency} locale={locale} />
                       </motion.div>
-                    ))}
-                  </motion.div>
-                )}
-              </CardContent>
-            </Card>
-          </motion.div>
-        )}
+                    )}
+                  </AnimatePresence>
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
-        {activeTab === 'challenges' && (
-          <motion.div
-            key="challenges"
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -12 }}
-            transition={{ duration: 0.3 }}
-            className="space-y-4"
-          >
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold" suppressHydrationWarning>{t('savings.activeChallenges')}</h2>
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" asChild>
-                  <Link href="/challenges">
-                    <span suppressHydrationWarning>{t('savings.viewAll')}</span>
-                    <ArrowRight className="h-3.5 w-3.5 ml-1.5" />
-                  </Link>
-                </Button>
-                <Button size="sm" asChild>
-                  <Link href="/challenges">
-                    <Plus className="h-3.5 w-3.5 mr-1" />
-                    <span suppressHydrationWarning>{t('challenges.new')}</span>
-                  </Link>
-                </Button>
+          {/* Wyzwania */}
+          <Card>
+            <CardContent className="p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="nb-label" suppressHydrationWarning>{t('savings.tabs.challenges')}</p>
+                <Link href="/challenges" className="text-xs font-bold text-primary inline-flex items-center gap-0.5 hover:underline">
+                  <span suppressHydrationWarning>{t('savings.viewAll')}</span>
+                  <ArrowRight className="h-3 w-3" />
+                </Link>
               </div>
-            </div>
-
-            {activeChallenges.length === 0 ? (
-              <Card>
-                <CardContent className="p-8 text-center">
-                  <Trophy className="h-10 w-10 text-muted-foreground/40 mx-auto mb-3" />
+              {activeChallenges.length === 0 ? (
+                <div className="py-6 text-center">
+                  <Trophy className="h-9 w-9 text-muted-foreground/40 mx-auto mb-2" />
                   <p className="text-sm text-muted-foreground" suppressHydrationWarning>{t('savings.challengesEmpty')}</p>
-                  <Button className="mt-4" size="sm" asChild>
+                  <Button className="mt-3" size="sm" asChild>
                     <Link href="/challenges">
                       <Plus className="h-3.5 w-3.5 mr-1.5" />
                       <span suppressHydrationWarning>{t('challenges.new')}</span>
                     </Link>
                   </Button>
-                </CardContent>
-              </Card>
-            ) : (
-              <motion.div
-                className="grid gap-3 grid-cols-1 sm:grid-cols-2"
-                variants={{ hidden: {}, visible: { transition: { staggerChildren: 0.05 } } }}
-                initial="hidden"
-                animate="visible"
-              >
-                {activeChallenges.slice(0, 4).map(ch => (
-                  <motion.div key={ch.id} variants={{ hidden: { opacity: 0, y: 8 }, visible: { opacity: 1, y: 0, transition: { duration: 0.3 } } }}>
-                    <ChallengeMiniCard challenge={ch} />
-                  </motion.div>
-                ))}
-              </motion.div>
-            )}
-          </motion.div>
-        )}
+                </div>
+              ) : (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {activeChallenges.slice(0, 4).map(ch => (
+                    <ChallengeMiniCard key={ch.id} challenge={ch} />
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
 
-        {activeTab === 'deals' && (
-          <motion.div
-            key="deals"
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -12 }}
-            transition={{ duration: 0.3 }}
-            className="space-y-4"
-          >
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold" suppressHydrationWarning>{t('savings.personalizedDeals')}</h2>
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" asChild>
-                  <Link href="/promotions">
-                    <span suppressHydrationWarning>{t('savings.viewAll')}</span>
-                    <ArrowRight className="h-3.5 w-3.5 ml-1.5" />
-                  </Link>
-                </Button>
+        {/* RIGHT column */}
+        <div className="flex flex-col gap-4">
+          {/* Przychody */}
+          <Card>
+            <CardContent className="p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="nb-label" suppressHydrationWarning>{t('savings.income')}</p>
+                <span className="text-xs text-muted-foreground tabular-nums">
+                  <b className="text-emerald-600 dark:text-emerald-400">{formatAmount(incomeMonthlyTotal)}</b>/{t('savings.perMonthShort')}
+                </span>
               </div>
-            </div>
 
-            <Card>
-              <CardContent className="p-8 text-center">
-                <Tag className="h-10 w-10 text-muted-foreground/40 mx-auto mb-3" />
-                <p className="text-sm text-muted-foreground" suppressHydrationWarning>{t('savings.dealsEmpty')}</p>
-                <Button className="mt-4" size="sm" variant="outline" asChild>
-                  <Link href="/promotions">
-                    <Tag className="h-3.5 w-3.5 mr-1.5" />
-                    <span suppressHydrationWarning>{t('savings.viewAll')}</span>
-                  </Link>
-                </Button>
-              </CardContent>
-            </Card>
+              {incomesList.length === 0 ? (
+                <p className="text-xs text-muted-foreground" suppressHydrationWarning>{t('savings.incomeEmpty')}</p>
+              ) : (
+                <div className="space-y-1.5">
+                  {incomesList.map(inc => (
+                    <div key={inc.id} className={cn('flex items-center gap-2', !inc.isActive && 'opacity-50')}>
+                      <AppIcon value={inc.emoji} fallback="briefcase" size="sm" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">
+                          {inc.name}
+                          {!inc.isActive && <span className="ml-1.5 text-[10px] text-muted-foreground" suppressHydrationWarning>({t('savings.paused')})</span>}
+                        </p>
+                        <p className="text-[11px] text-muted-foreground" suppressHydrationWarning>{cycleLabel(inc.period)}</p>
+                      </div>
+                      <span className="tabular-nums font-bold text-sm shrink-0">{formatAmount(parseFloat(inc.amount))}</span>
+                      <button className="p-1 text-muted-foreground hover:text-foreground shrink-0" title={t('common.edit')} onClick={() => openEditIncome(inc)}>
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
+                      <button className="p-1 text-muted-foreground hover:text-foreground shrink-0" title={inc.isActive ? t('savings.pauseIncome') : t('savings.resumeIncome')} onClick={() => toggleIncomeActive(inc)}>
+                        {inc.isActive ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
+                      </button>
+                      <button className="p-1 text-muted-foreground hover:text-destructive shrink-0" title={t('common.delete')} onClick={() => removeIncome(inc)}>
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
 
-            {/* Loyalty Cards section */}
-            <div className="flex items-center justify-between mt-6">
-              <h2 className="text-lg font-semibold" suppressHydrationWarning>{t('savings.loyaltyCards')}</h2>
-              <Button variant="outline" size="sm" asChild>
-                <Link href="/loyalty">
-                  <CreditCard className="h-3.5 w-3.5 mr-1.5" />
-                  <span suppressHydrationWarning>{t('savings.viewAll')}</span>
-                </Link>
+              <Button variant="outline" size="sm" className="w-full" onClick={openAddIncome}>
+                <Plus className="h-3.5 w-3.5 mr-1.5" />
+                <span suppressHydrationWarning>{t('savings.addIncome')}</span>
               </Button>
-            </div>
+            </CardContent>
+          </Card>
 
-            <Card>
-              <CardContent className="p-6 text-center">
-                <CreditCard className="h-8 w-8 text-muted-foreground/40 mx-auto mb-2" />
-                <p className="text-sm text-muted-foreground" suppressHydrationWarning>
-                  {t('settings.loyaltyCardsDesc')}
-                </p>
-                <Button className="mt-3" size="sm" variant="outline" asChild>
-                  <Link href="/loyalty">
-                    <span suppressHydrationWarning>{t('settings.manageLoyalty')}</span>
-                  </Link>
-                </Button>
-              </CardContent>
-            </Card>
-          </motion.div>
-        )}
-      </AnimatePresence>
+          {/* Budżet miesiąca */}
+          <Card>
+            <CardContent className="p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="nb-label" suppressHydrationWarning>{t('savings.budgetMonth')}</p>
+                <Link href="/budget" className="text-xs font-bold text-primary inline-flex items-center gap-0.5 hover:underline">
+                  <span suppressHydrationWarning>{t('savings.allBudgets')}</span>
+                  <ArrowRight className="h-3 w-3" />
+                </Link>
+              </div>
 
-      {/* Sheets */}
+              <div className="flex items-end justify-between">
+                <p className="text-lg font-extrabold tabular-nums">{formatAmount(totalSpent)}</p>
+                <p className="text-xs text-muted-foreground tabular-nums">/ {formatAmount(totalBudgeted)}</p>
+              </div>
+
+              {totalBudgeted > 0 && (
+                <div
+                  className="pb-track"
+                  role="progressbar"
+                  aria-valuenow={Math.round(budgetPct)}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-label={t('dashboard.budgetProgress') || 'Budget progress'}
+                >
+                  <span className={barPctClass(budgetPct)} style={{ width: `${Math.min(budgetPct, 100)}%` }} />
+                </div>
+              )}
+
+              {budgetWithAmounts.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-2" suppressHydrationWarning>{t('savings.budgetEmpty')}</p>
+              ) : (
+                <div className="divide-y divide-border/40">
+                  {budgetWithAmounts.slice(0, 5).map(cat => (
+                    <BudgetMiniRow key={cat.id} cat={cat} currency={currency} locale={locale} />
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Oszczędzaj więcej */}
+          <Card>
+            <CardContent className="p-4 space-y-2">
+              <p className="nb-label" suppressHydrationWarning>{t('savings.saveMore')}</p>
+              <Link href="/promotions" className="flex items-center gap-3 rounded-lg px-2 py-2 -mx-1 hover:bg-muted/50 transition-colors">
+                <div className="h-9 w-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                  <Tag className="h-4 w-4 text-primary" />
+                </div>
+                <span className="flex-1 text-sm font-medium" suppressHydrationWarning>{t('savings.promosForYou')}</span>
+                <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0" />
+              </Link>
+              <Link href="/loyalty" className="flex items-center gap-3 rounded-lg px-2 py-2 -mx-1 hover:bg-muted/50 transition-colors">
+                <div className="h-9 w-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                  <CreditCard className="h-4 w-4 text-primary" />
+                </div>
+                <span className="flex-1 text-sm font-medium" suppressHydrationWarning>{t('savings.loyaltyCards')}</span>
+                <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0" />
+              </Link>
+            </CardContent>
+          </Card>
+        </div>
+      </motion.div>
+
+      {/* Sheets & dialogs */}
       <NewGoalSheet
         open={newGoalOpen}
         onOpenChange={setNewGoalOpen}
@@ -1191,6 +1107,13 @@ export default function SavingsHub() {
         goal={addFundsGoal}
         onDeposited={fetchData}
         currency={currency}
+      />
+      <IncomeDialog
+        open={incomeDialogOpen}
+        onOpenChange={setIncomeDialogOpen}
+        editing={editingIncome}
+        pl={lang === 'pl'}
+        onSaved={fetchData}
       />
       <ConfirmDialog
         open={goalToDelete !== null}
