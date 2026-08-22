@@ -5,7 +5,10 @@ import { eq, gte, lte, and } from 'drizzle-orm'
 import { buildCsvBuffer, buildPdfBuffer, buildDocxBuffer } from '@/lib/reports/builders'
 import { put } from '@vercel/blob'
 import { rateLimitPersistent } from '@/lib/rate-limit'
+import { withApiTiming } from '@/lib/api-timing'
 import { z } from 'zod'
+
+const MAX_REPORT_ROWS = 5_000
 
 const ReportFormDataSchema = z.union([
   z.object({
@@ -20,7 +23,7 @@ const ReportFormDataSchema = z.union([
   }),
 ])
 
-export async function POST(request: Request) {
+async function postGenerateReport(request: Request) {
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
@@ -32,7 +35,8 @@ export async function POST(request: Request) {
     )
   }
 
-  const formData = await request.formData()
+  const formData = await request.formData().catch(() => null)
+  if (!formData) return NextResponse.json({ error: 'Invalid form data' }, { status: 400 })
   const rawType = formData.get('type')
   const year = formData.get('year') as string | null
   const ym = formData.get('ym') as string | null
@@ -74,8 +78,15 @@ export async function POST(request: Request) {
       eq(expenses.userId, userId),
       gte(expenses.date, startDate),
       lte(expenses.date, endDate)
-    )),
+    )).limit(MAX_REPORT_ROWS + 1),
   ])
+
+  if (expensesData.length > MAX_REPORT_ROWS) {
+    return NextResponse.json(
+      { error: 'Report too large. Narrow the date range and try again.', limit: MAX_REPORT_ROWS },
+      { status: 413 },
+    )
+  }
   const currency = (settingsData[0]?.currency || 'PLN').toUpperCase()
   const catById = new Map(cats.map(c => [c.id, c]))
 
@@ -150,6 +161,8 @@ export async function POST(request: Request) {
       success: true,
       path: storagePath,
       urls: { csv: csvBlob.url, pdf: pdfBlob.url, docx: docxBlob.url },
+    }, {
+      headers: { 'Cache-Control': 'private, no-store' },
     })
   } catch (err) {
     console.error('[reports/generate] build error:', err)
@@ -160,3 +173,5 @@ export async function POST(request: Request) {
     )
   }
 }
+
+export const POST = withApiTiming('api.reports.generate.POST', postGenerateReport)

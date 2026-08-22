@@ -2,43 +2,102 @@ package com.programo.solvio.core.models
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.descriptors.PrimitiveKind
 import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
 import kotlinx.serialization.json.JsonDecoder
 import kotlinx.serialization.json.JsonPrimitive
+import java.math.BigDecimal
+import java.math.RoundingMode
 
-/// `MoneyString` — backend stores `decimal(12,2)` as text. Decode either
-/// String or Double, expose as Double for math via `.toDouble()`.
+/// `MoneyString` — backend stores `decimal(12,2)` as text. Mirrors iOS
+/// `MoneyString` (Money.swift): wraps an exact `BigDecimal`, exposes a
+/// rounded `.toPlainString()`-style description, a `double`, money
+/// arithmetic (`+`/`-`), `zero`, and `formatted(currency)`. Encodes back
+/// to the rounded string the backend expects.
 @Serializable(with = MoneyStringSerializer::class)
-data class MoneyString(val raw: String) {
-    fun toDouble(): Double = raw.replace(",", ".").toDoubleOrNull() ?: 0.0
+data class MoneyString(val value: BigDecimal) {
+    constructor(raw: String) : this(parse(raw))
+    constructor(d: Double) : this(BigDecimal.valueOf(d))
+    constructor(i: Int) : this(BigDecimal(i))
+
+    /// Exact double for math/charting. Matches iOS `MoneyString.double`.
+    fun toDouble(): Double = value.toDouble()
+
+    /// Backwards-compat raw string accessor used by some UI call sites —
+    /// returns the rounded plain string (same value as `description`).
+    val raw: String get() = description
+
+    /// Rounded-to-2 plain string (matches iOS `description` via
+    /// NSDecimalRound(2, .plain) → stringValue).
+    val description: String
+        get() = value.setScale(2, RoundingMode.HALF_UP).stripTrailingZeros().let {
+            // stringValue on iOS keeps trailing zeros only as significant;
+            // NSDecimalNumber.stringValue prints e.g. "12.5" / "12" / "0".
+            it.toPlainString()
+        }
+
+    /// Currency-formatted output (matches iOS `MoneyString.formatted`).
+    fun formatted(currency: String): String =
+        com.programo.solvio.core.Fmt.amount(toDouble(), currency)
+
+    operator fun plus(other: MoneyString) = MoneyString(value + other.value)
+    operator fun minus(other: MoneyString) = MoneyString(value - other.value)
+
+    companion object {
+        val zero = MoneyString(BigDecimal.ZERO)
+
+        /// Parse a backend decimal string. Treat ',' as the decimal
+        /// separator only when there is no '.', matching iOS
+        /// `Decimal(string:)` behavior for plain "12,50" payloads.
+        fun parse(raw: String): BigDecimal {
+            val trimmed = raw.trim()
+            if (trimmed.isEmpty()) return BigDecimal.ZERO
+            val normalized = if (!trimmed.contains('.') && trimmed.contains(',')) {
+                trimmed.replace(',', '.')
+            } else {
+                trimmed
+            }
+            return normalized.toBigDecimalOrNull() ?: BigDecimal.ZERO
+        }
+    }
 }
 
 object MoneyStringSerializer : kotlinx.serialization.KSerializer<MoneyString> {
     override val descriptor = PrimitiveSerialDescriptor("MoneyString", PrimitiveKind.STRING)
-    override fun serialize(encoder: Encoder, value: MoneyString) = encoder.encodeString(value.raw)
+    override fun serialize(encoder: Encoder, value: MoneyString) = encoder.encodeString(value.description)
     override fun deserialize(decoder: Decoder): MoneyString {
         val input = (decoder as? JsonDecoder)?.decodeJsonElement()
         return when (input) {
             is JsonPrimitive -> MoneyString(input.content)
             null -> MoneyString(decoder.decodeString())
-            else -> MoneyString("0")
+            // Mirror iOS typeMismatch — fail loudly on a non-primitive
+            // (object/array) instead of masking it as 0.00.
+            else -> throw SerializationException("MoneyString: expected decimal number or numeric string, got $input")
         }
     }
 }
 
 // MARK: - Session
 
+/// Response shape of `GET /api/auth/session/me` — email only, matching
+/// iOS `SessionMe`. The `/session` (login) and `/demo` endpoints return
+/// the separate `SessionLoginResponse` / `DemoLoginResponse` shapes.
 @Serializable
-data class SessionMe(val email: String? = null, val userId: String? = null)
+data class SessionMe(val email: String? = null)
 
 @Serializable
 data class SessionLoginResponse(val ok: Boolean? = null, val userId: String)
 
 @Serializable
 data class DemoLoginResponse(val success: Boolean, val redirect: String? = null)
+
+/// In-memory authenticated user. Mirrors iOS `SessionStore.CurrentUser`:
+/// the email is carried forward from login input (the backend never
+/// returns it on `/session`), `userId` from `SessionLoginResponse`.
+data class CurrentUser(val email: String, val userId: String? = null)
 
 // MARK: - Categories
 
@@ -83,12 +142,16 @@ data class Expense(
     val receiptId: String? = null,
     val notes: String? = null,
     val tags: List<String>? = null,
-    val isRecurring: Boolean? = null,
     val exchangeRate: MoneyString? = null,
     val createdAt: String? = null,
     val categoryName: String? = null,
     val categoryIcon: String? = null,
 )
+
+/// `{ expense: Expense }` wrapper returned by POST /api/data/expenses.
+/// Mirrors iOS `ExpenseWrap`.
+@Serializable
+data class ExpenseWrap(val expense: Expense)
 
 @Serializable
 data class ExpenseCreate(
@@ -113,6 +176,9 @@ data class ExpenseUpdate(
     val vendor: String? = null,
     val notes: String? = null,
     val tags: List<String>? = null,
+    // Optional re-link to / unlink from a scanned receipt on edit. The
+    // backend UpdateExpenseSchema accepts it. Mirrors iOS ExpenseUpdate.
+    val receiptId: String? = null,
 )
 
 @Serializable

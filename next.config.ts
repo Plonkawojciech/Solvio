@@ -1,9 +1,14 @@
 import type { NextConfig } from "next";
+import path from "node:path";
 
 const nextConfig: NextConfig = {
   // Samodzielny deploy (Docker/Coolify) — .next/standalone z własnym serwerem.
   // Nie wpływa na deploy Vercel.
   output: process.env.NEXT_OUTPUT_STANDALONE === '1' ? 'standalone' : undefined,
+  // Keep Next's file tracing scoped to this app. Without this, Next sees
+  // the parent /Users/wojciechplonka/package-lock.json and guesses the
+  // workspace root incorrectly during dev/build.
+  outputFileTracingRoot: path.resolve(process.cwd()),
   // Remove X-Powered-By header
   poweredByHeader: false,
   // Catch React issues early

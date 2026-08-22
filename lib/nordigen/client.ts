@@ -4,6 +4,7 @@
 // ══════════════════════════════════════════════════════════════════════════════
 
 const BASE_URL = 'https://bankaccountdata.gocardless.com/api/v2'
+const REQUEST_TIMEOUT_MS = 15_000
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -122,6 +123,25 @@ export class NordigenApiError extends Error {
 
 let cachedToken: { access: string; expiresAt: number; refresh: string; refreshExpiresAt: number } | null = null
 
+async function fetchWithTimeout(url: string, options: RequestInit = {}): Promise<Response> {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+
+  try {
+    return await fetch(url, {
+      ...options,
+      signal: options.signal ?? controller.signal,
+    })
+  } catch (err) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw new NordigenApiError(`Nordigen API timeout after ${REQUEST_TIMEOUT_MS}ms`, 408)
+    }
+    throw err
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
 // ── Client ───────────────────────────────────────────────────────────────────
 
 class NordigenClient {
@@ -144,7 +164,7 @@ class NordigenClient {
     // Try refresh if we have a valid refresh token
     if (cachedToken && cachedToken.refreshExpiresAt > now + 60_000) {
       try {
-        const res = await fetch(`${BASE_URL}/token/refresh/`, {
+        const res = await fetchWithTimeout(`${BASE_URL}/token/refresh/`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ refresh: cachedToken.refresh }),
@@ -164,7 +184,7 @@ class NordigenClient {
     }
 
     // Get new token pair
-    const res = await fetch(`${BASE_URL}/token/new/`, {
+    const res = await fetchWithTimeout(`${BASE_URL}/token/new/`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -196,7 +216,7 @@ class NordigenClient {
   private async request<T>(path: string, options: RequestInit = {}): Promise<T> {
     const token = await this.getAccessToken()
 
-    const res = await fetch(`${BASE_URL}${path}`, {
+    const res = await fetchWithTimeout(`${BASE_URL}${path}`, {
       ...options,
       headers: {
         'Content-Type': 'application/json',

@@ -544,6 +544,18 @@ enum ExportDataRepo {
     }
 }
 
+// MARK: - Account deletion (App Store 5.1.1(v))
+
+/// `/api/personal/delete-account` — permanently erases the account and all
+/// associated data in one atomic batch, then clears the session cookie
+/// server-side. Callers MUST log out locally on success (the cookie is
+/// already gone, so the next authenticated request would 401 anyway).
+enum AccountRepo {
+    static func deleteAccount() async throws {
+        try await ApiClient.shared.postEmptyVoid("/api/personal/delete-account")
+    }
+}
+
 // MARK: - Maintenance (seed defaults, recategorize old data)
 
 /// Endpoints that bring an account up to date — used on every cold start

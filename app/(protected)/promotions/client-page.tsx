@@ -146,6 +146,7 @@ export default function PromotionsPage() {
   const [weeklySummary, setWeeklySummary] = useState<WeeklySummaryData | null>(null)
   const [personalizedDeals, setPersonalizedDeals] = useState<PromotionData[]>([])
   const [currency, setCurrency] = useState('PLN')
+  const [initialCacheLoading, setInitialCacheLoading] = useState(true)
 
   // Filters
   const [storeFilter, setStoreFilter] = useState<string | null>(null)
@@ -167,6 +168,18 @@ export default function PromotionsPage() {
       .catch((err) => console.error('Failed to fetch settings:', err))
   }, [])
 
+  const applyPromotionsData = useCallback((data: {
+    promotions?: PromotionData[]
+    personalizedDeals?: PromotionData[]
+    totalPotentialSavings?: number
+    weeklySummary?: WeeklySummaryData | null
+  }) => {
+    setPromotions(data.promotions || [])
+    setPersonalizedDeals(data.personalizedDeals || [])
+    setTotalPotentialSavings(data.totalPotentialSavings || 0)
+    setWeeklySummary(data.weeklySummary || null)
+  }, [])
+
   const scanPromotions = useCallback(async () => {
     setScanning(true)
     setError(null)
@@ -181,10 +194,7 @@ export default function PromotionsPage() {
         throw new Error(body?.error || `HTTP ${res.status}`)
       }
       const data = await res.json()
-      setPromotions(data.promotions || [])
-      setPersonalizedDeals(data.personalizedDeals || [])
-      setTotalPotentialSavings(data.totalPotentialSavings || 0)
-      if (data.weeklySummary) setWeeklySummary(data.weeklySummary)
+      applyPromotionsData(data)
       toast.success(t('promotions.updated'))
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -193,7 +203,36 @@ export default function PromotionsPage() {
       setScanning(false)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lang, currency, isPolish])
+  }, [lang, currency, isPolish, applyPromotionsData])
+
+  useEffect(() => {
+    if (!mounted || isBusiness) return
+
+    const controller = new AbortController()
+    setInitialCacheLoading(true)
+
+    fetch('/api/personal/promotions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lang, currency, cacheOnly: true }),
+      signal: controller.signal,
+    })
+      .then(async (res) => {
+        if (!res.ok) return null
+        return res.json()
+      })
+      .then((data) => {
+        if (!data || data.cacheState === 'empty') return
+        applyPromotionsData(data)
+      })
+      .catch((err) => {
+        if (err instanceof Error && err.name === 'AbortError') return
+        console.error('Failed to fetch cached promotions:', err)
+      })
+      .finally(() => setInitialCacheLoading(false))
+
+    return () => controller.abort()
+  }, [mounted, isBusiness, lang, currency, applyPromotionsData])
 
   if (!mounted) return null
   if (isBusiness) return null
@@ -263,10 +302,10 @@ export default function PromotionsPage() {
 
       <AnimatePresence mode="wait">
         {/* ── Scanning state ── */}
-        {scanning && <PromotionsSkeleton key="scanning" isPolish={isPolish} />}
+        {(scanning || initialCacheLoading) && <PromotionsSkeleton key="scanning" isPolish={isPolish} />}
 
         {/* ── Error state ── */}
-        {error && !scanning && (
+        {error && !scanning && !initialCacheLoading && (
           <motion.div key="error" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
             <Card className="border-destructive/30 bg-destructive/5">
               <CardContent className="flex items-center gap-3 pt-6 pb-6">
@@ -287,7 +326,7 @@ export default function PromotionsPage() {
         )}
 
         {/* ── Empty / Ready State ── */}
-        {!scanning && !error && promotions.length === 0 && (
+        {!scanning && !initialCacheLoading && !error && promotions.length === 0 && (
           <motion.div
             key="empty"
             initial={{ opacity: 0, scale: 0.96 }}

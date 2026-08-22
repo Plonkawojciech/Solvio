@@ -11,6 +11,7 @@ import { bankConnections, bankAccounts, bankTransactions } from '@/lib/db/schema
 import { eq, and, inArray } from 'drizzle-orm'
 import { getNordigenClient } from '@/lib/nordigen/client'
 import { rateLimitPersistent } from '@/lib/rate-limit'
+import { withApiTiming } from '@/lib/api-timing'
 import { z } from 'zod'
 
 // SECURITY (round 2 / A2): bound the body. connectionId is a UUID.
@@ -18,7 +19,7 @@ const DisconnectSchema = z.object({
   connectionId: z.string().uuid('connectionId must be a valid UUID'),
 }).strict()
 
-export async function POST(request: NextRequest) {
+async function postBankDisconnect(request: NextRequest) {
   const { userId } = await auth()
   if (!userId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -109,3 +110,5 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Operation failed' }, { status: 500 })
   }
 }
+
+export const POST = withApiTiming('api.bank.disconnect.POST', postBankDisconnect)

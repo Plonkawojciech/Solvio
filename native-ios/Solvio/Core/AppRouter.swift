@@ -77,6 +77,11 @@ final class AppRouter: ObservableObject {
     /// `MainTabView.onDismiss` to trigger the right picker/flow.
     @Published var pendingScanMode: ScanMode?
 
+    /// Set by the post-scan savings-insight toast ("Zobacz"). `OkazjeHubView`
+    /// observes this, expands its analysis section, and auto-runs the receipt
+    /// analysis for this id. Cleared once consumed.
+    @Published var pendingAnalyzeReceiptId: String?
+
     func push(_ route: AppRoute) {
         switch selectedTab {
         case .dashboard: dashboardStack.append(route)

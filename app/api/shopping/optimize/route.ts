@@ -428,9 +428,16 @@ CRITICAL:
   // accordingly so the UI can badge it as estimate.
   if (!webData && fallbackAI) {
     try {
+      // The base `prompt` instructs the model to use web_search for
+      // "this week's" prices — but in the fallback there IS no web. Tell
+      // it explicitly not to fabricate live data (matches prices/compare
+      // + shopping-advisor), so estimates don't masquerade as verified.
+      const noWebNote = isPolish
+        ? '\n\nUWAGA: nie masz dostępu do internetu ani web search. NIE zmyślaj promocji „tego tygodnia", gazetek ani dat ważności. Podaj realistyczne szacunki typowych cen w polskich sklepach i potraktuj je jako orientacyjne. Pole "sources" zostaw pustą tablicą.'
+        : '\n\nNOTE: you have no internet or web-search access. Do NOT fabricate "this week" promotions, leaflets, or validity dates. Give realistic estimates of typical Polish store prices and treat them as approximate. Leave "sources" as an empty array.'
       const completion = await fallbackAI.client.chat.completions.create({
         model: fallbackAI.model,
-        messages: [{ role: 'user', content: prompt }],
+        messages: [{ role: 'user', content: prompt + noWebNote }],
         response_format: { type: 'json_object' },
         temperature: 0.3,
       })

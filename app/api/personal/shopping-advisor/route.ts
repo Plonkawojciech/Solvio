@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { receipts, expenses, categories } from '@/lib/db/schema'
 import { eq, gte, and, desc, asc } from 'drizzle-orm'
-import { getAIClient } from '@/lib/ai-client'
+import { getAIClient, getAIClientForWebSearch } from '@/lib/ai-client'
 import { rateLimitPersistent } from '@/lib/rate-limit'
 import { z } from 'zod'
 import { PRICE_COMPARE_STORES } from '@/lib/stores'
@@ -251,19 +251,29 @@ Return JSON:
   "bestOverallStore": "string"
 }`
 
-    const ai = getAIClient()
-    if (!ai) {
+    const webSearchAI = getAIClientForWebSearch()
+    const fallbackAI = getAIClient()
+    if (!webSearchAI && !fallbackAI) {
       return NextResponse.json({ error: 'AI service not configured' }, { status: 503 })
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let result: any = null
+    // Whether the prices below came from a live web_search run (real,
+    // verifiable) or a plain LLM estimate (training-data guess). Drives
+    // the "ŻYWE / ESTYMATA" badge on iOS so the user never mistakes a
+    // hallucinated price for a verified one.
+    let usedLiveSearch = false
 
-    // Try web search first (OpenAI only) for real-time prices
-    if (ai.backend === 'openai') {
+    // Try web search first via the OpenAI-direct client. Azure can't do
+    // the Responses API / web_search_preview, so we MUST use
+    // getAIClientForWebSearch() here — the default getAIClient() prefers
+    // Azure for cost and would silently never ground on production.
+    if (webSearchAI) {
       try {
-        const webSearchCall = ai.client.responses.create({
-          model: ai.model,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const webSearchCall = (webSearchAI.client as any).responses.create({
+          model: webSearchAI.model,
           tools: [{ type: 'web_search_preview' }],
           instructions: systemPrompt,
           input: userPrompt,
@@ -275,24 +285,27 @@ Return JSON:
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const text = (response as any).output_text || ''
           const jsonMatch = text.match(/\{[\s\S]*\}/)
-          if (jsonMatch) result = JSON.parse(jsonMatch[0])
+          if (jsonMatch) {
+            result = JSON.parse(jsonMatch[0])
+            usedLiveSearch = true
+          }
         }
       } catch {
         // Fall through to chat completions
       }
     }
 
-    // Fallback: chat completions with training data
-    if (!result) {
-      const completion = await ai.client.chat.completions.create({
-        model: ai.model,
+    // Fallback: chat completions with training data — ESTIMATE ONLY.
+    if (!result && fallbackAI) {
+      const completion = await fallbackAI.client.chat.completions.create({
+        model: fallbackAI.model,
         messages: [
           { role: 'system', content: systemPrompt },
           {
             role: 'user',
             content: userPrompt + (isPolish
-              ? '\n\nUwaga: nie masz dostępu do internetu. Podaj szacunkowe ceny na podstawie wiedzy o typowych cenach w polskich sklepach. Bądź realistyczny.'
-              : '\n\nNote: no internet access. Provide estimated prices based on typical Polish store pricing knowledge. Be realistic.'),
+              ? '\n\nUwaga: nie masz dostępu do internetu ani web search. NIE zmyślaj konkretnych promocji „tego tygodnia" ani dat ważności. Podaj realistyczne szacunki typowych cen w polskich sklepach i traktuj je jako orientacyjne.'
+              : '\n\nNote: you have no internet or web-search access. Do NOT fabricate specific "this week" promotions or validity dates. Give realistic estimates of typical Polish store prices and treat them as approximate.'),
           },
         ],
         response_format: { type: 'json_object' },
@@ -307,6 +320,7 @@ Return JSON:
         result = jsonMatch ? JSON.parse(jsonMatch[0]) : { recommendations: [] }
       }
     }
+    if (!result) result = {}
 
     const payload = {
       recommendations: result.recommendations || [],
@@ -318,6 +332,9 @@ Return JSON:
       productsAnalyzed: topProducts.length,
       currency,
       storesKnown: PRICE_COMPARE_STORES.length,
+      // Honesty marker: 'live_web_search' = grounded in real-time web
+      // search; 'estimate' = LLM guess from training data. iOS badges it.
+      dataSource: usedLiveSearch ? 'live_web_search' : 'estimate',
     }
 
     advisorCache.set(cacheKey, { result: payload, expiresAt: Date.now() + ADVISOR_TTL_MS })

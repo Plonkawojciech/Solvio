@@ -53,3 +53,8 @@ native-ios/build/
 /.playwright-mcp/
 # Android/Gradle local build cache
 android/.gradle/
+# Android — lokalne, maszynowe (ścieżka do SDK, cache kompilatora)
+android/local.properties
+android/.kotlin/
+android/build/
+android/app/build/

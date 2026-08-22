@@ -122,7 +122,7 @@ fun MainTabScreen(router: AppRouter = viewModel()) {
                             composable("goal/{id}") { back ->
                                 GoalDetailScreen(
                                     goalId = back.arguments?.getString("id").orEmpty(),
-                                    onBack = { dashboardNav.popBackStack() },
+                                    onClose = { dashboardNav.popBackStack() },
                                 )
                             }
                             composable(AppDestination.Challenges.route) { ChallengesScreen() }
@@ -208,12 +208,19 @@ private fun NBTabBar(selected: AppRouter.Tab, onSelect: (AppRouter.Tab) -> Unit)
     val palette = LocalPalette.current
     val locale = LocalAppLocale.current
 
+    // Cream fills behind the gesture nav bar; the 56dp tab row sits above
+    // it, with a 2px top hairline divider (mirror iOS bottom-safe-area bar).
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(palette.background)
+            .navigationBarsPadding(),
+    ) {
+    Box(Modifier.fillMaxWidth().height(SolvioTheme.Border.width).background(palette.border))
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .height(56.dp)
-            .background(palette.background)
-            .border(width = SolvioTheme.Border.width, color = palette.border)
             .padding(horizontal = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -222,6 +229,7 @@ private fun NBTabBar(selected: AppRouter.Tab, onSelect: (AppRouter.Tab) -> Unit)
         TabSlot(AppRouter.Tab.Deals, Icons.Filled.LocalOffer, locale.t("nav.deals"), selected, onSelect, Modifier.weight(1f))
         TabSlot(AppRouter.Tab.Groups, Icons.Filled.Group, locale.t("nav.groups"), selected, onSelect, Modifier.weight(1f))
         TabSlot(AppRouter.Tab.Savings, Icons.Filled.TrendingUp, locale.t("nav.savings"), selected, onSelect, Modifier.weight(1f))
+    }
     }
 }
 

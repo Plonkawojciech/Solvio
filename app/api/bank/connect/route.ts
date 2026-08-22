@@ -11,6 +11,7 @@ import { db } from '@/lib/db'
 import { bankConnections } from '@/lib/db/schema'
 import { getNordigenClient } from '@/lib/nordigen/client'
 import { rateLimitPersistent } from '@/lib/rate-limit'
+import { withApiTiming } from '@/lib/api-timing'
 import * as crypto from 'crypto'
 import { z } from 'zod'
 
@@ -22,7 +23,7 @@ const BankConnectSchema = z.object({
   institutionId: z.string().min(2).max(80).regex(/^[A-Za-z0-9_-]+$/, 'institutionId must be alphanumeric'),
 })
 
-export async function POST(request: NextRequest) {
+async function postBankConnect(request: NextRequest) {
   const { userId } = await auth()
   if (!userId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -112,3 +113,5 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Operation failed' }, { status: 500 })
   }
 }
+
+export const POST = withApiTiming('api.bank.connect.POST', postBankConnect)

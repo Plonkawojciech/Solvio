@@ -8,6 +8,7 @@ import { AppMobileHeader } from '@/components/protected/main/app-mobile-header'
 import { KeyboardShortcuts } from '@/components/protected/main/keyboard-shortcuts'
 import { MobileBottomNav } from '@/components/protected/main/mobile-bottom-nav'
 import { NavProgress } from '@/components/protected/main/nav-progress'
+import { CsrfFetchProvider } from '@/components/protected/main/csrf-fetch-provider'
 import { getUserSetup } from '@/lib/product-type'
 import { ProductTypeProvider } from '@/hooks/use-product-type'
 
@@ -29,6 +30,7 @@ export default async function ProtectedLayout({ children }: { children: React.Re
 
   return (
     <ProductTypeProvider productType={productType}>
+      <CsrfFetchProvider />
       <SidebarProvider>
         <NavProgress />
         <div className="flex flex-col h-[100dvh] w-full overflow-hidden">

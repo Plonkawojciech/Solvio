@@ -1,10 +1,12 @@
 import { auth, getHubAuth } from '@/lib/auth-compat'
 import { NextResponse } from 'next/server'
 import { db, expenses, categories, userSettings, merchantRules, receipts, receiptItems } from '@/lib/db'
-import { eq, desc, and, inArray, sql } from 'drizzle-orm'
+import { eq, desc, asc, and, inArray, sql, ilike, or, type SQL } from 'drizzle-orm'
 import { recordAudit } from '@/lib/audit-log'
 import { z } from 'zod'
 import { dbBatch } from '@/lib/db/batch'
+import { withApiTiming } from '@/lib/api-timing'
+import { categorizeOne } from '@/lib/categorize'
 
 const CreateExpenseSchema = z.object({
   title: z.string().min(1, 'Title is required').max(200),
@@ -42,6 +44,63 @@ const DeleteExpensesSchema = z.object({
   ids: z.array(z.string().uuid()).min(1, 'At least one id is required'),
 })
 
+const ExpensesQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  // Domyślka 500, nie 20: web AveJi, iOS i Android wołają ten endpoint bez
+  // żadnych parametrów i oczekują pełnej listy (tak działał przed dodaniem
+  // paginacji). Mniejsza domyślka ucinałaby im dane po cichu, bez błędu.
+  // Klienci z paginacją podają `pageSize` jawnie.
+  pageSize: z.coerce.number().int().min(1).max(1000).default(500),
+  q: z.string().trim().max(120).optional().default(''),
+  categoryId: z.string().optional().default('all'),
+  tag: z.string().trim().max(50).optional().default('all'),
+  dateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().or(z.literal('')),
+  dateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().or(z.literal('')),
+  amountFrom: z.coerce.number().nonnegative().optional(),
+  amountTo: z.coerce.number().nonnegative().optional(),
+  sortPreset: z.enum(['newest', 'oldest', 'highest', 'lowest', 'custom']).default('newest'),
+  sortField: z.enum(['title', 'vendor', 'amount', 'date']).default('date'),
+  sortDir: z.enum(['asc', 'desc']).default('desc'),
+})
+
+/**
+ * Resolve a category for a manually-added expense that arrived without one.
+ *   1. Learned merchant rule (user-confirmed vendor → category) — instant, free.
+ *   2. AI + keyword fallback against the user's OWN categories (incl. custom).
+ * The AI step is time-boxed so a slow model never stalls the add — worst case
+ * the expense lands uncategorized and the user can edit it (or recategorize
+ * backfills later). We deliberately do NOT promote an AI guess to a merchant
+ * rule: only an explicit user pick (below) is authoritative enough to learn.
+ */
+async function resolveCategory(userId: string, title: string, vendor: string | null): Promise<string | null> {
+  const v = vendor?.trim().toLowerCase()
+  if (v) {
+    try {
+      const [rule] = await db
+        .select({ categoryId: merchantRules.categoryId })
+        .from(merchantRules)
+        .where(and(eq(merchantRules.userId, userId), eq(merchantRules.vendor, v)))
+        .limit(1)
+      if (rule?.categoryId) return rule.categoryId
+    } catch {
+      // Rule lookup is best-effort — fall through to AI.
+    }
+  }
+
+  try {
+    const cats = await db
+      .select({ id: categories.id, name: categories.name })
+      .from(categories)
+      .where(eq(categories.userId, userId))
+    if (cats.length === 0) return null
+    const name = vendor?.trim() ? `${title} (${vendor.trim()})` : title
+    const timeout = new Promise<null>(resolve => setTimeout(() => resolve(null), 4000))
+    return await Promise.race([categorizeOne(name, cats), timeout])
+  } catch {
+    return null
+  }
+}
+
 export async function POST(request: Request) {
   let userId = (await auth()).userId
   if (!userId) {
@@ -59,12 +118,20 @@ export async function POST(request: Request) {
   }
   const data = parsed.data
 
+  // Product rule: "after a manual add, AI must categorize." When the client
+  // didn't pick a category, resolve one (merchant rule → AI → keyword) before
+  // insert so the expense isn't dumped uncategorized.
+  let resolvedCategoryId = data.categoryId ?? null
+  if (!resolvedCategoryId) {
+    resolvedCategoryId = await resolveCategory(userId, data.title, data.vendor ?? null)
+  }
+
   const [exp] = await db.insert(expenses).values({
     userId,
     title: data.title,
     amount: String(data.amount),
     date: data.date,
-    categoryId: data.categoryId ?? null,
+    categoryId: resolvedCategoryId,
     vendor: data.vendor ?? null,
     notes: data.notes ?? null,
     currency: data.currency,
@@ -101,7 +168,7 @@ export async function POST(request: Request) {
   return NextResponse.json({ expense: exp })
 }
 
-export async function GET(request: Request) {
+async function getExpenses(request: Request) {
   let userId = (await auth()).userId
   if (!userId) {
     const hubAuth = getHubAuth(request)
@@ -110,13 +177,70 @@ export async function GET(request: Request) {
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   try {
+    const url = new URL(request.url)
+    const parsedQuery = ExpensesQuerySchema.safeParse({
+      page: url.searchParams.get('page') ?? undefined,
+      pageSize: url.searchParams.get('pageSize') ?? undefined,
+      q: url.searchParams.get('q') ?? undefined,
+      categoryId: url.searchParams.get('categoryId') ?? undefined,
+      tag: url.searchParams.get('tag') ?? undefined,
+      dateFrom: url.searchParams.get('dateFrom') ?? undefined,
+      dateTo: url.searchParams.get('dateTo') ?? undefined,
+      amountFrom: url.searchParams.get('amountFrom') || undefined,
+      amountTo: url.searchParams.get('amountTo') || undefined,
+      sortPreset: url.searchParams.get('sortPreset') ?? undefined,
+      sortField: url.searchParams.get('sortField') ?? undefined,
+      sortDir: url.searchParams.get('sortDir') ?? undefined,
+    })
+
+    if (!parsedQuery.success) {
+      return NextResponse.json(
+        { error: 'Invalid query', details: parsedQuery.error.flatten().fieldErrors },
+        { status: 400 },
+      )
+    }
+
+    const query = parsedQuery.data
+    const conditions: SQL[] = [eq(expenses.userId, userId)]
+
+    if (query.q) {
+      const like = `%${query.q}%`
+      conditions.push(or(ilike(expenses.title, like), ilike(expenses.vendor, like))!)
+    }
+    if (query.categoryId !== 'all') {
+      const categoryId = z.string().uuid().safeParse(query.categoryId)
+      if (!categoryId.success) {
+        return NextResponse.json({ error: 'Invalid categoryId' }, { status: 400 })
+      }
+      conditions.push(eq(expenses.categoryId, categoryId.data))
+    }
+    if (query.tag !== 'all') {
+      conditions.push(sql`${expenses.tags} @> ARRAY[${query.tag}]::text[]`)
+    }
+    if (query.dateFrom) conditions.push(sql`${expenses.date} >= ${query.dateFrom}`)
+    if (query.dateTo) conditions.push(sql`${expenses.date} <= ${query.dateTo}`)
+    if (query.amountFrom !== undefined) conditions.push(sql`${expenses.amount}::numeric >= ${query.amountFrom}`)
+    if (query.amountTo !== undefined) conditions.push(sql`${expenses.amount}::numeric <= ${query.amountTo}`)
+
+    const whereClause = and(...conditions)
+    const offset = (query.page - 1) * query.pageSize
+    const orderBy =
+      query.sortPreset === 'oldest' ? [asc(expenses.date), asc(expenses.createdAt)] :
+      query.sortPreset === 'highest' ? [desc(sql`${expenses.amount}::numeric`), desc(expenses.date)] :
+      query.sortPreset === 'lowest' ? [asc(sql`${expenses.amount}::numeric`), desc(expenses.date)] :
+      query.sortPreset === 'custom' && query.sortField === 'title' ? [query.sortDir === 'asc' ? asc(expenses.title) : desc(expenses.title), desc(expenses.date)] :
+      query.sortPreset === 'custom' && query.sortField === 'vendor' ? [query.sortDir === 'asc' ? asc(expenses.vendor) : desc(expenses.vendor), desc(expenses.date)] :
+      query.sortPreset === 'custom' && query.sortField === 'amount' ? [query.sortDir === 'asc' ? asc(sql`${expenses.amount}::numeric`) : desc(sql`${expenses.amount}::numeric`), desc(expenses.date)] :
+      query.sortPreset === 'custom' && query.sortField === 'date' ? [query.sortDir === 'asc' ? asc(expenses.date) : desc(expenses.date), desc(expenses.createdAt)] :
+      [desc(expenses.date), desc(expenses.createdAt)]
+
     // Round-4 perf: was 3 parallel HTTP round-trips via Promise.all. Each
     // drizzle/neon-http call is its own POST to Neon's HTTP gateway, so
     // "parallel" still means 3× connection setup + 3× server-side parse.
     // db.batch([...]) packs them into ONE pipelined HTTP request inside a
     // single read-only transaction snapshot. Same selects, ~3× fewer
     // round-trips. Result tuple order matches statement order.
-    const [exps, cats, settings] = await dbBatch((x) => [
+    const [exps, cats, settings, countRows, tagRows] = await dbBatch((x) => [
       x.select({
         id: expenses.id,
         title: expenses.title,
@@ -129,13 +253,34 @@ export async function GET(request: Request) {
         notes: expenses.notes,
         tags: expenses.tags,
         isRecurring: expenses.isRecurring,
-      }).from(expenses).where(eq(expenses.userId, userId)).orderBy(desc(expenses.date)).limit(500),
+      }).from(expenses).where(whereClause).orderBy(...orderBy).limit(query.pageSize).offset(offset),
       x.select().from(categories).where(eq(categories.userId, userId)),
       x.select().from(userSettings).where(eq(userSettings.userId, userId)).limit(1),
+      x.select({ count: sql<number>`count(*)::int` }).from(expenses).where(whereClause),
+      x.select({ tags: expenses.tags }).from(expenses).where(eq(expenses.userId, userId)).limit(1000),
     ], { atomic: false })
 
+    const total = countRows[0]?.count ?? 0
+    const totalPages = Math.max(1, Math.ceil(total / query.pageSize))
+    const availableTags = Array.from(new Set(
+      tagRows.flatMap((row) => Array.isArray(row.tags) ? row.tags : []),
+    )).sort()
+
     return NextResponse.json(
-      { expenses: exps, categories: cats, settings: settings[0] || null },
+      {
+        expenses: exps,
+        categories: cats,
+        settings: settings[0] || null,
+        availableTags,
+        pagination: {
+          page: query.page,
+          pageSize: query.pageSize,
+          total,
+          totalPages,
+          hasNext: query.page < totalPages,
+          hasPrev: query.page > 1,
+        },
+      },
       {
         headers: {
           // Per-user authenticated payload. Tiny SWR window mirrors
@@ -150,6 +295,8 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Failed to fetch expenses' }, { status: 500 })
   }
 }
+
+export const GET = withApiTiming('api.data.expenses.GET', getExpenses)
 
 export async function PUT(request: Request) {
   let userId = (await auth()).userId

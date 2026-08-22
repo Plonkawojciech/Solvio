@@ -683,11 +683,14 @@ export const expenseApprovals = pgTable('expense_approvals', {
  *                        lists deduplicate cost)
  *   - `prices`         — per-product price snapshots used by
  *                        `/api/prices/compare` and the optimizer
+ *   - `product_search` — ad-hoc product lookup results keyed by query
+ *                        so repeated searches do not burn AI calls
  *
  * `key` is the kind-local identifier:
  *   - leaflet → chain name lower-cased ("lidl", "biedronka")
  *   - optimize → hash of (lang|currency|location|items)
  *   - prices  → product slug + chain
+ *   - product_search → hash of (lang|currency|query)
  */
 export const storeIntel = pgTable('store_intel', {
   id: uuid('id').primaryKey().defaultRandom(),
