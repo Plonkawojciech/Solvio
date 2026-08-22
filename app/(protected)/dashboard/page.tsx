@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   Card, CardContent, CardHeader, CardTitle,
 } from '@/components/ui/card';
-import { Activity, TrendingUp, TrendingDown, Wallet, ArrowUpRight, AlertCircle, RefreshCw, CheckCircle2, Camera, BarChart3, Settings, Sparkles, ShieldCheck, Gauge, PiggyBank } from 'lucide-react';
+import { Activity, TrendingUp, TrendingDown, Wallet, ArrowUpRight, AlertCircle, RefreshCw, CheckCircle2, Camera, Settings, ShieldCheck, Gauge, PiggyBank } from 'lucide-react';
 import dynamic from 'next/dynamic';
 /* Heavy components — lazy-loaded to reduce initial bundle */
 const ComponentSkeleton = () => <div className="h-[200px] w-full animate-shimmer rounded-lg border border-border shadow-[var(--nb-shadow-sm)]" />;
@@ -185,24 +185,6 @@ function DashboardEmpty({
           <ScanReceiptButton onAction={() => { onAction(); fetchData(); }} />
           <AddExpenseTrigger onAction={() => { onAction(); fetchData(); }} />
         </div>
-      ),
-    },
-    {
-      badge: t('onboarding.step3.badge'),
-      icon: BarChart3,
-      iconClass: 'text-muted-foreground',
-      ringClass: 'bg-muted',
-      badgeClass: 'bg-muted text-muted-foreground',
-      title: t('onboarding.step3.title'),
-      desc: t('onboarding.step3.desc'),
-      completed: false,
-      action: (
-        <Link href="/analysis">
-          <Button variant="ghost" size="sm" className="gap-1.5 text-muted-foreground px-3 opacity-50 cursor-not-allowed pointer-events-none">
-            <Sparkles className="h-3.5 w-3.5" />
-            <span suppressHydrationWarning>{t('onboarding.step3.action')}</span>
-          </Button>
-        </Link>
       ),
     },
   ]
@@ -914,7 +896,7 @@ export default function ProtectedPage() {
                 </p>
               </>
             ) : (
-              <Link href="/savings" className="mt-1 inline-flex items-center gap-1 text-sm font-bold text-primary hover:underline">
+              <Link href="/settings" className="mt-1 inline-flex items-center gap-1 text-sm font-bold text-primary hover:underline">
                 <span suppressHydrationWarning>{t('dashboard.addIncome')}</span>
                 <ArrowUpRight className="h-3.5 w-3.5" aria-hidden="true" />
               </Link>

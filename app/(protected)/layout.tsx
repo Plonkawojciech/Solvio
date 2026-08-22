@@ -9,27 +9,18 @@ import { KeyboardShortcuts } from '@/components/protected/main/keyboard-shortcut
 import { MobileBottomNav } from '@/components/protected/main/mobile-bottom-nav'
 import { NavProgress } from '@/components/protected/main/nav-progress'
 import { CsrfFetchProvider } from '@/components/protected/main/csrf-fetch-provider'
-import { getUserSetup } from '@/lib/product-type'
-import { ProductTypeProvider } from '@/hooks/use-product-type'
 
 export default async function ProtectedLayout({ children }: { children: React.ReactNode }) {
   const session = await getSession()
   const userId = session?.userId
   if (!userId) redirect('/login')
 
-  // Run seed check + settings fetch in parallel (2 queries instead of 3, non-blocking seed)
-  const [, { productType, onboardingComplete }] = await Promise.all([
-    ensureUserSeeded(userId),
-    getUserSetup(userId),
-  ])
-
-  // Redirect to onboarding if not completed
-  if (!onboardingComplete) {
-    redirect('/onboarding')
-  }
+  // Onboarding i podział personal/business zniknęły razem z resztą ekranów,
+  // więc z całego setupu został tylko seed domyślnych kategorii.
+  await ensureUserSeeded(userId)
 
   return (
-    <ProductTypeProvider productType={productType}>
+    <>
       <CsrfFetchProvider />
       <SidebarProvider>
         <NavProgress />
@@ -49,6 +40,6 @@ export default async function ProtectedLayout({ children }: { children: React.Re
         {/* Global keyboard shortcuts — renders modals, listens for hotkeys */}
         <KeyboardShortcuts />
       </SidebarProvider>
-    </ProductTypeProvider>
+    </>
   )
 }

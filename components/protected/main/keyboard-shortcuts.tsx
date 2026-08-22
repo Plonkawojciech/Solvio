@@ -242,8 +242,6 @@ export function KeyboardShortcuts({ triggerRef }: KeyboardShortcutsProps) {
         const map: Record<string, string> = {
           d: '/dashboard',
           e: '/expenses',
-          a: '/analysis',
-          r: '/reports',
           s: '/settings',
         }
         const destination = map[e.key]
