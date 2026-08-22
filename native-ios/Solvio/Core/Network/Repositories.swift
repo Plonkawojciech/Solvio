@@ -204,432 +204,60 @@ enum ReceiptsRepo {
     }
 }
 
-// MARK: - Groups
 
-enum GroupsRepo {
-    /// `/api/groups` GET returns a plain JSON array (not wrapped).
-    static func list() async throws -> [Group] {
-        try await ApiClient.shared.get("/api/groups")
-    }
+// MARK: - Konserwacja
 
-    /// `/api/groups/[id]` GET returns a flat `{...group, members, splits}` object.
-    static func detail(id: String) async throws -> Group {
-        try await ApiClient.shared.get("/api/groups/\(id)")
-    }
-
-    /// POST returns a flat group row (with `members`) — no wrapper.
-    static func create(_ body: GroupCreate) async throws -> Group {
-        try await ApiClient.shared.post("/api/groups", body: body)
-    }
-
-    /// PUT returns `{ ok: true }`.
-    static func update(id: String, body: GroupUpdate) async throws {
-        try await ApiClient.shared.putVoid("/api/groups/\(id)", body: body)
-    }
-
-    static func delete(id: String) async throws {
-        try await ApiClient.shared.deleteVoid("/api/groups/\(id)")
-    }
-
-    /// POST returns the created split as a flat row.
-    static func createSplit(_ body: SplitCreate) async throws -> ExpenseSplit {
-        try await ApiClient.shared.post("/api/groups/splits", body: body)
-    }
-
-    /// `/api/groups/splits/[splitId]/settle` uses PATCH with `{ memberId }`.
-    static func settle(splitId: String, memberId: String) async throws {
-        try await ApiClient.shared.patchVoid(
-            "/api/groups/splits/\(splitId)/settle",
-            body: SettleBody(memberId: memberId)
-        )
-    }
-
-    static func settlements(groupId: String) async throws -> SettlementsResponse {
-        try await ApiClient.shared.get("/api/groups/\(groupId)/settlements")
-    }
-
-    static func receipts(groupId: String) async throws -> GroupReceiptsResponse {
-        try await ApiClient.shared.get("/api/groups/\(groupId)/receipts")
-    }
-}
-
-// MARK: - Goals
-
-enum GoalsRepo {
-    private struct GoalsWrap: Decodable { let goals: [SavingsGoal] }
-    private struct GoalWrap: Decodable { let goal: SavingsGoal }
-
-    static func list() async throws -> [SavingsGoal] {
-        let wrap: GoalsWrap = try await ApiClient.shared.get("/api/personal/goals")
-        return wrap.goals
-    }
-
-    static func create(_ body: GoalCreate) async throws -> SavingsGoal {
-        let wrap: GoalWrap = try await ApiClient.shared.post("/api/personal/goals", body: body)
-        return wrap.goal
-    }
-
-    static func update(id: String, body: GoalUpdate) async throws -> SavingsGoal {
-        let wrap: GoalWrap = try await ApiClient.shared.put("/api/personal/goals/\(id)", body: body)
-        return wrap.goal
-    }
-
-    static func delete(id: String) async throws {
-        try await ApiClient.shared.deleteVoid("/api/personal/goals/\(id)")
-    }
-
-    /// Goals deposits are a separate route: `/api/personal/goals/[id]/deposit`.
-    static func deposit(goalId: String, amount: Double, note: String? = nil) async throws -> DepositResponse {
-        try await ApiClient.shared.post(
-            "/api/personal/goals/\(goalId)/deposit",
-            body: DepositBody(amount: amount, note: note)
-        )
-    }
-}
-
-// MARK: - Challenges
-
-enum ChallengesRepo {
-    private struct ListWrap: Decodable { let challenges: [Challenge] }
-    private struct CreateWrap: Decodable { let challenge: Challenge }
-
-    static func list() async throws -> [Challenge] {
-        let wrap: ListWrap = try await ApiClient.shared.get("/api/personal/challenges")
-        return wrap.challenges
-    }
-
-    static func create(_ body: ChallengeCreate) async throws -> Challenge {
-        let wrap: CreateWrap = try await ApiClient.shared.post("/api/personal/challenges", body: body)
-        return wrap.challenge
-    }
-}
-
-// MARK: - Loyalty
-
-enum LoyaltyRepo {
-    private struct ListWrap: Decodable { let cards: [LoyaltyCard] }
-    private struct CreateWrap: Decodable { let card: LoyaltyCard }
-    private struct IdBody: Encodable { let id: String }
-
-    static func list() async throws -> [LoyaltyCard] {
-        let wrap: ListWrap = try await ApiClient.shared.get("/api/personal/loyalty")
-        return wrap.cards
-    }
-
-    static func create(_ body: LoyaltyCardCreate) async throws -> LoyaltyCard {
-        let wrap: CreateWrap = try await ApiClient.shared.post("/api/personal/loyalty", body: body)
-        return wrap.card
-    }
-
-    static func delete(id: String) async throws {
-        try await ApiClient.shared.deleteVoid("/api/personal/loyalty", body: IdBody(id: id))
-    }
-}
-
-// MARK: - Prices
-
-enum PricesRepo {
-    /// `/api/prices/compare` only reads `lang` + `currency` (+ optional
-    /// `force`) from the body; the product list comes from the user's
-    /// scanned receipts server-side. `force` bypasses the 24 h backend
-    /// cache — used by the refresh button on the Products card. Default
-    /// `false` lets cached payloads return in ~50 ms.
-    static func compare(lang: String? = nil, currency: String? = nil, force: Bool = false) async throws -> PriceComparisonResponse {
-        try await ApiClient.shared.post(
-            "/api/prices/compare",
-            body: PriceCompareBody(lang: lang, currency: currency, force: force)
-        )
-    }
-}
-
-// MARK: - Audit
-
-enum AuditRepo {
-    struct Body: Encodable {
-        let lang: String?
-        let currency: String?
-        let force: Bool?
-    }
-
-    /// Returns the full audit result object directly (no wrapper).
-    /// `force = true` bypasses the 6 h backend cache.
-    static func generate(lang: String? = nil, currency: String? = nil, force: Bool = false) async throws -> AuditResult {
-        try await ApiClient.shared.post(
-            "/api/audit/generate",
-            body: Body(lang: lang, currency: currency, force: force)
-        )
-    }
-}
-
-// MARK: - Analysis
-
-enum AnalysisRepo {
-    struct Body: Encodable {
-        let lang: String?
-        let currency: String?
-        let period: String?
-    }
-
-    /// `period` is one of `"7d" | "30d" | "3m" | "6m" | "1y" | "all"` — mirrors
-    /// the web period selector. Backend currently hardcodes 90 days for its AI
-    /// prompt but accepts the key for forward compat; iOS uses it identically
-    /// to web (UI state controlling the tab selection).
-    static func run(lang: String? = nil, currency: String? = nil, period: String? = nil) async throws -> AnalysisResponse {
-        try await ApiClient.shared.post(
-            "/api/analysis/ai",
-            body: Body(lang: lang, currency: currency, period: period)
-        )
-    }
-}
-
-// MARK: - Reports
-
-enum ReportsRepo {
-    /// `/api/reports/generate` accepts **multipart formData** with fields
-    /// `type: 'yearly' | 'monthly'` and either `year` (for yearly) or
-    /// `ym` (YYYY-MM for monthly).
-    static func generateYearly(year: String) async throws -> ReportGenerateResponse {
-        try await ApiClient.shared.postForm(
-            "/api/reports/generate",
-            fields: ["type": "yearly", "year": year]
-        )
-    }
-
-    static func generateMonthly(ym: String) async throws -> ReportGenerateResponse {
-        try await ApiClient.shared.postForm(
-            "/api/reports/generate",
-            fields: ["type": "monthly", "ym": ym]
-        )
-    }
-}
-
-// MARK: - Monthly budget
-
-enum BudgetRepo {
-    /// `month` is `YYYY-MM`. Omit → backend defaults to current month.
-    static func fetch(month: String? = nil) async throws -> BudgetResponse {
-        var query: [URLQueryItem] = []
-        if let month { query.append(URLQueryItem(name: "month", value: month)) }
-        return try await ApiClient.shared.get("/api/personal/budget", query: query)
-    }
-
-    private struct UpsertWrap: Decodable { let budget: MonthlyBudget }
-
-    static func upsert(_ body: BudgetUpsert) async throws -> MonthlyBudget {
-        let wrap: UpsertWrap = try await ApiClient.shared.post("/api/personal/budget", body: body)
-        return wrap.budget
-    }
-}
-
-// MARK: - Financial health score
-
-enum FinancialHealthRepo {
-    static func fetch() async throws -> FinancialHealthResponse {
-        try await ApiClient.shared.get("/api/personal/financial-health")
-    }
-}
-
-// MARK: - Promotions / personalized deals
-
-enum PromotionsRepo {
-    struct Body: Encodable {
-        let lang: String?
-        let currency: String?
-    }
-
-    static func fetch(lang: String? = nil, currency: String? = nil) async throws -> PromotionsResponse {
-        try await ApiClient.shared.post(
-            "/api/personal/promotions",
-            body: Body(lang: lang, currency: currency)
-        )
-    }
-}
-
-// MARK: - Shopping Advisor
-
-enum ShoppingAdvisorRepo {
-    struct Body: Encodable {
-        let lang: String?
-        let currency: String?
-    }
-
-    static func analyze(lang: String? = nil, currency: String? = nil) async throws -> ShoppingAdvisorResponse {
-        try await ApiClient.shared.post(
-            "/api/personal/shopping-advisor",
-            body: Body(lang: lang, currency: currency)
-        )
-    }
-}
-
-// MARK: - Nearby Stores
-
-enum NearbyStoresRepo {
-    struct Body: Encodable {
-        let lat: Double
-        let lng: Double
-        let radius: Int?
-        let lang: String?
-    }
-
-    static func search(lat: Double, lng: Double, radius: Int? = 5000, lang: String? = nil) async throws -> NearbyStoresResponse {
-        try await ApiClient.shared.post(
-            "/api/personal/nearby-stores",
-            body: Body(lat: lat, lng: lng, radius: radius, lang: lang)
-        )
-    }
-}
-
-// MARK: - Product Search
-
-enum ProductSearchRepo {
-    struct Body: Encodable {
-        let query: String
-        let lang: String?
-        let currency: String?
-    }
-
-    static func search(query: String, lang: String? = nil, currency: String? = nil) async throws -> ProductSearchResponse {
-        try await ApiClient.shared.post(
-            "/api/personal/product-search",
-            body: Body(query: query, lang: lang, currency: currency)
-        )
-    }
-}
-
-// MARK: - Merchant rules
-
-// MARK: - Incomes (multiple income streams)
-
-/// Backed by `/api/personal/incomes`. List, create, update, delete —
-/// all keyed by the row's UUID so the UI can patch a row in place.
-enum IncomesRepo {
-    static func list() async throws -> [Income] {
-        let r: IncomesListResponse = try await ApiClient.shared.get("/api/personal/incomes")
-        return r.incomes
-    }
-    static func create(_ body: IncomeCreate) async throws -> Income {
-        let r: IncomeWrap = try await ApiClient.shared.post("/api/personal/incomes", body: body)
-        return r.income
-    }
-    static func update(_ body: IncomeUpdate) async throws {
-        try await ApiClient.shared.putVoid("/api/personal/incomes", body: body)
-    }
-    static func delete(id: String) async throws {
-        try await ApiClient.shared.deleteVoid("/api/personal/incomes", body: IncomeDeleteBody(id: id))
-    }
-}
-
-enum MerchantRulesRepo {
-    private struct ListWrap: Decodable { let rules: [MerchantRule] }
-    private struct DeleteBody: Encodable { let vendor: String }
-
-    static func list() async throws -> [MerchantRule] {
-        let wrap: ListWrap = try await ApiClient.shared.get("/api/personal/merchant-rules")
-        return wrap.rules
-    }
-
-    static func delete(vendor: String) async throws {
-        try await ApiClient.shared.deleteVoid("/api/personal/merchant-rules", body: DeleteBody(vendor: vendor))
-    }
-}
-
-// MARK: - GDPR data export
-
-enum ExportDataRepo {
-    /// Downloads the full user data dump as raw JSON bytes.
-    /// Returns `(data, suggestedFilename)` from the HTTP response, matching
-    /// `/api/personal/export-data` which streams a `solvio-export-*.json` blob.
-    static func download() async throws -> (Data, String?) {
-        try await ApiClient.shared.download("/api/personal/export-data")
-    }
-}
-
-// MARK: - Account deletion (App Store 5.1.1(v))
-
-/// `/api/personal/delete-account` — permanently erases the account and all
-/// associated data in one atomic batch, then clears the session cookie
-/// server-side. Callers MUST log out locally on success (the cookie is
-/// already gone, so the next authenticated request would 401 anyway).
-enum AccountRepo {
-    static func deleteAccount() async throws {
-        try await ApiClient.shared.postEmptyVoid("/api/personal/delete-account")
-    }
-}
-
-// MARK: - Maintenance (seed defaults, recategorize old data)
-
-/// Endpoints that bring an account up to date — used on every cold start
-/// and login because iOS clients bypass the web `(protected)/layout.tsx`
-/// that does this for browser users.
 enum MaintenanceRepo {
-    private struct EmptyResp: Decodable {}
-
-    /// POST `/api/v1/seed-categories` — idempotent. If the user already has
-    /// categories, the backend no-ops; otherwise it inserts a default set
-    /// (PL or EN, defaults to PL).
+    /// POST `/api/v1/seed-categories` — idempotentne. Konto, które ma już
+    /// kategorie, nie dostaje nic; puste dostaje domyślny zestaw.
     static func seedCategories() async throws {
         try await ApiClient.shared.postEmptyVoid("/api/v1/seed-categories")
     }
+}
 
-    struct RecategorizeBody: Encodable {
-        let force: Bool
-        let lang: String
+// MARK: - Most do CRM Programo
+
+/// Sekret CRM-a nigdy nie ląduje na telefonie — apka rozmawia wyłącznie
+/// z Solvio, a Solvio trzyma zaszyfrowany klucz po swojej stronie.
+enum CrmRepo {
+    struct Connection: Decodable {
+        let connected: Bool
+        let baseUrl: String
+        let apiKeyHint: String?
+        let autoPush: Bool
+        let defaultCategory: String
+        let lastSyncAt: String?
+        let lastError: String?
     }
 
-    struct RecategorizeResult: Decodable {
-        let ok: Bool?
-        let processed: Int?
-        let itemsUpdated: Int?
-        let itemsAttempted: Int?
-        let expensesUpdated: Int?
+    struct ConnectBody: Encodable {
+        let baseUrl: String
+        let apiKey: String
+        let autoPush: Bool
+        let defaultCategory: String
     }
 
-    /// POST `/api/v1/recategorize-receipts` — runs AI categorization on
-    /// items in existing receipts whose `category_id` is null. Idempotent
-    /// at the data level, but rate-limited server-side to 3 runs/hour.
-    /// `force=true` re-categorizes even items that already have a category.
+    struct PushBody: Encodable { let ids: [String] }
+
+    struct PushResult: Decodable {
+        let ok: Bool
+        let pushed: Int
+    }
+
+    static func connection() async throws -> Connection {
+        try await ApiClient.shared.get("/api/crm/connection")
+    }
+
+    static func connect(_ body: ConnectBody) async throws -> Connection {
+        try await ApiClient.shared.put("/api/crm/connection", body: body)
+    }
+
+    static func disconnect() async throws {
+        try await ApiClient.shared.deleteVoid("/api/crm/connection")
+    }
+
     @discardableResult
-    static func recategorize(force: Bool = false, lang: String = "pl") async throws -> RecategorizeResult {
-        try await ApiClient.shared.post(
-            "/api/v1/recategorize-receipts",
-            body: RecategorizeBody(force: force, lang: lang)
-        )
-    }
-
-    struct PendingCount: Decodable {
-        let totalReceipts: Int
-        let pendingReceipts: Int
-        let pendingItems: Int
-    }
-
-    /// GET equivalent — quick summary of how much would be processed.
-    static func pendingCount() async throws -> PendingCount {
-        try await ApiClient.shared.get("/api/v1/recategorize-receipts")
-    }
-}
-
-// MARK: - Shopping list optimizer
-
-/// `/api/shopping/optimize` — given a shopping list and an optional
-/// location, returns the best single store to buy everything from
-/// plus a per-item price breakdown. Powered by Azure OpenAI / OpenAI
-/// with web search for live store prices.
-enum ShoppingRepo {
-    static func optimize(_ body: ShoppingOptimizeRequest) async throws -> ShoppingOptimizeResult {
-        try await ApiClient.shared.post("/api/shopping/optimize", body: body)
-    }
-}
-
-// MARK: - Receipt analyzer
-
-/// `/api/personal/receipt-analyze` — given a `receiptId` the user already
-/// scanned, returns a per-line audit of the prices vs current chain
-/// leaflets. Used by Okazje's "Analyze a receipt" flow.
-enum ReceiptAnalyzeRepo {
-    static func analyze(receiptId: String, lang: String) async throws -> ReceiptAnalyzeResponse {
-        try await ApiClient.shared.post(
-            "/api/personal/receipt-analyze",
-            body: ReceiptAnalyzeRequest(receiptId: receiptId, lang: lang)
-        )
+    static func push(ids: [String]) async throws -> PushResult {
+        try await ApiClient.shared.post("/api/crm/push", body: PushBody(ids: ids))
     }
 }

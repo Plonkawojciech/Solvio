@@ -71,6 +71,12 @@ final class AppLocale: ObservableObject {
     ///     PL → "%d paragony"
     ///   locale.tPlural("analyze.receiptsCount", count: 1)
     ///     PL → "%d paragon"
+    /// `tPlural` + wstawiona liczba. Formy mnogie w tabeli trzymają `%d`,
+    /// więc wywołujący nie musi pamiętać o `String(format:)`.
+    func pluralized(_ baseKey: String, count: Int) -> String {
+        String(format: tPlural(baseKey, count: count), count)
+    }
+
     func tPlural(_ baseKey: String, count: Int) -> String {
         let category = pluralCategory(for: count)
         // Try the most specific suffix first; fall back step-by-step.

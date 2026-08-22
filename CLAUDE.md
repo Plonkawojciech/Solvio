@@ -77,71 +77,57 @@ PKO_ENCRYPTION_KEY=     # Legacy — was used for PKO direct PSD2, kept for back
 
 ## Directory Structure
 
+Po redesignie 2026-08-22 aplikacja ma **dwa ekrany produktowe** (Panel,
+Wydatki) plus Ustawienia jako narzędzie. Wszystko inne zostało usunięte —
+patrz `docs/plans/redesign-2-ekrany-i-api-crm.md`.
+
 ```
 app/
-  layout.tsx                   # Root layout (ThemeProvider, Geist font)
-  globals.css                  # Tailwind v4 theme tokens (light/dark)
-  error.tsx                    # Root error boundary
-  not-found.tsx                # Branded 404 page
-  (auth)/
-    login/                     # Login page
-    error/                     # Auth error page
-  (marketing)/                 # Landing page route group
-  (protected)/                 # Authenticated app — server-side session check + redirect
-    layout.tsx                 # Sidebar + mobile nav + keyboard shortcuts + auto-seed
-    dashboard/                 # Financial dashboard
-    expenses/                  # Expense list + CRUD
-    analysis/                  # AI spending analysis (Recharts)
-    audit/                     # Shopping audit (web search + AI)
-    reports/                   # Report generation (CSV/PDF/DOCX)
-    settings/                  # User settings, categories, budgets
-    groups/                    # Group expense splitting
-      [id]/                    # Individual group detail
-    prices/                    # Price comparison tool
-  (standalone)/
-    welcome/                   # Onboarding welcome page
-  receipt/
-    [id]/                      # Public receipt view
-  api/                         # API routes (see below)
+  layout.tsx                   # Root layout
+  globals.css                  # Tokeny Tailwind v4 — motyw "Notes Classic"
+  (auth)/login/                # Logowanie (e-mail + hasło)
+  (marketing)/                 # Landing + privacy + terms
+  (protected)/
+    layout.tsx                 # Sidebar + dolna nawigacja + auto-seed
+    dashboard/                 # Panel
+    expenses/                  # Lista wydatków + CRUD
+    settings/                  # Waluta, kategorie, CRM, klucze API
+  api/                         # Trasy API (niżej)
 components/
-  ui/                          # shadcn/ui primitives (29 components)
+  ui/                          # Prymitywy shadcn/ui
   protected/
-    main/
-      sidebar.tsx              # App sidebar navigation
-      app-mobile-header.tsx    # Sticky mobile header (md:hidden)
-      mobile-bottom-nav.tsx    # Bottom tab bar (mobile)
-      keyboard-shortcuts.tsx   # Global hotkeys + help modal
-    dashboard/                 # Dashboard widgets (9 components)
-    analysis/                  # Analysis charts (Recharts, lazy-loaded)
-    groups/                    # Group splitting components
-    reports/                   # Report UI components
-    settings/                  # Settings forms
-  landing_page/
-    landing-page.tsx           # Full marketing landing page
-  auth-layout.tsx              # Auth page layout wrapper
-  login-form.tsx               # Login form component
-  header.tsx / footer.tsx      # Marketing header/footer
-  language-switcher.tsx        # PL/EN language toggle
-  theme-switcher.tsx           # Mobile theme switcher (uses ui/theme-toggle.tsx)
+    main/                      # sidebar, mobile-bottom-nav, header, skróty
+    dashboard/                 # Widżety panelu + arkusze dodawania/skanu
+    settings/                  # Formularze, crm-connection.tsx, api-keys.tsx
 lib/
-  db/
-    index.ts                   # Lazy Neon DB singleton (Proxy pattern)
-    schema.ts                  # Drizzle schema (11 tables)
-    seed-user.ts               # Auto-seed default categories on first login
-  i18n.ts                      # PL/EN translations (~1050 lines, ~400+ keys)
-  session.ts                   # Session cookie helpers (getSession, emailToUserId)
-  auth-compat.ts               # auth() wrapper returning { userId }
-  use-session.ts               # Client-side useSession() hook
-  category-colors.ts           # Hash-based category color palette (10 colors)
-  reports/builders.ts          # CSV/PDF/DOCX report builders
-  utils.ts                     # cn() helper (clsx + tailwind-merge)
-hooks/
-  use-mobile.ts                # Mobile breakpoint detection hook
-scripts/
-  seed-demo.mjs                # Demo data seeder
+  db/{index,schema,batch}.ts   # Drizzle: wybór sterownika, schemat, dbBatch
+  expense-core.ts              # JEDYNE miejsce tworzenia/edycji/usuwania wydatku
+  crm-client.ts                # Klient Finansów crm.programo.pl
+  api-keys.ts / api-auth.ts    # Klucze API (slvk_) i bramka /api/v1/*
+  api-query.ts                 # since / limit / cursor — kontrakt jak w CRM
+  crypto-box.ts                # AES-256-GCM dla sekretu CRM-a
+  session.ts, categorize.ts, format.ts, i18n.ts
+native-ios/Solvio/
+  Core/Theme/Theme.swift       # Design system "Notes Classic"
+  Core/UI/Components.swift     # SectionLabel, PaperCard, StatTile, BudgetBar…
+  Core/AppDataStore.swift      # Cache SWR — jeden slajs (panel)
+  Core/Network/Repositories.swift
+  Features/{Dashboard,Expenses,Auth,Root,Settings}/
+docs/
+  API.md                       # Publiczne API v1 + most do CRM-a
+  plans/                       # Plany wielopikowych zadań
 ```
 
-## Database Schema (Drizzle + Neon)
+## Database Schema (Drizzle)
+
+> **Nie usuwaj definicji tabel z `schema.ts`.** `docker-entrypoint.sh` odpala
+> `drizzle-kit push` przy starcie kontenera, więc tabela wycięta ze schematu
+> znika z produkcji razem z danymi. Po redesignie 2026-08-22 wiele tabel
+> (grupy, bank, subskrypcje, cele, wyzwania…) nie jest już czytanych przez
+> żaden kod, ale ich definicje zostają celowo. Faktyczne skasowanie danych
+> to osobna decyzja Wojtka, nie efekt uboczny sprzątania kodu.
+
+### Szczegóły (Drizzle + Neon)
 
 All tables defined in `lib/db/schema.ts`. UUIDs for primary keys, `user_id` (text) for row-level isolation.
 
@@ -222,6 +208,22 @@ All routes use `auth()` from `lib/auth-compat.ts` for authentication. Returns 40
 | Route | Methods | Purpose |
 |---|---|---|
 | `/api/prices/compare` | POST | AI price comparison |
+
+### API v1 i most do CRM-a
+
+- `/api/v1/{expenses,categories,summary,health}` — publiczne API na kluczu
+  `slvk_…` (`X-Api-Key` albo `Authorization: Bearer`), scope READ/WRITE.
+  Konwencje 1:1 z `crm.programo.pl` (`since`, `limit`, `cursor`, `{error}`).
+- `/api/crm/*` — most w drugą stronę, na sesji użytkownika. Klucz CRM-a leży
+  zaszyfrowany po stronie serwera i **nigdy nie trafia na telefon**.
+- Powiązanie wydatku z CRM-em trzyma `expenses.crm_entry_id`. Bez niego
+  edycja robiłaby duplikat zamiast aktualizacji.
+- Pełny kontrakt: `docs/API.md`.
+
+**Wydatek powstaje, zmienia się i znika WYŁĄCZNIE przez `lib/expense-core.ts`.**
+Trasy `/api/data/expenses` (sesja) i `/api/v1/expenses` (klucz) mają wspólną
+implementację mostu — dwie kopie prędzej czy później przestałyby wypychać do
+CRM-a po cichu.
 
 ## Auth System
 

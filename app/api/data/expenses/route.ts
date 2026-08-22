@@ -7,6 +7,7 @@ import { z } from 'zod'
 import { dbBatch } from '@/lib/db/batch'
 import { withApiTiming } from '@/lib/api-timing'
 import { categorizeOne } from '@/lib/categorize'
+import { syncExpenseWithCrm, unlinkExpensesFromCrm } from '@/lib/expense-core'
 
 const CreateExpenseSchema = z.object({
   title: z.string().min(1, 'Title is required').max(200),
@@ -165,7 +166,13 @@ export async function POST(request: Request) {
     }
   }
 
-  return NextResponse.json({ expense: exp })
+  // Most do CRM-a: jeśli połączenie ma `autoPush`, wydatek ląduje też w
+  // Finansach crm.programo.pl. Świadomie po odpowiedzi klienta byłoby lepiej,
+  // ale wtedy `crmEntryId` nie wróciłby w tej samej odpowiedzi.
+  await syncExpenseWithCrm(userId, exp.id)
+  const [withCrm] = await db.select().from(expenses).where(eq(expenses.id, exp.id)).limit(1)
+
+  return NextResponse.json({ expense: withCrm ?? exp })
 }
 
 async function getExpenses(request: Request) {
@@ -378,6 +385,9 @@ export async function PUT(request: Request) {
       }
     }
 
+    // Wydatek żyjący też w CRM-ie ma zostać dociągnięty, nie zdublowany.
+    await syncExpenseWithCrm(userId, data.id)
+
     return NextResponse.json({ success: true })
   } catch (err) {
     console.error('[expenses PUT]', err)
@@ -412,7 +422,11 @@ export async function DELETE(request: Request) {
       expensesToDelete.map(e => e.receiptId).filter(Boolean)
     )] as string[]
 
-    // 2. Delete the expenses
+    // 2. Sprzątamy odpowiedniki w Finansach CRM-a PRZED skasowaniem wierszy —
+    // po delete nie ma już skąd wziąć `crm_entry_id`.
+    await unlinkExpensesFromCrm(userId, ids)
+
+    // 3. Delete the expenses
     await db.delete(expenses).where(and(
       inArray(expenses.id, ids),
       eq(expenses.userId, userId)

@@ -1463,5 +1463,81 @@ extension L10n {
         "error.generic": "Something went wrong.",
         "error.network": "Network issue.",
         "error.retry": "Try again",
+
+        // ── Redesign 2026-08: two screens + CRM bridge ──
+        "nav.finances": "Finances",
+
+        // Dashboard
+        "dashboard.goodMorning": "Good morning",
+        "dashboard.goodAfternoon": "Good afternoon",
+        "dashboard.goodEvening": "Good evening",
+        "dashboard.spentThisMonth": "Spent this month",
+        "dashboard.spendingSplit": "Spending split",
+        "dashboard.forecast": "Monthly forecast",
+        "dashboard.dailyAllowance": "Daily allowance",
+        "dashboard.idealPace": "ideal pace",
+        "dashboard.overBy": "over budget by",
+        "dashboard.vsPrevious": "vs previous month",
+        "dashboard.transactions.one": "%d transaction",
+        "dashboard.transactions.many": "%d transactions",
+        "dashboard.daysLeft.one": "%d day left",
+        "dashboard.daysLeft.many": "%d days left",
+
+        // Expenses
+        "expenses.add": "Add expense",
+        "expenses.added": "Expense added",
+        "expenses.saved": "Saved",
+        "expenses.deleted": "Expense deleted",
+        "expenses.deleteConfirm": "Delete this expense?",
+        "expenses.search": "Search expenses",
+        "expenses.empty": "No expenses yet",
+        "expenses.emptyHint": "Scan a receipt or add an expense by hand.",
+        "expenses.autoCategory": "Automatic",
+        "expenses.sort.newest": "Newest",
+        "expenses.sort.oldest": "Oldest",
+        "expenses.sort.highest": "Highest",
+        "expenses.sort.lowest": "Lowest",
+
+        // Scan
+        "scanFab.camera": "Take a photo",
+        "scanFab.library": "Pick from library",
+        "scan.loadFailed": "Could not load the images",
+
+        // Login
+        "login.password": "Password",
+        "login.submit": "Sign in",
+        "login.demo": "Try the demo",
+        "login.passwordHint": "The first sign-in for an address sets the account password.",
+        "login.invalidCredentials": "Wrong email or password",
+
+        // Settings
+        "settings.budget": "Budget",
+        "settings.monthlyBudget": "Monthly budget",
+        "settings.categoriesLabel": "Categories",
+        "settings.categoryAdded": "Category added",
+        "settings.saved": "Settings saved",
+        "theme.system": "System",
+        "theme.light": "Light",
+        "theme.dark": "Dark",
+
+        // CRM Programo
+        "crm.section": "Integration",
+        "crm.connect": "Connect",
+        "crm.reconnect": "Save and verify",
+        "crm.disconnect": "Disconnect",
+        "crm.connected": "Connected to CRM",
+        "crm.disconnected": "Disconnected",
+        "crm.connectFailed": "CRM rejected the key",
+        "crm.connectedHint": "Connected. Key ends with",
+        "crm.notConnected": "No CRM connection",
+        "crm.notConnectedHint": "Paste the API key from the CRM (Settings → API keys, WRITE scope).",
+        "crm.lastError": "Last error:",
+        "crm.apiKeyPlaceholder": "crmk_…",
+        "crm.autoPush": "Push every expense automatically",
+        "crm.pushExpense": "Send to CRM",
+        "crm.pushed": "Sent to CRM",
+        "crm.pushFailed": "Could not send to CRM",
+        "expenses.details": "Details",
+        "expenses.delete": "Delete expense",
     ]
 }

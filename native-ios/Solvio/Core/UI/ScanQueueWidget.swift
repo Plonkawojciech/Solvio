@@ -72,9 +72,9 @@ struct ScanQueueWidget: View {
             .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
             .overlay(
                 RoundedRectangle(cornerRadius: Theme.Radius.md)
-                    .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
+                    .stroke(Theme.border, lineWidth: Theme.Border.width)
             )
-            .nbShadow(Theme.Shadow.md)
+            .softShadow(1)
         }
         .buttonStyle(.plain)
     }
@@ -151,7 +151,7 @@ struct ScanQueueWidget: View {
                             .clipShape(RoundedRectangle(cornerRadius: 4))
                             .overlay(
                                 RoundedRectangle(cornerRadius: 4)
-                                    .stroke(Theme.border.opacity(0.4), lineWidth: Theme.Border.widthThin)
+                                    .stroke(Theme.border.opacity(0.4), lineWidth: Theme.Border.width)
                             )
                     }
                     .buttonStyle(.plain)
@@ -172,9 +172,9 @@ struct ScanQueueWidget: View {
         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
         .overlay(
             RoundedRectangle(cornerRadius: Theme.Radius.md)
-                .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
+                .stroke(Theme.border, lineWidth: Theme.Border.width)
         )
-        .nbShadow(Theme.Shadow.md)
+        .softShadow(1)
         .padding(.bottom, 6)
     }
 
@@ -188,7 +188,7 @@ struct ScanQueueWidget: View {
                 .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                 .overlay(
                     RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                        .stroke(Theme.border.opacity(0.4), lineWidth: Theme.Border.widthThin)
+                        .stroke(Theme.border.opacity(0.4), lineWidth: Theme.Border.width)
                 )
 
             VStack(alignment: .leading, spacing: 2) {
@@ -220,7 +220,7 @@ struct ScanQueueWidget: View {
                         .clipShape(RoundedRectangle(cornerRadius: 6))
                         .overlay(
                             RoundedRectangle(cornerRadius: 6)
-                                .stroke(Theme.border.opacity(0.4), lineWidth: Theme.Border.widthThin)
+                                .stroke(Theme.border.opacity(0.4), lineWidth: Theme.Border.width)
                         )
                 }
                 .buttonStyle(.plain)
@@ -232,10 +232,12 @@ struct ScanQueueWidget: View {
         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
         .contentShape(Rectangle())
         .onTapGesture {
-            if case .saved = item.status, let rid = item.receiptId {
+            // Paragon nie ma osobnego ekranu — po zapisie staje się
+            // wydatkiem, więc kierujemy tam, gdzie faktycznie wylądował.
+            if case .saved = item.status {
                 Haptics.selection()
                 expanded = false
-                router.push(.receiptDetail(id: rid))
+                router.selectedTab = .expenses
             }
         }
     }

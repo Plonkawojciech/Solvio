@@ -128,7 +128,12 @@ async function getDashboard(request: Request) {
       : showAll
       ? eq(receipts.userId, userId)
       : and(eq(receipts.userId, userId), gte(receipts.date, sinceStr))
-    const prevRangeFilter = periodMonth
+    // `since=all` też liczy poprzedni MIESIĄC KALENDARZOWY, nie okno 30-59 dni
+    // wstecz. Klient, który prosi o wszystko (iOS), i tak tnie dane po
+    // miesiącach — przy oknie kroczącym ten sam wydatek dawał na telefonie
+    // „+134% vs poprzedni", a na webie „+29%". Okno kroczące zostaje tylko dla
+    // trybu 30-dniowego, gdzie bieżący zakres też jest kroczący.
+    const prevRangeFilter = (periodMonth || showAll)
       ? and(eq(expenses.userId, userId), gte(expenses.date, prevMonthStartStr), lte(expenses.date, prevMonthEndStr))
       : and(eq(expenses.userId, userId), gte(expenses.date, prev30Str), lte(expenses.date, sinceStr))
 
@@ -148,6 +153,12 @@ async function getDashboard(request: Request) {
         categoryId: expenses.categoryId,
         receiptId: expenses.receiptId,
         vendor: expenses.vendor,
+        // Notatki, tagi i `createdAt` dokłada iOS: ekran szczegółów pokazuje
+        // notatkę, a lista rozstrzyga remis dat po `createdAt`.
+        notes: expenses.notes,
+        tags: expenses.tags,
+        createdAt: expenses.createdAt,
+        crmEntryId: expenses.crmEntryId,
         isRecurring: expenses.isRecurring,
         exchangeRate: receipts.exchangeRate,
       }).from(expenses)

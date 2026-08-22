@@ -97,6 +97,10 @@ export const expenses = pgTable('expenses', {
   invoiceId: uuid('invoice_id'),
   approvalStatus: varchar('approval_status', { length: 20 }), // 'pending' | 'approved' | 'rejected'
   bankTransactionId: uuid('bank_transaction_id'),
+  // Id wiersza FinanceEntry w crm.programo.pl, jeśli ten wydatek został tam
+  // wypchnięty. Niepuste = edycja/usunięcie po stronie Solvio ma dociągnąć CRM.
+  crmEntryId: text('crm_entry_id'),
+  crmSyncedAt: timestamp('crm_synced_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 }, (t) => [
@@ -787,3 +791,46 @@ export const rateLimitBuckets = pgTable('rate_limit_buckets', {
   index('idx_rate_limit_buckets_reset_at').on(t.resetAt),
   index('idx_rate_limit_buckets_updated_at').on(t.updatedAt),
 ])
+
+// ─── Integracje ───────────────────────────────────────────────────────────────
+
+// Klucze API dla integracji (crm.programo.pl). Konwencja 1:1 z CRM-em
+// (`src/lib/api-keys-core.ts`): w bazie leży wyłącznie SHA-256, jawny klucz
+// istnieje tylko w odpowiedzi na POST, który go tworzy.
+export const apiKeys = pgTable('api_keys', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: text('user_id').notNull(),
+  name: varchar('name', { length: 100 }).notNull(),
+  hash: text('hash').unique().notNull(),
+  // Jawny człon klucza — po to, żeby dwa klucze dało się rozróżnić na liście.
+  prefix: varchar('prefix', { length: 16 }).notNull(),
+  scope: varchar('scope', { length: 5 }).default('READ').notNull(), // 'READ' | 'WRITE'
+  lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+  expiresAt: timestamp('expires_at', { withTimezone: true }),
+  // Unieważnienie zostawia wiersz: kto miał dostęp i kiedy go stracił jest
+  // wartościowsze niż czysta tabela.
+  revokedAt: timestamp('revoked_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  index('idx_api_keys_user_id').on(t.userId),
+])
+
+// Spięcie konta Solvio z zakładką Finanse w crm.programo.pl. Klucz CRM-a
+// trzymamy zaszyfrowany (AES-256-GCM, `lib/crypto-box.ts`), bo w odróżnieniu
+// od naszych własnych kluczy musimy go odtworzyć, żeby wykonać żądanie.
+export const crmConnections = pgTable('crm_connections', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: text('user_id').unique().notNull(),
+  baseUrl: text('base_url').default('https://crm.programo.pl').notNull(),
+  apiKeyEnc: text('api_key_enc').notNull(),
+  // Ostatnie 4 znaki klucza — tyle, żeby Wojtek poznał, który klucz wpiął.
+  apiKeyHint: varchar('api_key_hint', { length: 8 }).notNull(),
+  // Czy każdy nowy wydatek ma automatycznie lądować w Finansach CRM-a.
+  autoPush: boolean('auto_push').default(false).notNull(),
+  // Kubełek (FinanceEntry.category), do którego trafiają wypchnięte wydatki.
+  defaultCategory: varchar('default_category', { length: 100 }).default('solvio').notNull(),
+  lastSyncAt: timestamp('last_sync_at', { withTimezone: true }),
+  lastError: text('last_error'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+})

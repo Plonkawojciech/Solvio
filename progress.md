@@ -2,9 +2,44 @@
 
 **Projekt:** AI-powered SaaS do śledzenia wydatków — skanowanie paragonów (OCR), grupy kosztów, porównywanie cen, raporty finansowe. PL/EN.
 
-**URL produkcyjny:** `https://solvio-lac.vercel.app`
+**URL produkcyjny:** `https://solvio.programo.pl` (Coolify na VM Contabo — NIE Vercel)
 
 ---
+
+## 2026-08-22 — redesign do dwóch ekranów + API dla crm.programo.pl
+
+Solvio przestaje być kombajnem. Zostają **Panel** i **Wydatki**, mobilka
+dostaje wygląd weba, a apka wystawia API, którym CRM steruje finansami.
+
+**Wygląd.** iOS przechodzi z neobrutalizmu (czarne ramki, twarde offsety,
+nagłówki `// PANEL`) na **Notes Classic** — papier `#f7f5f0`, białe karty na
+miękkim cieniu, ciepły pomarańcz `#c85a3a`, Inter + JetBrains Mono. Paleta
+w katalogu assetów jest wyliczona z `app/globals.css`, więc telefon i web
+mają dosłownie te same wartości HSL. Wariant „wieczorny" wypadł: paleta ma
+dwa stany i oba obsługuje system.
+
+**Cięcie.** Poszły grupy, bank, subskrypcje, oszczędności, wyzwania,
+lojalność, ceny, okazje, raporty, analizy, audyt, faktury, VAT, zespół,
+akceptacje, doradca zakupowy i tryb business — 27 stron weba zeszło do
+trzech (Panel, Wydatki, Ustawienia), 55 plików Swift do 30. **Tabele w
+bazie zostają nietknięte** i dalej są w `schema.ts`: `drizzle-kit push`
+w `docker-entrypoint.sh` zdropowałby wszystko, czego w schemacie nie ma.
+Skasowanie danych to osobna, świadoma decyzja.
+
+**API v1.** `/api/v1/{expenses,categories,summary,health}` na kluczu API
+(`slvk_…`, SHA-256 w bazie, scope READ/WRITE), konwencje 1:1 z CRM-em.
+Most w drugą stronę: `/api/crm/*` trzyma zaszyfrowany klucz CRM-a i wypycha
+wydatki jako `FinanceEntry`. Powiązanie siedzi w `expenses.crm_entry_id` —
+dzięki niemu edycja dociąga wpis, a nie dubluje. Dokumentacja: `docs/API.md`.
+
+**Trzy błędy wyszły przy porównaniu telefonu z webem:**
+1. `/api/data/dashboard` nie ma `ORDER BY`, więc „ostatnie transakcje" na
+   iOS pokazywały najstarsze wiersze. Sortowanie jest teraz po stronie klienta.
+2. Przy `since=all` poprzedni okres liczył się jako okno 30–59 dni wstecz,
+   a nie poprzedni miesiąc kalendarzowy — ten sam wydatek dawał „+134%" na
+   telefonie i „+29%" na webie.
+3. iOS logował się samym e-mailem, choć backend od scalenia gałęzi AveJi
+   wymaga hasła. Na telefonie działało wyłącznie konto demo.
 
 ## Uwaga: 100% AI Codebase
 

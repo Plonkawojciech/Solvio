@@ -136,7 +136,7 @@ struct ToastOverlay: View {
                     }
                 }
                 .padding(Theme.Spacing.md)
-                .nbCard(radius: Theme.Radius.md, shadow: Theme.Shadow.md)
+                .paperCard(radius: Theme.Radius.md, shadow: 2)
                 .padding(.horizontal, Theme.Spacing.md)
                 .transition(.move(edge: .top).combined(with: .opacity))
                 // Tap-to-dismiss only on toasts WITHOUT an undo affordance.

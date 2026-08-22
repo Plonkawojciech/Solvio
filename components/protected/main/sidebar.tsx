@@ -3,7 +3,6 @@
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useSession } from '@/lib/use-session'
-import { useProductType } from '@/hooks/use-product-type'
 import {
   Sidebar,
   SidebarContent,
@@ -18,16 +17,10 @@ import {
 } from "@/components/ui/sidebar"
 import {
   DollarSign,
-  FileText,
   Home,
   Settings,
   Wallet,
   LogOut,
-  Users,
-  Landmark,
-  Building2,
-  PiggyBank,
-  Repeat,
   type LucideIcon,
 } from "lucide-react"
 import { useTranslation } from '@/lib/i18n'
@@ -35,7 +28,6 @@ import { Button } from '@/components/ui/button'
 import { ThemeToggle } from '@/components/ui/theme-toggle'
 import { KeyboardShortcutsButton } from '@/components/protected/main/keyboard-shortcuts'
 import { LanguageSwitcher } from '@/components/language-switcher'
-import { ProductSwitcher } from '@/components/protected/main/product-switcher'
 
 interface NavItem {
   key: string
@@ -43,37 +35,20 @@ interface NavItem {
   icon: LucideIcon
 }
 
-function getNavItems(isPersonal: boolean): NavItem[] {
-  if (isPersonal) {
-    return [
-      { key: 'dashboard', href: '/dashboard', icon: Home },
-      { key: 'expenses', href: '/expenses', icon: DollarSign },
-      { key: 'groups', href: '/groups', icon: Users },
-      { key: 'bank', href: '/bank', icon: Landmark },
-      { key: 'subscriptions', href: '/subscriptions', icon: Repeat },
-      { key: 'savings', href: '/savings', icon: PiggyBank },
-      { key: 'settings', href: '/settings', icon: Settings },
-    ]
-  }
-
-  return [
-    { key: 'dashboard', href: '/dashboard', icon: Home },
-    { key: 'expenses', href: '/expenses', icon: DollarSign },
-    { key: 'invoices', href: '/invoices', icon: FileText },
-    { key: 'bank', href: '/bank', icon: Landmark },
-    { key: 'team', href: '/team', icon: Users },
-    { key: 'settings', href: '/settings', icon: Settings },
-  ]
-}
+/** Solvio ma dziś dwa ekrany produktowe. Ustawienia zostają jako narzędzie —
+ *  to tam wydaje się klucze API i wpina zakładkę Finanse w crm.programo.pl. */
+const NAV_ITEMS: NavItem[] = [
+  { key: 'dashboard', href: '/dashboard', icon: Home },
+  { key: 'expenses', href: '/expenses', icon: DollarSign },
+  { key: 'settings', href: '/settings', icon: Settings },
+]
 
 export function AppSidebar() {
   const { t } = useTranslation()
   const pathname = usePathname()
   const router = useRouter()
   const { email } = useSession()
-  const { isPersonal, isBusiness } = useProductType()
-
-  const items = getNavItems(isPersonal)
+  const items = NAV_ITEMS
   const displayName = email ? email.split('@')[0] : 'User'
   const initials = displayName.slice(0, 2).toUpperCase()
 
@@ -88,19 +63,12 @@ export function AppSidebar() {
       <SidebarHeader className="border-b border-sidebar-border p-4">
         <Link href="/dashboard" className="flex items-center gap-3 group">
           <div className="flex h-9 w-9 items-center justify-center rounded-md border border-border bg-primary text-primary-foreground shadow-[var(--nb-shadow-sm)]  group-hover:shadow-[var(--nb-shadow)] transition-all">
-            {isBusiness ? (
-              <Building2 className="h-4 w-4" aria-hidden="true" />
-            ) : (
-              <Wallet className="h-4 w-4" aria-hidden="true" />
-            )}
+            <Wallet className="h-4 w-4" aria-hidden="true" />
           </div>
           <div className="flex flex-col">
             <span className="text-sm font-black leading-tight tracking-tight">Solvio</span>
-            <span
-              suppressHydrationWarning
-              className="text-[10px] font-bold uppercase tracking-widest leading-none text-muted-foreground"
-            >
-              {t(`nav.${isPersonal ? 'personal' : 'business'}`)}
+            <span className="text-[10px] font-bold uppercase tracking-widest leading-none text-muted-foreground">
+              Finanse
             </span>
           </div>
         </Link>
@@ -133,7 +101,6 @@ export function AppSidebar() {
 
       <SidebarFooter className="p-3 border-t border-sidebar-border space-y-2.5">
         {/* Product switcher (Personal / Business) */}
-        <ProductSwitcher />
 
         <div className="h-[2px] bg-sidebar-border" />
 

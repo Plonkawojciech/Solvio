@@ -59,6 +59,9 @@ struct Expense: Codable, Identifiable, Hashable {
     /// them up from the categories array.
     let categoryName: String?
     let categoryIcon: String?
+    /// Id wiersza w Finansach crm.programo.pl, jeśli wydatek został tam
+    /// wypchnięty. Niepuste = edycja u nas dociąga CRM zamiast dublować.
+    let crmEntryId: String?
 }
 
 struct ExpenseListResponse: Codable {

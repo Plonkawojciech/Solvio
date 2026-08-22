@@ -119,13 +119,17 @@ final class SessionStore: ObservableObject {
     /// We also send `lang` so the backend seeds default categories in
     /// the right language on first login (iOS users bypass the web-only
     /// `(protected)/layout.tsx` that does this seed on the web).
-    func login(email: String) async throws {
-        struct LoginBody: Encodable { let email: String; let lang: String }
+    /// Hasło jest wymagane dla każdego konta poza demo. Pierwsze logowanie
+    /// na dany adres „zajmuje" konto: backend haszuje podane hasło i zapisuje
+    /// je w `user_credentials`. Bez tego pola serwer oddaje 401 z kodem
+    /// `password_required` — i tak apka wyglądała, zanim to doszło tutaj.
+    func login(email: String, password: String) async throws {
+        struct LoginBody: Encodable { let email: String; let password: String; let lang: String }
         let trimmed = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let lang = UserDefaults.standard.string(forKey: "solvio.language") ?? "pl"
         let response: SessionLoginResponse = try await ApiClient.shared.post(
             "/api/auth/session",
-            body: LoginBody(email: trimmed, lang: lang)
+            body: LoginBody(email: trimmed, password: password, lang: lang)
         )
         let user = CurrentUser(email: trimmed, userId: response.userId)
         currentUser = user

@@ -1501,5 +1501,83 @@ enum L10n {
         "error.generic": "Coś poszło nie tak.",
         "error.network": "Problem z siecią.",
         "error.retry": "Spróbuj ponownie",
+
+        // ── Redesign 2026-08: dwa ekrany + most do CRM ──
+        "nav.finances": "Finanse",
+
+        // Panel
+        "dashboard.goodMorning": "Dzień dobry",
+        "dashboard.goodAfternoon": "Dzień dobry",
+        "dashboard.goodEvening": "Dobry wieczór",
+        "dashboard.spentThisMonth": "Wydane w tym miesiącu",
+        "dashboard.spendingSplit": "Podział wydatków",
+        "dashboard.forecast": "Prognoza miesiąca",
+        "dashboard.dailyAllowance": "Dzienny limit",
+        "dashboard.idealPace": "idealne tempo",
+        "dashboard.overBy": "ponad budżet o",
+        "dashboard.vsPrevious": "vs poprzedni miesiąc",
+        "dashboard.transactions.one": "%d transakcja",
+        "dashboard.transactions.few": "%d transakcje",
+        "dashboard.transactions.many": "%d transakcji",
+        "dashboard.daysLeft.one": "%d dzień do końca",
+        "dashboard.daysLeft.few": "%d dni do końca",
+        "dashboard.daysLeft.many": "%d dni do końca",
+
+        // Wydatki
+        "expenses.add": "Dodaj wydatek",
+        "expenses.added": "Wydatek dodany",
+        "expenses.saved": "Zapisano",
+        "expenses.deleted": "Wydatek usunięty",
+        "expenses.deleteConfirm": "Usunąć ten wydatek?",
+        "expenses.search": "Szukaj wydatku",
+        "expenses.empty": "Brak wydatków",
+        "expenses.emptyHint": "Zeskanuj paragon albo dodaj wydatek ręcznie.",
+        "expenses.autoCategory": "Automatycznie",
+        "expenses.sort.newest": "Najnowsze",
+        "expenses.sort.oldest": "Najstarsze",
+        "expenses.sort.highest": "Najwyższe",
+        "expenses.sort.lowest": "Najniższe",
+
+        // Skan
+        "scanFab.camera": "Zrób zdjęcie",
+        "scanFab.library": "Wybierz z galerii",
+        "scan.loadFailed": "Nie udało się wczytać zdjęć",
+
+        // Logowanie
+        "login.password": "Hasło",
+        "login.submit": "Zaloguj się",
+        "login.demo": "Wypróbuj demo",
+        "login.passwordHint": "Pierwsze logowanie na dany adres ustawia hasło do konta.",
+        "login.invalidCredentials": "Błędny e-mail lub hasło",
+
+        // Ustawienia
+        "settings.budget": "Budżet",
+        "settings.monthlyBudget": "Budżet miesięczny",
+        "settings.categoriesLabel": "Kategorie",
+        "settings.categoryAdded": "Kategoria dodana",
+        "settings.saved": "Zapisano ustawienia",
+        "theme.system": "Systemowy",
+        "theme.light": "Jasny",
+        "theme.dark": "Ciemny",
+
+        // CRM Programo
+        "crm.section": "Integracja",
+        "crm.connect": "Połącz",
+        "crm.reconnect": "Zapisz i sprawdź",
+        "crm.disconnect": "Rozłącz",
+        "crm.connected": "Połączono z CRM",
+        "crm.disconnected": "Rozłączono",
+        "crm.connectFailed": "CRM odrzucił klucz",
+        "crm.connectedHint": "Połączono. Klucz kończy się na",
+        "crm.notConnected": "Brak połączenia z CRM",
+        "crm.notConnectedHint": "Wklej klucz API z CRM-a (Ustawienia → Klucze API, zakres WRITE).",
+        "crm.lastError": "Ostatni błąd:",
+        "crm.apiKeyPlaceholder": "crmk_…",
+        "crm.autoPush": "Wysyłaj każdy wydatek automatycznie",
+        "crm.pushExpense": "Wyślij do CRM",
+        "crm.pushed": "Wysłano do CRM",
+        "crm.pushFailed": "Nie udało się wysłać do CRM",
+        "expenses.details": "Szczegóły",
+        "expenses.delete": "Usuń wydatek",
     ]
 }
