@@ -8,6 +8,22 @@ enum AppTab: Hashable {
     case expenses
 }
 
+/// Który zbiór pieniędzy oglądamy. Jeden stan na całą apkę: przełączenie
+/// na Panelu przestawia też Wydatki, bo to ta sama decyzja („czyje to
+/// pieniądze"), a nie dwa niezależne filtry na dwóch ekranach.
+enum MoneyScope: String, CaseIterable, Identifiable {
+    case mine, company, all
+    var id: String { rawValue }
+
+    var labelKey: String {
+        switch self {
+        case .mine:    return "expenses.scopeMine"
+        case .company: return "expenses.scopeCompany"
+        case .all:     return "expenses.scopeAll"
+        }
+    }
+}
+
 /// Cele wchodzące na stos nawigacji bieżącej zakładki.
 enum AppRoute: Hashable {
     case expenseDetail(id: String)
@@ -24,6 +40,10 @@ enum ScanMode: Hashable {
 @MainActor
 final class AppRouter: ObservableObject {
     @Published var selectedTab: AppTab = .dashboard
+
+    /// Wspólny dla Panelu i Wydatków. Bez wpiętego CRM-a przełącznik się nie
+    /// pokazuje i wartość zostaje na `.mine`.
+    @Published var moneyScope: MoneyScope = .mine
 
     @Published var dashboardStack = NavigationPath()
     @Published var expensesStack = NavigationPath()

@@ -16,6 +16,7 @@ final class CrmStore: ObservableObject {
     @Published private(set) var summary: CrmSummary?
     @Published private(set) var clients: [CrmClient] = []
     @Published private(set) var commitments: [CrmCommitment] = []
+    @Published private(set) var balances: [CrmBalance] = []
     @Published private(set) var loading = false
     @Published private(set) var error: String?
 
@@ -55,6 +56,12 @@ final class CrmStore: ObservableObject {
         task = Task { [weak self] in await self?.load() }
     }
 
+    /// Miesiąc w przód / w tył — tak jak strzałki nad tabelą w `/finanse`.
+    func shiftMonth(by months: Int) {
+        let next = Calendar.current.date(byAdding: .month, value: months, to: month) ?? month
+        setMonth(next)
+    }
+
     func setMonth(_ date: Date) {
         month = date
         loadedAt = nil
@@ -92,11 +99,26 @@ final class CrmStore: ObservableObject {
             return
         }
 
-        // Konteksty są dodatkiem: brak klientów nie ma prawa schować wpisów.
+        await refreshContext()
+    }
+
+    /// Klienci, zobowiązania i stan konta. Konteksty są DODATKIEM: padnięta
+    /// lista klientów nie ma prawa schować wpisów, które już mamy.
+    /// Wywoływane też po każdej zmianie w rejestrach — to jedyne miejsce,
+    /// w którym te trzy kolekcje powstają.
+    func refreshContext() async {
         if let context = try? await CrmRepo.context() {
             clients = context.clients
             commitments = context.commitments
         }
+        if let rows = try? await CrmRegistryRepo.balances() {
+            balances = rows
+        }
+    }
+
+    /// Ostatni odczyt stanu konta — na karcie Firmy pokazujemy tylko ten.
+    var latestBalance: CrmBalance? {
+        balances.max { $0.at < $1.at }
     }
 
     // MARK: - Zapisy
@@ -133,6 +155,10 @@ final class CrmStore: ObservableObject {
         }
     }
 
+    /// Rozszerzenia w innych plikach nie sięgną `private(set) var error`,
+    /// a każde z nich musi umieć zgłosić awarię tym samym kanałem.
+    func setError(_ message: String?) { error = message }
+
     func reload() async {
         loadedAt = nil
         task?.cancel()
@@ -145,6 +171,7 @@ final class CrmStore: ObservableObject {
         summary = nil
         clients = []
         commitments = []
+        balances = []
         connected = nil
         loadedAt = nil
         error = nil

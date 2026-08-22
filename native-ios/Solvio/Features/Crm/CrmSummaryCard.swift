@@ -14,6 +14,10 @@ struct CrmSummaryCard: View {
             PaperCard(title: locale.t("crm.company"), label: locale.t("crm.section")) {
                 VStack(alignment: .leading, spacing: Theme.Spacing.md) {
                     figures
+                    if let balance = crm.latestBalance {
+                        Divider().overlay(Theme.border)
+                        balanceRow(balance)
+                    }
                     if let mrr = crm.summary?.mrr, mrr.total > 0 {
                         Divider().overlay(Theme.border)
                         mrrRow(mrr)
@@ -46,6 +50,21 @@ struct CrmSummaryCard: View {
                 .minimumScaleFactor(0.6)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Ostatni ręczny odczyt stanu konta z CRM-a. Data jest tu równie ważna
+    /// jak kwota: odczyt sprzed miesiąca nie mówi, ile jest na koncie dziś.
+    private func balanceRow(_ balance: CrmBalance) -> some View {
+        HStack(spacing: Theme.Spacing.sm) {
+            SectionLabel(text: locale.t("crm.accountBalance"))
+            Spacer(minLength: Theme.Spacing.sm)
+            Text(Fmt.amount(balance.amount, currency: "PLN"))
+                .font(AppFont.amount)
+                .foregroundColor(Theme.foreground)
+            Text(Fmt.dayMonth(balance.at))
+                .font(AppFont.caption)
+                .foregroundColor(Theme.mutedForeground)
+        }
     }
 
     private func mrrRow(_ mrr: CrmMrr) -> some View {

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getSession } from '@/lib/session'
-import { listClients, listCommitments } from '@/lib/crm/finance'
+import { listClients, listCommitments } from '@/lib/crm/registry'
 
 export const dynamic = 'force-dynamic'
 

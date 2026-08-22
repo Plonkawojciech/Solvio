@@ -1,13 +1,13 @@
-import { call, type CrmResult } from './http'
-import { getCrmConnection, markSync } from './connection'
+import { call, withConnection } from './http'
 
 /**
  * Zakładka Finanse w crm.programo.pl widziana z Solvio.
  *
- * Odpowiada 1:1 temu, co pokazuje ekran `/finanse` w CRM-ie: wpisy miesiąca,
- * podsumowanie roku, zobowiązania cykliczne, klienci i stan konta. Dzięki temu
- * apka może sterować firmowymi finansami bez własnej kopii tych danych —
- * źródłem prawdy zostaje CRM.
+ * Ten plik to wpisy i podsumowania. Klienci, zobowiązania cykliczne i stan
+ * konta siedzą w `registry.ts` — razem byłby jeden plik na wszystko.
+ *
+ * Solvio nie trzyma kopii tych danych: źródłem prawdy zostaje CRM, a apka
+ * jest jego pilotem.
  */
 
 export interface CrmFinanceEntry {
@@ -32,18 +32,6 @@ export interface CrmEntryInput {
   paid?: boolean
   note?: string
   clientId?: string | null
-}
-
-/** Wspólny nagłówek każdej operacji: bez połączenia nie ma o czym rozmawiać. */
-async function withConnection<T>(
-  userId: string,
-  work: (conn: NonNullable<Awaited<ReturnType<typeof getCrmConnection>>>) => Promise<CrmResult<T>>,
-): Promise<CrmResult<T>> {
-  const conn = await getCrmConnection(userId)
-  if (!conn) return { ok: false, status: 0, data: null, error: 'Brak połączenia z CRM' }
-  const res = await work(conn)
-  await markSync(userId, res.error)
-  return res
 }
 
 // ─── Wpisy ────────────────────────────────────────────────────────────────────
@@ -141,42 +129,4 @@ export function summary(userId: string, params: { year?: number; month?: number 
   const suffix = q.toString() ? `?${q}` : ''
 
   return withConnection<CrmSummary>(userId, (conn) => call(conn, `/api/v1/finance/summary${suffix}`))
-}
-
-export interface CrmCommitment {
-  id: string
-  title: string
-  type: 'INCOME' | 'EXPENSE'
-  amount: string | number
-  category: string
-  active: boolean
-  intervalMonths: number
-  startDate: string
-  endDate: string | null
-}
-
-/** Zobowiązania cykliczne (abonamenty, ZUS, serwery). CRM materializuje z nich
- *  po jednym wpisie na miesiąc — apka pokazuje je, żeby było wiadomo, skąd
- *  bierze się koszt, którego nikt ręcznie nie dodawał. */
-export function listCommitments(userId: string) {
-  return withConnection<{ commitments: CrmCommitment[] }>(userId, (conn) =>
-    call(conn, '/api/v1/recurring-commitments'),
-  )
-}
-
-export interface CrmClient {
-  id: string
-  name: string
-  status?: string
-  monthlyFee?: string
-}
-
-export function listClients(userId: string) {
-  return withConnection<{ clients: CrmClient[] }>(userId, (conn) =>
-    call(conn, '/api/v1/clients?limit=200'),
-  )
-}
-
-export function listBalances(userId: string) {
-  return withConnection<unknown>(userId, (conn) => call(conn, '/api/v1/account-balance'))
 }

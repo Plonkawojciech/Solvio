@@ -112,7 +112,8 @@ components/
 lib/
   db/{index,schema,batch}.ts   # Drizzle: wybór sterownika, schemat, dbBatch
   expense-core.ts              # JEDYNE miejsce tworzenia/edycji/usuwania wydatku
-  crm-client.ts                # Klient Finansów crm.programo.pl
+  crm/{connection,http,finance,registry,route-helpers}.ts
+                               # Most do Finansów crm.programo.pl
   api-keys.ts / api-auth.ts    # Klucze API (slvk_) i bramka /api/v1/*
   api-query.ts                 # since / limit / cursor — kontrakt jak w CRM
   crypto-box.ts                # AES-256-GCM dla sekretu CRM-a

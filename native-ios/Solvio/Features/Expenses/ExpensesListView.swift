@@ -16,17 +16,18 @@ struct ExpensesListView: View {
     @State private var categoryFilter: String? = nil
     @State private var sort: Sort = .newest
     @State private var pendingDelete: Expense?
-    /// Który zbiór pieniędzy oglądamy: własne wydatki czy Finanse CRM-a.
-    /// Świadomie zakładka wewnątrz ekranu, a nie trzeci ekran — apka ma dwa.
-    @State private var scope: Scope = .mine
+    /// Sekcja wewnątrz zakładki Firma. Trzymana tutaj, nie w `CrmCompanyView`,
+    /// bo od niej zależy, co robi „+" w nagłówku ekranu.
+    @State private var companySection: CrmSection = .all
     @State private var editingCrmEntry: CrmEntry?
-    @State private var creatingCrmEntry = false
+    @State private var editingCommitment: CrmCommitment?
+    @State private var editingClient: CrmClient?
+    @State private var creatingCrm = false
 
-    enum Scope: String, CaseIterable, Identifiable {
-        case mine, company
-        var id: String { rawValue }
-        var labelKey: String { self == .mine ? "expenses.scopeMine" : "expenses.scopeCompany" }
-    }
+    /// Który zbiór pieniędzy oglądamy — stan wspólny z Panelem, patrz
+    /// `MoneyScope`. Świadomie zakładka wewnątrz ekranu, a nie trzeci ekran:
+    /// apka ma dwa.
+    private var scope: MoneyScope { router.moneyScope }
 
     enum Sort: String, CaseIterable, Identifiable {
         case newest, oldest, highest, lowest
@@ -68,18 +69,25 @@ struct ExpensesListView: View {
             headerBar
             scopePicker
 
-            if scope == .company {
-                CrmEntriesList(editing: $editingCrmEntry, creating: $creatingCrmEntry)
-            } else {
+            switch scope {
+            case .mine:
                 mineContent
+            case .company:
+                CrmCompanyView(
+                    section: $companySection,
+                    editingEntry: $editingCrmEntry,
+                    editingCommitment: $editingCommitment,
+                    editingClient: $editingClient,
+                    creating: $creatingCrm
+                )
+            case .all:
+                AllMoneyList(editingCrmEntry: $editingCrmEntry)
             }
         }
-        .sheet(item: $editingCrmEntry) { entry in
-            CrmEntryEditorSheet(entry: entry)
-        }
-        .sheet(isPresented: $creatingCrmEntry) {
-            CrmEntryEditorSheet(entry: nil)
-        }
+        .sheet(item: $editingCrmEntry) { CrmEntryEditorSheet(entry: $0) }
+        .sheet(item: $editingCommitment) { CrmCommitmentEditorSheet(commitment: $0) }
+        .sheet(item: $editingClient) { CrmClientEditorSheet(client: $0) }
+        .sheet(isPresented: $creatingCrm) { newCrmSheet }
         .refreshable { await store.awaitDashboard(force: true) }
         .task { store.ensureDashboard() }
         .confirmationDialog(
@@ -95,13 +103,23 @@ struct ExpensesListView: View {
         }
     }
 
+    /// Co otwiera „+" w zakładce Firma — zależy od oglądanej sekcji.
+    @ViewBuilder
+    private var newCrmSheet: some View {
+        switch companySection {
+        case .commitments: CrmCommitmentEditorSheet(commitment: nil)
+        case .clients:     CrmClientEditorSheet(client: nil)
+        default:           CrmEntryEditorSheet(entry: nil)
+        }
+    }
+
     /// Przełącznik pojawia się TYLKO, gdy CRM jest wpięty — bez niego byłby
     /// pustą zakładką prowadzącą do zachęty na integrację.
     @ViewBuilder
     private var scopePicker: some View {
         if crm.connected == true {
-            Picker("", selection: $scope) {
-                ForEach(Scope.allCases) { s in
+            Picker("", selection: $router.moneyScope) {
+                ForEach(MoneyScope.allCases) { s in
                     Text(locale.t(s.labelKey)).tag(s)
                 }
             }
@@ -146,14 +164,12 @@ struct ExpensesListView: View {
                 Text(locale.t("nav.expenses"))
                     .font(AppFont.pageTitle)
                     .foregroundColor(Theme.foreground)
-                SectionLabel(text: scope == .company
-                    ? locale.pluralized("crm.entriesCount", count: crm.entries.count)
-                    : locale.pluralized("dashboard.transactions", count: filtered.count))
+                SectionLabel(text: countLabel)
             }
             Spacer()
             Button {
                 Haptics.impact(.light)
-                if scope == .company { creatingCrmEntry = true } else { router.showingExpenseEditor = true }
+                if scope == .mine { router.showingExpenseEditor = true } else { creatingCrm = true }
             } label: {
                 Image(systemName: "plus")
                     .font(.system(size: 15, weight: .semibold))
@@ -166,6 +182,22 @@ struct ExpensesListView: View {
         }
         .padding(.horizontal, Theme.Spacing.md)
         .padding(.top, Theme.Spacing.md)
+    }
+
+    /// Podpis pod tytułem: liczba rzeczy, które faktycznie widać.
+    private var countLabel: String {
+        switch scope {
+        case .mine:
+            return locale.pluralized("dashboard.transactions", count: filtered.count)
+        case .all:
+            return locale.pluralized("dashboard.transactions", count: store.expenses.count + crm.entries.count)
+        case .company:
+            switch companySection {
+            case .commitments: return locale.pluralized("crm.commitmentsCount", count: crm.commitments.count)
+            case .clients:     return locale.pluralized("crm.clientsCount", count: crm.clients.count)
+            default:           return locale.pluralized("crm.entriesCount", count: crm.entries.count)
+            }
+        }
     }
 
     // MARK: - Filtry

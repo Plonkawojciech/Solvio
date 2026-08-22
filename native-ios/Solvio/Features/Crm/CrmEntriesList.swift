@@ -1,12 +1,17 @@
 import SwiftUI
 
-/// Lista wpisów Finansów CRM-a — druga zakładka na ekranie Wydatków.
+/// Lista wpisów Finansów CRM-a.
 ///
 /// Pokazuje to samo, co ekran `/finanse` w CRM-ie: typ, tytuł, kategorię,
 /// klienta i status zapłaty. Tapnięcie otwiera edycję, długie przytrzymanie
 /// przełącza „zapłacone" — to najczęstsza operacja na tym ekranie i nie
 /// powinna wymagać wchodzenia w szczegóły.
 struct CrmEntriesList: View {
+    /// „INCOME", „EXPENSE" albo `nil` = wszystko. Filtrujemy po stronie apki,
+    /// bo wpisy całego miesiąca i tak już mamy — dodatkowe żądanie na każdą
+    /// zmianę zakładki byłoby czystą stratą.
+    var type: String?
+
     @EnvironmentObject private var crm: CrmStore
     @EnvironmentObject private var locale: AppLocale
 
@@ -15,9 +20,7 @@ struct CrmEntriesList: View {
 
     var body: some View {
         Group {
-            if crm.connected == false {
-                notConnected
-            } else if crm.loading && crm.entries.isEmpty {
+            if crm.loading && crm.entries.isEmpty {
                 VStack(spacing: Theme.Spacing.sm) {
                     ForEach(0..<5, id: \.self) { _ in SkeletonBlock(height: 56) }
                 }
@@ -25,7 +28,7 @@ struct CrmEntriesList: View {
             } else if let error = crm.error, crm.entries.isEmpty {
                 ErrorBanner(message: error) { Task { await crm.reload() } }
                     .padding(Theme.Spacing.md)
-            } else if crm.entries.isEmpty {
+            } else if rows.isEmpty {
                 EmptyStateView(
                     icon: "building.2",
                     title: locale.t("crm.emptyMonth"),
@@ -38,23 +41,18 @@ struct CrmEntriesList: View {
                 list
             }
         }
-        .task { crm.ensureLoaded() }
     }
 
-    private var notConnected: some View {
-        EmptyStateView(
-            icon: "link.badge.plus",
-            title: locale.t("crm.notConnected"),
-            subtitle: locale.t("crm.notConnectedHint")
-        )
-        .padding(.top, Theme.Spacing.lg)
+    private var rows: [CrmEntry] {
+        guard let type else { return crm.entries }
+        return crm.entries.filter { $0.type == type }
     }
 
     private var list: some View {
         ScrollView {
             totals
             LazyVStack(spacing: 0) {
-                ForEach(crm.entries) { entry in
+                ForEach(rows) { entry in
                     Button {
                         Haptics.selection()
                         editing = entry
@@ -76,7 +74,7 @@ struct CrmEntriesList: View {
                             Label(locale.t("common.delete"), systemImage: "trash")
                         }
                     }
-                    if entry.id != crm.entries.last?.id {
+                    if entry.id != rows.last?.id {
                         Divider().overlay(Theme.border).padding(.leading, 44)
                     }
                 }

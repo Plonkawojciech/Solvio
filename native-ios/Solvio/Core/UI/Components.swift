@@ -161,6 +161,52 @@ struct CategoryChip: View {
     }
 }
 
+/// Wybieralny „pigułkowy" filtr. Ten sam kształt niesie w apce trzy rzeczy:
+/// filtr listy, wybór kategorii i wybór klienta — dlatego jeden komponent,
+/// a nie trzy kopie po widokach.
+struct PickChip: View {
+    let label: String
+    let active: Bool
+    var action: () -> Void
+
+    var body: some View {
+        Button {
+            Haptics.selection()
+            action()
+        } label: {
+            Text(label)
+                .font(AppFont.captionMedium)
+                .foregroundColor(active ? Theme.primaryForeground : Theme.mutedForeground)
+                .padding(.horizontal, 11)
+                .padding(.vertical, 6)
+                .background(active ? Theme.primary : Theme.card)
+                .clipShape(Capsule())
+                .overlay(Capsule().stroke(active ? Color.clear : Theme.border, lineWidth: 1))
+                .lineLimit(1)
+        }
+    }
+}
+
+/// Wiersz „etykieta + pole" — ten sam układ w obu edytorach rejestrów.
+struct CrmFormField: View {
+    let label: String
+    @Binding var text: String
+    let placeholder: String
+
+    var body: some View {
+        HStack(spacing: Theme.Spacing.sm) {
+            Text(label)
+                .font(AppFont.captionMedium)
+                .foregroundColor(Theme.mutedForeground)
+                .frame(width: 92, alignment: .leading)
+            TextField(placeholder, text: $text)
+                .font(AppFont.body)
+                .foregroundColor(Theme.foreground)
+        }
+        .padding(.vertical, 11)
+    }
+}
+
 // MARK: - Stany
 
 /// Pusty stan — ikona, tytuł, podpis i opcjonalna akcja.

@@ -1,4 +1,4 @@
-import type { CrmConnection } from './connection'
+import { getCrmConnection, markSync, type CrmConnection } from './connection'
 
 /** Jedno wywołanie do CRM-a. Nigdy nie rzuca — most ma degradować się miękko,
  *  bo padnięty CRM nie może zablokować dodania wydatku w Solvio. */
@@ -45,4 +45,20 @@ export async function call<T>(
     console.error(`[crm] ${init.method} ${path} -> ${message}`)
     return { ok: false, status: 0, data: null, error: message }
   }
+}
+
+/**
+ * Wspólny nagłówek każdej operacji na CRM-ie: bez połączenia nie ma o czym
+ * rozmawiać, a po każdej próbie odnotowujemy jej wynik na połączeniu, żeby
+ * ustawienia pokazywały prawdę o ostatnim kontakcie.
+ */
+export async function withConnection<T>(
+  userId: string,
+  work: (conn: CrmConnection) => Promise<CrmResult<T>>,
+): Promise<CrmResult<T>> {
+  const conn = await getCrmConnection(userId)
+  if (!conn) return { ok: false, status: 0, data: null, error: 'Brak połączenia z CRM' }
+  const res = await work(conn)
+  await markSync(userId, res.error)
+  return res
 }

@@ -11,6 +11,10 @@ struct DashboardView: View {
     @EnvironmentObject private var store: AppDataStore
     @EnvironmentObject private var router: AppRouter
     @EnvironmentObject private var locale: AppLocale
+    @EnvironmentObject private var crm: CrmStore
+
+    /// Wspólny z ekranem Wydatków — patrz `MoneyScope`.
+    private var scope: MoneyScope { router.moneyScope }
 
     private var model: DashboardModel {
         DashboardModel(
@@ -28,6 +32,7 @@ struct DashboardView: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: Theme.Spacing.md) {
                 greeting
+                scopePicker
 
                 if store.dashboardLoading && store.dashboard == nil {
                     skeleton
@@ -35,15 +40,21 @@ struct DashboardView: View {
                     ErrorBanner(message: error) { store.ensureDashboard(force: true) }
                 } else {
                     let m = model
-                    ForEach(m.alerts) { alert in
-                        AlertRow(title: alert.title, detail: alert.detail, level: alert.level)
+                    // Zakładka Firma chowa moje pieniądze, a nie miesza ich
+                    // z firmowymi: to dwa różne budżety, nie jeden wspólny.
+                    if scope != .company {
+                        ForEach(m.alerts) { alert in
+                            AlertRow(title: alert.title, detail: alert.detail, level: alert.level)
+                        }
+                        heroCard(m)
+                        tiles(m)
                     }
-                    heroCard(m)
-                    tiles(m)
-                    CrmSummaryCard()
-                    if !m.split.isEmpty { splitCard(m) }
-                    if !m.topCategories.isEmpty { categoriesCard(m) }
-                    recentCard(m)
+                    if scope != .mine { CrmSummaryCard() }
+                    if scope != .company {
+                        if !m.split.isEmpty { splitCard(m) }
+                        if !m.topCategories.isEmpty { categoriesCard(m) }
+                        recentCard(m)
+                    }
                 }
             }
             .padding(Theme.Spacing.md)
@@ -51,6 +62,20 @@ struct DashboardView: View {
         }
         .refreshable { await store.awaitDashboard(force: true) }
         .task { store.ensureDashboard() }
+    }
+
+    /// Ten sam przełącznik co na Wydatkach i ten sam stan. Bez wpiętego
+    /// CRM-a nie ma czego przełączać, więc się nie pokazuje.
+    @ViewBuilder
+    private var scopePicker: some View {
+        if crm.connected == true {
+            Picker("", selection: $router.moneyScope) {
+                ForEach(MoneyScope.allCases) { s in
+                    Text(locale.t(s.labelKey)).tag(s)
+                }
+            }
+            .pickerStyle(.segmented)
+        }
     }
 
     // MARK: - Powitanie

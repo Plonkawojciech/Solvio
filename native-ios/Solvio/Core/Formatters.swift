@@ -44,6 +44,13 @@ enum Fmt {
         return f
     }()
 
+    private static let monthYearFmt: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale.current
+        f.setLocalizedDateFormatFromTemplate("LLLLyyyy")
+        return f
+    }()
+
     private static let dayMonthFmt: DateFormatter = {
         let f = DateFormatter()
         f.locale = Locale.current
@@ -122,6 +129,11 @@ enum Fmt {
 
     static func dayMonthShort(_ date: Date) -> String {
         dayMonthShortFmt.string(from: date)
+    }
+
+    /// „sierpień 2026" — podpis paska miesiąca w Finansach CRM-a.
+    static func monthYear(_ date: Date) -> String {
+        monthYearFmt.string(from: date)
     }
 
     static func initials(_ name: String) -> String {

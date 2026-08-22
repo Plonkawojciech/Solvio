@@ -80,10 +80,9 @@ describe('pathRequiresCsrf()', () => {
     expect(pathRequiresCsrf('/api/cron/refresh-intel')).toBe(false)
   })
 
-  it('bypasses public share-token routes', () => {
-    expect(pathRequiresCsrf('/api/settlement/abc123')).toBe(false)
-    expect(pathRequiresCsrf('/api/receipt/xyz789')).toBe(false)
-  })
+  // Trasy publicznych linków (`/api/settlement/*`, `/api/receipt/*`) zniknęły
+  // razem z grupami i udostępnianiem paragonów w redesignie 2026-08-22, więc
+  // nie mają już wyjątku w CSRF — i nie powinny go dostać z powrotem.
 
   it('still requires CSRF on /api/data/* (auth-only routes)', () => {
     expect(pathRequiresCsrf('/api/data/expenses')).toBe(true)

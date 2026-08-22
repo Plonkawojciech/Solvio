@@ -207,6 +207,39 @@ curl -X PATCH -b cookies.txt -H "content-type: application/json" \
   -d '{"paid":true}' https://solvio.programo.pl/api/crm/entries/clx123
 ```
 
+### Rejestry: zobowiązania cykliczne, klienci, stan konta
+
+Wszystko, co w CRM-ie opisuje wpisy albo je generuje. Pełny CRUD — zmiana
+zrobiona przez Solvio jest widoczna w `crm.programo.pl` od razu, bo po naszej
+stronie nie istnieje żadna kopia tych danych.
+
+| Metoda | Ścieżka | Co robi |
+|---|---|---|
+| `GET` | `/api/crm/commitments` | serie cykliczne (abonamenty, ZUS, serwery) |
+| `POST` | `/api/crm/commitments` | `{ title, type, amount, startDate, category?, note?, clientId?, intervalMonths?, active? }` |
+| `PATCH` | `/api/crm/commitments/{id}` | podzbiór pól; `{"active": false}` wstrzymuje serię |
+| `DELETE` | `/api/crm/commitments/{id}` | kasuje serię — wpisy, które już z niej powstały, **zostają** |
+| `GET` | `/api/crm/clients` | klienci (źródło MRR) |
+| `POST` | `/api/crm/clients` | `{ name, service?, status?, monthlyFee?, projectValue?, contactName?, phone?, email?, notes? }` |
+| `PATCH` | `/api/crm/clients/{id}` | podzbiór tych samych pól |
+| `DELETE` | `/api/crm/clients/{id}` | usuwa klienta |
+| `GET` | `/api/crm/balances` | odczyty stanu konta (`months`, `forward`) plus oś czasu z CRM-a |
+| `POST` | `/api/crm/balances` | `{ at, amount, note? }` — nowy ręczny odczyt |
+| `DELETE` | `/api/crm/balances/{id}` | usuwa odczyt |
+
+`intervalMonths` to liczba miesięcy między uderzeniami serii: `1` = co miesiąc,
+`3` = co kwartał, `12` = rocznie. Apka pokazuje gotowe wybory zamiast pola
+liczbowego.
+
+**Wyłączenie serii to nie to samo co jej usunięcie.** `active: false` zatrzymuje
+kolejne materializacje i zostawia historię nietkniętą; `DELETE` kasuje samą
+serię, a CRM odpina od niej wpisy przez `onDelete: SetNull`. W obu przypadkach
+pieniądze, które już przeszły, zostają w Finansach.
+
+Kwoty klienta (`monthlyFee`, `projectValue`) przychodzą z CRM-a jako **stringi**,
+a kwoty wpisów i zobowiązań jako **liczby**. To nie pomyłka po ich stronie
+i nie prostujemy tego u siebie — klienty API muszą umieć oba.
+
 Podsumowanie z `GET /api/crm/entries` jest **miękkie**: gdy endpoint sum
 w CRM-ie padnie, lista wpisów i tak wraca, a `summary` jest `null`. Padnięty
 agregat nie ma prawa zabrać użytkownikowi danych, które już mamy.
