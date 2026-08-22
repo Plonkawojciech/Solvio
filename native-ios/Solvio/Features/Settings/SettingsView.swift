@@ -745,12 +745,12 @@ struct SettingsView: View {
                     value: "\(version) (\(build))"
                 )
                 Divider().padding(.leading, 36)
-                Link(destination: URL(string: "https://solvio-lac.vercel.app/terms")!) {
+                Link(destination: URL(string: "https://solvio.programo.pl/terms")!) {
                     aboutRow(icon: "doc.plaintext", label: locale.t("settings.terms"), trailing: "chevron.right")
                 }
                 .buttonStyle(.plain)
                 Divider().padding(.leading, 36)
-                Link(destination: URL(string: "https://solvio-lac.vercel.app/privacy")!) {
+                Link(destination: URL(string: "https://solvio.programo.pl/privacy")!) {
                     aboutRow(icon: "lock.shield", label: locale.t("settings.privacy"), trailing: "chevron.right")
                 }
                 .buttonStyle(.plain)

@@ -447,7 +447,7 @@ export async function POST(
       return NextResponse.json({ error: 'Failed to create payment request' }, { status: 500 })
     }
 
-    const shareUrl = `${process.env.NEXT_PUBLIC_APP_URL || `https://${process.env.VERCEL_URL}` || 'https://solvio-lac.vercel.app'}/settlement/${created.id}?token=${shareToken}`
+    const shareUrl = `${process.env.NEXT_PUBLIC_APP_URL || `https://${process.env.VERCEL_URL}` || 'https://solvio.programo.pl'}/settlement/${created.id}?token=${shareToken}`
 
     return NextResponse.json({
       paymentRequestId: created.id,

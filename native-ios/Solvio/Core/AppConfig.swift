@@ -13,7 +13,7 @@ enum AppConfig {
            let url = URL(string: raw) {
             return url
         }
-        return URL(string: "https://solvio-lac.vercel.app")!
+        return URL(string: "https://solvio.programo.pl")!
     }()
 
     /// Session cookie name — must match `lib/session.ts` in the web app.

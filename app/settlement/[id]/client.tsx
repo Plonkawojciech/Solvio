@@ -177,7 +177,7 @@ export function SettlementPageClient({
             <h1 className="text-xl font-bold">{labels.invalidTitle}</h1>
             <p className="mt-2 text-sm text-muted-foreground">{labels.invalidDescription}</p>
             <a
-              href="https://solvio-lac.vercel.app"
+              href="https://solvio.programo.pl"
               className="mt-6 inline-flex min-h-[44px] items-center justify-center rounded-xl border border-border bg-foreground px-5 py-3 text-sm font-semibold text-background transition-colors hover:bg-foreground/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             >
               {labels.openSolvio}
@@ -467,7 +467,7 @@ export function SettlementPageClient({
             <p className="mt-0.5 text-[10px] text-muted-foreground">
               {labels.poweredBy}{' '}
               <a
-                href="https://solvio-lac.vercel.app"
+                href="https://solvio.programo.pl"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="font-medium text-foreground hover:underline"
@@ -489,7 +489,7 @@ export function SettlementPageClient({
             {labels.print}
           </button>
           <a
-            href="https://solvio-lac.vercel.app"
+            href="https://solvio.programo.pl"
             aria-label={labels.openSolvio}
             className="inline-flex min-h-[44px] items-center gap-2 rounded-xl border border-border bg-card px-5 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >

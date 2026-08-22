@@ -1720,7 +1720,7 @@ export default function ExpensesPage() {
                 <div className="flex flex-col items-center gap-2 py-2">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
-                    src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(`${typeof window !== 'undefined' ? window.location.origin : 'https://solvio-lac.vercel.app'}/receipt/${viewingReceiptId}`)}`}
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(`${typeof window !== 'undefined' ? window.location.origin : 'https://solvio.programo.pl'}/receipt/${viewingReceiptId}`)}`}
                     alt="QR code for receipt"
                     width={150}
                     height={150}

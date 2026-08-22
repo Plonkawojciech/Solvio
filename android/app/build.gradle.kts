@@ -17,7 +17,7 @@ android {
         versionName = "1.0.0"
 
         // Backend base URL — flip to localhost / staging via build variants if needed.
-        buildConfigField("String", "API_BASE_URL", "\"https://solvio-lac.vercel.app\"")
+        buildConfigField("String", "API_BASE_URL", "\"https://solvio.programo.pl\"")
     }
 
     buildTypes {

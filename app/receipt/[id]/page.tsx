@@ -86,7 +86,7 @@ export default async function SharedReceiptPage({
               : 'This link has expired or been removed.'}
           </p>
           <a
-            href="https://solvio-lac.vercel.app"
+            href="https://solvio.programo.pl"
             className="inline-flex items-center justify-center h-11 px-5 w-full border border-border bg-primary text-primary-foreground text-xs font-bold uppercase tracking-wider font-mono shadow-[var(--nb-shadow-sm)] hover:translate-x-[-1px] hover:translate-y-[-1px] hover:shadow-[var(--nb-shadow)] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all rounded-md"
           >
             {lang === 'pl' ? 'Otwórz Solvio' : 'Open Solvio'}
@@ -148,7 +148,7 @@ export default async function SharedReceiptPage({
     total !== null && exchangeRateNum ? (total * exchangeRateNum).toFixed(2) : null
   const showApprox = plnEquivalent && currency !== accountCurrency
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://solvio-lac.vercel.app'
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://solvio.programo.pl'
   const receiptUrl = `${appUrl}/receipt/${id}`
   const shortId = id.slice(0, 8).toUpperCase()
   const vendor = receipt.vendor || (lang === 'pl' ? 'Paragon' : 'Receipt')
@@ -230,7 +230,7 @@ export default async function SharedReceiptPage({
             <p className="font-mono text-[10px] uppercase tracking-[0.25em] text-muted-foreground">
               {t.poweredBy}{' '}
               <a
-                href="https://solvio-lac.vercel.app"
+                href="https://solvio.programo.pl"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-foreground font-bold hover:underline underline-offset-4"
