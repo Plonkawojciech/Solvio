@@ -23,6 +23,47 @@
 
 ## Changelog
 
+### 2026-08-22 (2) — Przeniesienie hostingu na własną VM + pierwszy build w TestFlight
+
+Decyzje Wojtka: baza to **zwykły Postgres, nie Supabase** (apka nie używa z Supabase
+niczego — własna sesja na podpisanym cookie, Drizzle zamiast PostgREST, zero RLS),
+domena `solvio.programo.pl`, iOS do TestFlight od razu, w wersji jaka jest.
+
+**Infra (Coolify, VM Contabo 161.97.135.88), projekt `solvio`:**
+- `solvio-web` (uuid `db2mobfguriwh3nq8drfahgq`) — build z Dockerfile, port 3000,
+  deploy key wpięty w repo; env: DATABASE_URL, DATABASE_PROVIDER=postgres,
+  SESSION_SECRET, NEXT_PUBLIC_APP_URL, CRON_SECRET
+- `solvio-postgres` (uuid `k7legfxe0am58xevrjmp1xj3`) — postgres:16-alpine; schemat
+  wgrywa się sam przy starcie kontenera (`drizzle-kit push` w entrypoincie)
+- Crony Vercela (`refresh-intel`, `refresh-promotions`, `audit-log-gc`) nie działają
+  na self-hoście — zastąpione crontabem roota przez `/usr/local/bin/solvio-cron.sh`,
+  który szuka kontenera po prefiksie uuid, bo nazwa zmienia się przy każdym deployu
+- DNS: rekord A `solvio.programo.pl` → 161.97.135.88 (panel CyberFolks)
+- Wszystkie zahardkodowane adresy Vercela (7 plików weba, iOS, oba projekty Android)
+  przepięte na `https://solvio.programo.pl`
+
+**iOS — TestFlight:** aplikacja w ASC (app id 6804226709, bundle `com.programo.solvio`,
+SKU SOLVIO-IOS-2026), profil dystrybucyjny „com.programo.solvio AppStore" utworzony
+przez ASC API (klucz nie ma scope'u Cloud Managed Distribution, więc podpis idzie
+lokalnym certyfikatem), grupa wewnętrzna „Wewnętrzni". Build 1.0.0 (1) wgrany,
+przetworzony, VALID.
+
+**Dwie rzeczy, które się wywaliły i czego uczą:**
+1. Pierwszy upload odrzucony (409 VALIDATION_ERROR): bundle deklarował iPhone + iPad,
+   ale tylko orientację pionową. iPad wymaga wszystkich czterech (multitasking).
+   Naprawione zawężeniem `TARGETED_DEVICE_FAMILY` do „1" — zgodnie z tym, że Solvio
+   jest projektowane pod telefon.
+2. Certyfikat Let's Encrypt: Coolify zaczyna prosić o cert w momencie dodania domeny,
+   także gdy DNS jeszcze nie istnieje. Pięć nieudanych autoryzacji i ACME blokuje
+   domenę na godzinę — cert nie wstaje nawet po poprawnym wpisie DNS. **Kolejność ma
+   być odwrotna: najpierw rekord A, potem domena w Coolify.**
+
+**Weryfikacja:** produkcyjny kontener na nowej bazie — demo login, onboarding,
+`/api/data/dashboard`, `/api/data/settings`, `/api/data/expenses`, `/api/groups`,
+`/api/subscriptions`, `/api/personal/incomes` — wszystko 200, zero błędów w logu.
+Crony po redeployu zwracają `ok`. Ścieżka `/.well-known/acme-challenge/` odpowiada
+przez Traefika, więc cert wstanie, gdy tylko wygaśnie okno limitu.
+
 ### 2026-08-22 — Uporządkowanie repo: scalenie rozjechanych gałęzi + naprawa `db.batch` na self-hoście
 
 Stan zastany: trzy równoległe wersje projektu. `origin/main` miał 11 commitów AveJi
