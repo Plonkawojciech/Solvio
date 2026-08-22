@@ -75,6 +75,16 @@ HUB_INTEGRATION_SECRET= # Shared secret for Programo Hub server-to-server API ca
 PKO_ENCRYPTION_KEY=     # Legacy — was used for PKO direct PSD2, kept for backward compat
 ```
 
+## Platformy
+
+**Solvio jest produktowo aplikacją iOS.** Web Next.js to backend API,
+dev playground i landing — nie produkt końcowy. Każda zmiana UX/feature
+idzie do `native-ios/Solvio/`.
+
+Katalog `android/` (Compose, 59 plików) usunięty 2026-08-22: był w tyle
+o cały redesign i wołał endpointy, których już nie ma. Historia w gicie,
+gdyby kiedyś wrócił.
+
 ## Directory Structure
 
 Po redesignie 2026-08-22 aplikacja ma **dwa ekrany produktowe** (Panel,
