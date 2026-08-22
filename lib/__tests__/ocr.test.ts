@@ -230,3 +230,34 @@ describe('parametry modelu', () => {
       .toEqual({ text: '{"a"', truncated: true })
   })
 })
+
+describe('kształt Azure z odczytu vision', () => {
+  it('nie dopisuje rabatu, który jest już w tekście — inaczej liczy się dwa razy', async () => {
+    const { __testables } = await import('@/lib/ocr/vision')
+    const azure = __testables.toAzureShape({
+      merchant: 'Rossmann',
+      total: 90.42,
+      currency: 'PLN',
+      raw_text: 'Szampon Isana 17,98\nZNIZKA aplikacja Rossmann -5,00\nSUMA PLN 90,42',
+      discounts: [{ label: 'ZNIZKA aplikacja Rossmann', amount: -5 }],
+      items: [],
+    })
+    const data = await extractReceiptData(azure)
+    expect(data.promotions).toHaveLength(1)
+    expect(data.totalSaved).toBeCloseTo(-5, 2)
+  })
+
+  it('dopisuje rabat, którego model nie przepisał do tekstu', async () => {
+    const { __testables } = await import('@/lib/ocr/vision')
+    const azure = __testables.toAzureShape({
+      merchant: 'Lidl',
+      total: 87.53,
+      raw_text: 'Ser gouda 7,49\nSUMA PLN 87,53',
+      discounts: [{ label: 'RABAT Lidl Plus', amount: -3 }],
+      items: [],
+    })
+    const data = await extractReceiptData(azure)
+    expect(data.promotions).toHaveLength(1)
+    expect(data.totalSaved).toBeCloseTo(-3, 2)
+  })
+})

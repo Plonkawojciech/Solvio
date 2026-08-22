@@ -105,10 +105,16 @@ function toAzureShape(parsed: ParsedReceipt): any {
   // Linie rabatów dopisujemy do tekstu, bo wykrywanie promocji w
   // `extractReceiptData` skanuje właśnie tekst. Model bywa dokładniejszy
   // w polu `discounts` niż w przepisanym `raw_text`.
+  //
+  // ALE tylko te, których w tekście jeszcze nie ma — inaczej ten sam rabat
+  // liczy się dwa razy i „zaoszczędzono" pokazuje podwójną kwotę (realny błąd
+  // złapany na paragonie Rossmanna: −10,00 zamiast −5,00).
+  const raw = parsed.raw_text || ''
+  const rawLower = raw.toLowerCase()
   const discountLines = (parsed.discounts ?? [])
-    .filter((d) => d && d.label)
+    .filter((d) => d && d.label && !rawLower.includes(d.label.trim().toLowerCase()))
     .map((d) => `${d.label} ${d.amount != null ? d.amount.toFixed(2).replace('.', ',') : ''}`.trim())
-  const content = [parsed.raw_text || '', ...discountLines].join('\n').trim()
+  const content = [raw, ...discountLines].join('\n').trim()
 
   return {
     analyzeResult: {
@@ -220,3 +226,6 @@ export async function processVisionOCR(buffer: Buffer, mimeType: string): Promis
   const { azure } = await readReceiptWithVision(buffer, mimeType)
   return azure
 }
+
+/** Wystawione wyłącznie dla testów — kształt Azure buduje się bez sieci. */
+export const __testables = { toAzureShape }
