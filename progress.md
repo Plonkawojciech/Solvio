@@ -1441,3 +1441,51 @@ Audyt integralności (czy Okazje/ceny to realne dane czy halucynacje LLM) ujawni
 - native-ios/Solvio/Features/Dashboard/DashboardView.swift
 - native-ios/Solvio/Core/Formatters.swift
 - native-ios/Solvio/Core/L10n.swift
+
+---
+
+## 2026-08-22 — Zakładka „Wszystkie" i pełne sterowanie Finansami CRM
+
+**Cel (Wojtek):** zakładka „Wszystkie"; przychody i koszty wyłącznie te,
+które są w CRM-ie; możliwość edytowania z Solvio wszystkiego tak, żeby
+zmiana była w `crm.programo.pl` od razu.
+
+**Model przełącznika.** `MoneyScope` (`AppRouter`) — Moje / Firma / Wszystkie,
+JEDEN stan dla Panelu i Wydatków. To ta sama decyzja („czyje to pieniądze"),
+więc dwa niezależne filtry na dwóch ekranach byłyby pułapką. Przełącznik
+pokazuje się wyłącznie przy wpiętym CRM-ie.
+
+- **Wszystkie** (`Features/Expenses/AllMoneyList.swift`) — wspólna oś czasu,
+  ale rozdzielone podsumowania. Suma prywatnego budżetu z firmowym byłaby
+  liczbą bez znaczenia.
+- **Firma** (`Features/Crm/CrmCompanyView.swift`) — sekcje Wszystkie /
+  Przychody / Koszty / Cykliczne / Klienci plus strzałki po miesiącach.
+  Filtr typu działa lokalnie: wpisy całego miesiąca i tak już mamy.
+- **Panel** — zakładka Firma chowa moje kafelki zamiast mieszać je z firmowymi.
+
+**Most (nowe trasy, sesja użytkownika):** `/api/crm/commitments`,
+`/api/crm/clients`, `/api/crm/balances` — każda z `[id]` na PATCH/DELETE.
+`lib/crm/registry.ts` (rejestry) obok `lib/crm/finance.ts` (wpisy),
+`withConnection` przeniesione do `lib/crm/http.ts`, powtarzalny szkielet tras
+w `lib/crm/route-helpers.ts`.
+
+**Landminy zapisane w kodzie i `docs/API.md`:**
+- Wyłączenie serii (`active: false`) ≠ jej usunięcie. `DELETE` kasuje serię,
+  a CRM odpina od niej wpisy przez `onDelete: SetNull` — historia zostaje.
+- Kwoty klienta (`monthlyFee`, `projectValue`) przychodzą jako **stringi**,
+  kwoty wpisów i zobowiązań jako **liczby**. Stąd `CrmDecode.amount`.
+- Kategorie w CRM-ie to wolny tekst, nie słownik — podpowiedzi biorą się
+  z danych, bo nie ma czego pobrać.
+
+**Weryfikacja:** `tsc` czysty, `eslint` czysty, `next build` OK (11 tras
+`/api/crm/*` w wyjściu), vitest 129/129, iOS build na symulator i na
+urządzenie OK, apka zainstalowana na iPhonie Wojtka przez `devicectl`.
+Sprawdzone na symulatorze, że bez wpiętego CRM-a Panel i Wydatki wyglądają
+dokładnie jak przed zmianą.
+
+**Czego NIE zweryfikowano:** ekranów Firmy na żywych danych — wymagają klucza
+API z CRM-a, który wkleja Wojtek. Kod kompiluje się i jest typowany na
+realnych kształtach z `crm.programo.pl`, ale liczb na ekranie nikt nie widział.
+
+**Przy okazji:** test CSRF sprawdzał wyjątek dla `/api/settlement/*`
+i `/api/receipt/*` — tras usuniętych w redesignie. Przypadek skasowany.
