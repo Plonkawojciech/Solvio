@@ -781,7 +781,7 @@ export function ScanReceiptSheet({
                 )}
                 {reviewMeta?.detectedLanguage && reviewMeta.detectedLanguage !== 'pl' && reviewMeta.detectedLanguage !== 'en' && (
                   <span className="text-xs bg-blue-500/10 text-blue-600 dark:text-blue-400 px-1.5 py-0.5 rounded-full">
-                    {({ es: '🇪🇸', de: '🇩🇪', fr: '🇫🇷', it: '🇮🇹', pt: '🇵🇹' } as Record<string, string>)[reviewMeta.detectedLanguage] ?? '🌍'} {reviewMeta.detectedLanguage.toUpperCase()}
+                    {reviewMeta.detectedLanguage.toUpperCase()}
                   </span>
                 )}
               </span>
@@ -998,7 +998,7 @@ export function ScanReceiptSheet({
                   onDragLeave={() => setIsDragOver(false)}
                   onDrop={handleDrop}
                   className={cn(
-                    'relative flex w-full cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed p-8 transition-colors',
+                    'relative flex w-full cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed p-8 transition-colors',
                     isDragOver
                       ? 'border-primary bg-primary/5'
                       : 'border-muted-foreground/20 bg-muted/30 hover:bg-muted/50'

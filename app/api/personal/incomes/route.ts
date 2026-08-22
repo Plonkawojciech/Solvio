@@ -17,7 +17,7 @@ const CreateIncomeSchema = z.object({
   name: z.string().min(1).max(120),
   amount: MoneyAmount,
   period: PeriodEnum.optional(),
-  emoji: z.string().max(10).optional(),
+  emoji: z.string().max(24).optional(),
 })
 
 const UpdateIncomeSchema = z.object({
@@ -25,7 +25,7 @@ const UpdateIncomeSchema = z.object({
   name: z.string().min(1).max(120).optional(),
   amount: MoneyAmount.optional(),
   period: PeriodEnum.optional(),
-  emoji: z.string().max(10).optional(),
+  emoji: z.string().max(24).optional(),
   isActive: z.boolean().optional(),
 })
 
@@ -99,7 +99,7 @@ export async function POST(request: Request) {
       name: name.trim(),
       amount: normalized,
       period: period ?? 'monthly',
-      emoji: emoji ?? '💼',
+      emoji: emoji ?? 'briefcase',
     })
     .returning()
 

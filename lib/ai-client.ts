@@ -5,8 +5,13 @@ const AZURE_KEY = process.env.AZURE_OPENAI_API_KEY
 const AZURE_API_VERSION = process.env.AZURE_OPENAI_API_VERSION || '2024-10-21'
 const AZURE_DEPLOYMENT = process.env.AZURE_OPENAI_DEPLOYMENT
 const OPENAI_KEY = process.env.OPENAI_API_KEY
+// Google Gemini przez endpoint zgodny z OpenAI — darmowy tier (aistudio.google.com),
+// obsługuje też obrazy (vision), więc może robić OCR paragonów bez Azure.
+const GEMINI_KEY = process.env.GEMINI_API_KEY
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash'
+const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/openai/'
 
-type Backend = 'azure' | 'openai'
+type Backend = 'azure' | 'openai' | 'gemini'
 
 type AIClient = {
   client: OpenAI | AzureOpenAI
@@ -50,6 +55,11 @@ function build(): AIClient | null {
   if (OPENAI_KEY) {
     const client = new OpenAI({ apiKey: OPENAI_KEY })
     return { client, backend: 'openai', model: 'gpt-4o-mini' }
+  }
+
+  if (GEMINI_KEY) {
+    const client = new OpenAI({ apiKey: GEMINI_KEY, baseURL: GEMINI_BASE_URL })
+    return { client, backend: 'gemini', model: GEMINI_MODEL }
   }
 
   return null

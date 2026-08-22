@@ -251,7 +251,7 @@ export function SplitExpenseSheet({
                   key={method}
                   type="button"
                   onClick={() => setSplitMethod(method)}
-                  className={`flex items-center justify-center gap-2 rounded-lg border-2 py-2.5 px-3 text-sm font-medium transition-all ${
+                  className={`flex items-center justify-center gap-2 rounded-lg border py-2.5 px-3 text-sm font-medium transition-all ${
                     splitMethod === method
                       ? 'border-primary bg-primary/10 text-primary'
                       : 'border-border bg-muted/50 text-muted-foreground hover:bg-muted'

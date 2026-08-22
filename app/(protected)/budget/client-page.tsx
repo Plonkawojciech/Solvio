@@ -24,6 +24,8 @@ import {
   BarChart3,
   AlertTriangle,
   AlertCircle,
+  Zap,
+  CheckCircle2,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -276,8 +278,16 @@ export default function BudgetPage() {
                 paceStatus === 'under' ? 'border-emerald-500/30 bg-emerald-500/8' :
                 'border-primary/20 bg-primary/5'
               }`}>
-                <span className="text-lg">
-                  {paceStatus === 'over' ? '⚡' : paceStatus === 'under' ? '🐌' : '✅'}
+                <span className={
+                  paceStatus === 'over' ? 'text-orange-600 dark:text-orange-400' :
+                  paceStatus === 'under' ? 'text-emerald-600 dark:text-emerald-400' :
+                  'text-primary'
+                }>
+                  {paceStatus === 'over'
+                    ? <Zap className="h-5 w-5" aria-hidden="true" />
+                    : paceStatus === 'under'
+                    ? <TrendingDown className="h-5 w-5" aria-hidden="true" />
+                    : <CheckCircle2 className="h-5 w-5" aria-hidden="true" />}
                 </span>
                 <div className="flex-1">
                   <p className={`font-medium ${

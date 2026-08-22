@@ -9,15 +9,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useTranslation } from '@/lib/i18n'
 import { Loader2, Sparkles } from 'lucide-react'
 import { toast } from 'sonner'
+import { AppIcon, IconPicker } from '@/lib/app-icons'
 
-const CATEGORY_EMOJIS: Record<string, string> = {
-  electronics: '🎮',
-  travel: '✈️',
-  emergency: '🚨',
-  education: '📚',
-  car: '🚗',
-  home: '🏠',
-  custom: '🎁',
+const CATEGORY_ICONS: Record<string, string> = {
+  electronics: 'gamepad',
+  travel: 'plane',
+  emergency: 'umbrella',
+  education: 'book',
+  car: 'car',
+  home: 'home',
+  custom: 'gift',
 }
 
 const GOAL_COLORS = [
@@ -34,7 +35,7 @@ interface NewGoalSheetProps {
 }
 
 export function NewGoalSheet({ open, onOpenChange, onCreated, currency }: NewGoalSheetProps) {
-  const { t } = useTranslation()
+  const { t, lang } = useTranslation()
   const [loading, setLoading] = useState(false)
 
   const [name, setName] = useState('')
@@ -43,11 +44,11 @@ export function NewGoalSheet({ open, onOpenChange, onCreated, currency }: NewGoa
   const [priority, setPriority] = useState('medium')
   const [category, setCategory] = useState('custom')
   const [color, setColor] = useState('#6366f1')
-  const [emoji, setEmoji] = useState('🎯')
+  const [emoji, setEmoji] = useState('target')
 
   function handleCategoryChange(val: string) {
     setCategory(val)
-    setEmoji(CATEGORY_EMOJIS[val] || '🎯')
+    setEmoji(CATEGORY_ICONS[val] || 'target')
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -80,7 +81,7 @@ export function NewGoalSheet({ open, onOpenChange, onCreated, currency }: NewGoa
       setPriority('medium')
       setCategory('custom')
       setColor('#6366f1')
-      setEmoji('🎯')
+      setEmoji('target')
       onOpenChange(false)
       onCreated()
     } catch {
@@ -101,24 +102,27 @@ export function NewGoalSheet({ open, onOpenChange, onCreated, currency }: NewGoa
         </SheetHeader>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-5 mt-6">
-          {/* Name */}
+          {/* Name + icon */}
           <div className="space-y-2">
             <Label htmlFor="goal-name">{t('goals.goalName')}</Label>
-            <Input
-              id="goal-name"
-              value={name}
-              onChange={e => setName(e.target.value)}
-              placeholder={t('goals.goalNamePlaceholder')}
-              required
-              className="min-h-[44px]"
-            />
+            <div className="flex gap-2">
+              <IconPicker value={emoji} onChange={setEmoji} pl={lang === 'pl'} />
+              <Input
+                id="goal-name"
+                value={name}
+                onChange={e => setName(e.target.value)}
+                placeholder={t('goals.goalNamePlaceholder')}
+                required
+                className="min-h-[44px] flex-1"
+              />
+            </div>
           </div>
 
           {/* Category */}
           <div className="space-y-2">
             <Label>{t('goals.category')}</Label>
             <div className="grid grid-cols-4 gap-2">
-              {Object.entries(CATEGORY_EMOJIS).map(([key, emo]) => (
+              {Object.entries(CATEGORY_ICONS).map(([key, iconName]) => (
                 <button
                   key={key}
                   type="button"
@@ -129,7 +133,7 @@ export function NewGoalSheet({ open, onOpenChange, onCreated, currency }: NewGoa
                       : 'border-border hover:border-primary/30 hover:bg-muted/50'
                   }`}
                 >
-                  <span className="text-xl">{emo}</span>
+                  <AppIcon value={iconName} size="sm" />
                   <span className="text-[10px] text-muted-foreground leading-tight">
                     {t(`goals.category.${key}` as Parameters<typeof t>[0])}
                   </span>

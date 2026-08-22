@@ -1,6 +1,7 @@
 'use client'
 
 import { motion } from 'framer-motion'
+import { AppIcon } from '@/lib/app-icons'
 import { useTranslation } from '@/lib/i18n'
 import { Button } from '@/components/ui/button'
 import {
@@ -187,8 +188,9 @@ export function PaymentRequestCard({
             {formatCurrency(request.amount, currency)}
           </p>
           {groupName && (
-            <p className="text-xs text-muted-foreground truncate">
-              {groupEmoji} {groupName}
+            <p className="flex items-center gap-1 text-xs text-muted-foreground truncate">
+              <AppIcon value={groupEmoji} fallback="globe" size="sm" chipClassName="bg-transparent text-current" />
+              {groupName}
             </p>
           )}
         </div>

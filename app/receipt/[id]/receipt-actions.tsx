@@ -47,7 +47,7 @@ export function ShareButton({
       onClick={handleShare}
       aria-label={copied ? copiedLabel || 'Copied!' : shareLabel || 'Share'}
       aria-live="polite"
-      className="w-full inline-flex items-center justify-center gap-2 h-12 px-5 border-2 border-foreground bg-foreground text-background text-sm font-bold uppercase tracking-wider font-mono shadow-[4px_4px_0_hsl(var(--foreground))] hover:translate-x-[-1px] hover:translate-y-[-1px] hover:shadow-[5px_5px_0_hsl(var(--foreground))] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground focus-visible:ring-offset-2 transition-all rounded-md"
+      className="w-full inline-flex items-center justify-center gap-2 h-12 px-5 border border-border bg-primary text-primary-foreground text-sm font-bold uppercase tracking-wider font-mono shadow-[var(--nb-shadow-sm)] hover:translate-x-[-1px] hover:translate-y-[-1px] hover:shadow-[var(--nb-shadow)] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground focus-visible:ring-offset-2 transition-all rounded-md"
     >
       {copied ? (
         <>
@@ -86,7 +86,7 @@ function IconButton({
       onClick={onClick}
       aria-label={ariaLabel}
       title={ariaLabel}
-      className="inline-flex items-center justify-center w-12 h-12 border-2 border-foreground bg-card text-foreground shadow-[3px_3px_0_hsl(var(--foreground))] hover:translate-x-[-1px] hover:translate-y-[-1px] hover:shadow-[4px_4px_0_hsl(var(--foreground))] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground focus-visible:ring-offset-2 transition-all rounded-md"
+      className="inline-flex items-center justify-center w-12 h-12 border border-border bg-card text-foreground shadow-[var(--nb-shadow-sm)] hover:translate-x-[-1px] hover:translate-y-[-1px] hover:shadow-[var(--nb-shadow)] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground focus-visible:ring-offset-2 transition-all rounded-md"
     >
       {children}
     </button>
@@ -135,7 +135,7 @@ export function CurrencyToggle({
       type="button"
       onClick={onToggle}
       aria-pressed={showConverted}
-      className="inline-flex items-center gap-1.5 px-2.5 py-1 border-2 border-foreground bg-card text-foreground font-mono text-[10px] font-bold uppercase tracking-widest shadow-[2px_2px_0_hsl(var(--foreground))] hover:translate-x-[-1px] hover:translate-y-[-1px] hover:shadow-[3px_3px_0_hsl(var(--foreground))] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground focus-visible:ring-offset-2 transition-all rounded"
+      className="inline-flex items-center gap-1.5 px-2.5 py-1 border border-border bg-card text-foreground font-mono text-[10px] font-bold uppercase tracking-widest shadow-[var(--nb-shadow-sm)] hover:translate-x-[-1px] hover:translate-y-[-1px] hover:shadow-[var(--nb-shadow)] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground focus-visible:ring-offset-2 transition-all rounded"
     >
       <svg className="w-3 h-3" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />

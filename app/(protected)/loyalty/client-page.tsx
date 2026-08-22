@@ -96,9 +96,9 @@ function LoyaltyEmpty({ onAdd, t }: { onAdd: () => void; t: (key: string) => str
       className="flex flex-col items-center justify-center py-20 gap-6 text-center"
     >
       <div className="font-mono text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-        {'// '}{t('loyalty.emptyTitle')}
+        {t('loyalty.emptyTitle')}
       </div>
-      <div className="flex h-16 w-16 items-center justify-center rounded-md border-2 border-foreground bg-card text-foreground shadow-[3px_3px_0_hsl(var(--foreground))]">
+      <div className="flex h-16 w-16 items-center justify-center rounded-md border border-border bg-card text-foreground shadow-[var(--nb-shadow-sm)]">
         <CreditCard className="h-7 w-7" aria-hidden="true" />
       </div>
       <div className="space-y-2 max-w-sm">

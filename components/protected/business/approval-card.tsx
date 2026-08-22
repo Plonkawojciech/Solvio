@@ -130,7 +130,7 @@ export function ApprovalCard({
                 <button
                   onClick={() => onSelect(approval.id)}
                   className={cn(
-                    'h-5 w-5 shrink-0 mt-0.5 rounded border-2 flex items-center justify-center transition-colors',
+                    'h-5 w-5 shrink-0 mt-0.5 rounded border flex items-center justify-center transition-colors',
                     selected ? 'bg-primary border-primary text-primary-foreground' : 'border-muted-foreground/30 hover:border-primary'
                   )}
                 >

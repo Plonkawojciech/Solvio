@@ -36,7 +36,7 @@ export default async function ProtectedLayout({ children }: { children: React.Re
           <AppMobileHeader />
           <div className="flex flex-1 min-h-0 overflow-hidden">
             <AppSidebar />
-            <main className="flex-1 overflow-y-auto overflow-x-hidden p-2 sm:p-4 md:p-6 lg:p-10 w-full max-w-full pb-4 md:pb-10 lg:pb-10">
+            <main className="paper-grid flex-1 overflow-y-auto overflow-x-hidden [scrollbar-gutter:stable] p-2 sm:p-4 md:p-6 lg:p-10 w-full max-w-full pb-4 md:pb-10 lg:pb-10">
               {children}
               <Toaster position="top-right" richColors />
             </main>

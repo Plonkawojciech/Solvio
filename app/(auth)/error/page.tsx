@@ -18,13 +18,13 @@ export default function AuthErrorPage({
   return (
     <div className="flex min-h-svh w-full items-center justify-center bg-background p-5 sm:p-10">
       <div className="w-full max-w-sm">
-        <div className="rounded-lg border-2 border-foreground bg-card p-6 shadow-[6px_6px_0_hsl(var(--foreground))]">
+        <div className="rounded-lg border border-border bg-card p-6 shadow-[var(--nb-shadow-sm)]">
           <div className="mb-4 font-mono text-[10px] font-bold uppercase tracking-widest text-destructive">
-            {'// '}{pl ? 'BŁĄD LOGOWANIA' : 'AUTH ERROR'}
+            {pl ? 'BŁĄD LOGOWANIA' : 'AUTH ERROR'}
           </div>
 
           <div className="flex flex-col items-center gap-4 text-center">
-            <div className="flex h-14 w-14 items-center justify-center rounded-md border-2 border-destructive bg-destructive/10 text-destructive shadow-[3px_3px_0_hsl(var(--destructive))]">
+            <div className="flex h-14 w-14 items-center justify-center rounded-md border border-destructive bg-destructive/10 text-destructive shadow-[var(--nb-shadow-sm)]">
               <AlertCircle className="size-6" aria-hidden="true" />
             </div>
             <h1 className="text-xl font-extrabold tracking-tight text-foreground">

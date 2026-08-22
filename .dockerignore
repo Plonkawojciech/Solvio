@@ -1,0 +1,13 @@
+node_modules
+.next
+.git
+.env
+.env.*
+.playwright-mcp
+.vercel
+.claude
+docs
+drizzle
+*.md
+!README.md
+scripts/seed-demo.mjs

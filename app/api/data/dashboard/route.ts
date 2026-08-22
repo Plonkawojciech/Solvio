@@ -1,6 +1,6 @@
 import { auth, getHubAuth } from '@/lib/auth-compat'
 import { NextResponse } from 'next/server'
-import { db, expenses, receipts, categories, userSettings, categoryBudgets, monthlyBudgets } from '@/lib/db'
+import { db, expenses, receipts, categories, userSettings, categoryBudgets, monthlyBudgets, incomes } from '@/lib/db'
 import { eq, gte, lte, and, sql } from 'drizzle-orm'
 
 /**
@@ -73,13 +73,22 @@ export async function GET(request: Request) {
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   // Allow `?since=all` to fetch all expenses (iOS uses this by default)
+  // `?period=month` = calendar-month mode (web dashboard): current month
+  // expenses + previous calendar month aggregates for comparison.
   const url = new URL(request.url)
   const showAll = url.searchParams.get('since') === 'all'
+  const periodMonth = url.searchParams.get('period') === 'month'
+  // `?month=YYYY-MM` — przeglądanie wybranego miesiąca (tylko z period=month)
+  const monthParam = url.searchParams.get('month')
 
-  // Cache key segregates `since=all` from the default-30d view, and is
-  // namespaced by userId for hard isolation. Don't cache when forced
-  // (no force flag exists today, but leaving the door open is cheap).
-  const cacheKey = `${userId}|${showAll ? 'all' : '30d'}`
+  const realNow = new Date()
+  const now = periodMonth && monthParam && /^\d{4}-\d{2}$/.test(monthParam)
+    ? new Date(Number(monthParam.slice(0, 4)), Number(monthParam.slice(5, 7)) - 1, 1)
+    : realNow
+
+  // Cache key segregates `since=all`, the calendar-month view and the browsed
+  // month from one another, and is namespaced by userId for hard isolation.
+  const cacheKey = `${userId}|${showAll ? 'all' : periodMonth ? `m:${monthParam ?? 'cur'}` : '30d'}`
   const cached = readDashboardCache(cacheKey)
   if (cached) {
     return NextResponse.json(cached, {
@@ -89,7 +98,6 @@ export async function GET(request: Request) {
       },
     })
   }
-
   const since = new Date()
   since.setDate(since.getDate() - 29)
   const sinceStr = since.toISOString().slice(0, 10)
@@ -98,23 +106,35 @@ export async function GET(request: Request) {
   prev30.setDate(prev30.getDate() - 59)
   const prev30Str = prev30.toISOString().slice(0, 10)
 
+  // Calendar-month boundaries (local time)
+  const ym = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+  const monthStartStr = `${ym(now)}-01`
+  const monthEndStr = `${ym(now)}-${String(new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()).padStart(2, '0')}`
+  const prevMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+  const prevMonthStartStr = `${ym(prevMonthDate)}-01`
+  const prevMonthEndStr = `${ym(prevMonthDate)}-${String(new Date(now.getFullYear(), now.getMonth(), 0).getDate()).padStart(2, '0')}`
+
   try {
     const currentMonth = new Date().toISOString().slice(0, 7)
-    const expenseFilter = showAll
+    const expenseFilter = periodMonth
+      ? and(eq(expenses.userId, userId), gte(expenses.date, monthStartStr), lte(expenses.date, monthEndStr))
+      : showAll
       ? eq(expenses.userId, userId)
       : and(eq(expenses.userId, userId), gte(expenses.date, sinceStr))
-    const receiptFilter = showAll
+    const receiptFilter = periodMonth
+      ? and(eq(receipts.userId, userId), gte(receipts.date, monthStartStr), lte(receipts.date, monthEndStr))
+      : showAll
       ? eq(receipts.userId, userId)
       : and(eq(receipts.userId, userId), gte(receipts.date, sinceStr))
+    const prevRangeFilter = periodMonth
+      ? and(eq(expenses.userId, userId), gte(expenses.date, prevMonthStartStr), lte(expenses.date, prevMonthEndStr))
+      : and(eq(expenses.userId, userId), gte(expenses.date, prev30Str), lte(expenses.date, sinceStr))
 
-    // Round-3 perf: was 7 parallel HTTP round-trips via Promise.all (each
-    // drizzle/neon-http call is its own POST to Neon's HTTP gateway, so
-    // "parallel" still means 7× connection setup + 7× server-side parse).
-    // db.batch([...]) packs them into ONE pipelined HTTP request inside a
-    // single read-only transaction snapshot. Same SELECTs, ~6× fewer
-    // round-trips. Order of the result tuple matches the order of the
-    // statements in the array.
-    const [cats, settings, budgets, exps, recsCount, prevCatTotals, monthBudget] = await db.batch([
+    // Promise.all, nie db.batch: `.batch()` istnieje tylko w driverze Neon HTTP,
+    // a od self-hosta apka jedzie na zwykłym Postgresie (node-postgres), gdzie
+    // ta metoda nie istnieje. Pool `pg` i tak trzyma otwarte połączenia, więc
+    // narzut round-tripów jest tu nieporównywalnie mniejszy niż w Neon HTTP.
+    const [cats, settings, budgets, exps, recsCount, prevCatTotals, monthBudget, incomeRows] = await Promise.all([
       db.select().from(categories).where(eq(categories.userId, userId)),
       db.select().from(userSettings).where(eq(userSettings.userId, userId)).limit(1),
       db.select().from(categoryBudgets).where(eq(categoryBudgets.userId, userId)),
@@ -145,12 +165,17 @@ export async function GET(request: Request) {
         ), 0)`,
       }).from(expenses)
         .leftJoin(receipts, eq(expenses.receiptId, receipts.id))
-        .where(and(eq(expenses.userId, userId), gte(expenses.date, prev30Str), lte(expenses.date, sinceStr)))
+        .where(prevRangeFilter)
         .groupBy(expenses.categoryId),
       db.select({ totalIncome: monthlyBudgets.totalIncome, savingsTarget: monthlyBudgets.savingsTarget })
         .from(monthlyBudgets)
         .where(and(eq(monthlyBudgets.userId, userId), eq(monthlyBudgets.month, currentMonth)))
         .limit(1),
+      // Przychody (tabela incomes) — fallback dla monthIncome, gdy brak
+      // wpisu w monthly_budgets; normalizowane do kwoty miesięcznej
+      db.select({ amount: incomes.amount, period: incomes.period })
+        .from(incomes)
+        .where(and(eq(incomes.userId, userId), eq(incomes.isActive, true))),
     ])
 
     const prevByCategory: Record<string, number> = {}
@@ -173,7 +198,18 @@ export async function GET(request: Request) {
       prevTotal,
       prevByCategory,
       receiptsCount: recsCount[0]?.count ?? 0,
-      monthIncome: monthBudget[0]?.totalIncome ? parseFloat(monthBudget[0].totalIncome) : null,
+      monthIncome: monthBudget[0]?.totalIncome
+        ? parseFloat(monthBudget[0].totalIncome)
+        : (() => {
+            const total = incomeRows.reduce((s, r) => {
+              const n = parseFloat(r.amount || '0')
+              if (r.period === 'weekly') return s + (n * 52) / 12
+              if (r.period === 'yearly') return s + n / 12
+              if (r.period === 'oneoff') return s
+              return s + n
+            }, 0)
+            return total > 0 ? Math.round(total * 100) / 100 : null
+          })(),
       savingsTarget: monthBudget[0]?.savingsTarget ? parseFloat(monthBudget[0].savingsTarget) : null,
     }
 

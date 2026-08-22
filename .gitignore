@@ -49,5 +49,7 @@ native-ios/build/
 **/xcuserdata/
 *.xcuserstate
 
+# Playwright MCP artifacts
+/.playwright-mcp/
 # Android/Gradle local build cache
 android/.gradle/

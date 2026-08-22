@@ -5,8 +5,8 @@
 @custom-variant dark (&:is(.dark *));
 
 /* ═══════════════════════════════════════════
-   NEOBRUTALISM — cream / gray / black palette
-   Inspired by SwimTimer design language.
+   NOTES CLASSIC — paper / white cards / warm orange accent
+   Kropkowana siatka "zeszytu", miękkie cienie, kolorowe kategorie.
    ═══════════════════════════════════════════ */
 
 /* tokeny Tailwind (v4) */
@@ -39,6 +39,9 @@
   --color-input: hsl(var(--input));
   --color-ring: hsl(var(--ring));
 
+  --color-success: hsl(var(--success));
+  --color-warning: hsl(var(--warning));
+
   --radius-lg: var(--radius);
   --radius-md: calc(var(--radius) - 2px);
   --radius-sm: calc(var(--radius) - 4px);
@@ -60,131 +63,141 @@
 
 @layer base {
   :root {
-    /* Grayscale chart palette — shades from near-black to cream */
-    --chart-1: 0 0% 10%;      /* near-black */
-    --chart-2: 0 0% 28%;      /* dark gray */
-    --chart-3: 0 0% 45%;      /* mid gray */
-    --chart-4: 0 0% 60%;      /* lighter gray */
-    --chart-5: 0 0% 75%;      /* light gray */
-    --chart-6: 30 14% 85%;    /* cream-gray */
+    /* Kolorowa paleta kategorii (Notes Classic) */
+    --chart-1: 4 65% 56%;     /* czerwony  #e2493a — zakupy */
+    --chart-2: 36 75% 54%;    /* bursztyn  #e29a2f — rachunki */
+    --chart-3: 154 42% 43%;   /* zielony   #3f9c74 — transport */
+    --chart-4: 223 72% 60%;   /* niebieski #4f79e2 — jedzenie */
+    --chart-5: 271 55% 60%;   /* fiolet    #9a5fd1 — rozrywka */
+    --chart-6: 40 18% 74%;    /* piaskowy  #c9c2b2 — inne */
 
     /* Dashboard chart variable mapping */
     --color-groceries: hsl(var(--chart-1));
-    --color-transport: hsl(var(--chart-2));
-    --color-food: hsl(var(--chart-3));
-    --color-entertainment: hsl(var(--chart-4));
-    --color-utilities: hsl(var(--chart-5));
+    --color-transport: hsl(var(--chart-3));
+    --color-food: hsl(var(--chart-4));
+    --color-entertainment: hsl(var(--chart-5));
+    --color-utilities: hsl(var(--chart-2));
     --color-other: hsl(var(--chart-6));
 
-    /* Neobrutalism — hard offset shadows (no blur) */
-    --nb-shadow-sm: 2px 2px 0 hsl(var(--foreground));
-    --nb-shadow: 4px 4px 0 hsl(var(--foreground));
-    --nb-shadow-lg: 6px 6px 0 hsl(var(--foreground));
-    --nb-border-width: 2px;
+    /* Miękkie cienie kart (zamiast twardych offsetów) */
+    --nb-shadow-sm: 0 1px 2px hsl(40 15% 12% / 0.04);
+    --nb-shadow: 0 1px 2px hsl(40 15% 12% / 0.04), 0 4px 14px -8px hsl(40 15% 12% / 0.10);
+    --nb-shadow-lg: 0 2px 4px hsl(40 15% 12% / 0.05), 0 14px 34px -18px hsl(40 15% 12% / 0.28);
+    --nb-border-width: 1px;
   }
 
   .dark {
-    --chart-1: 0 0% 95%;
-    --chart-2: 0 0% 80%;
-    --chart-3: 0 0% 65%;
-    --chart-4: 0 0% 50%;
-    --chart-5: 0 0% 35%;
-    --chart-6: 0 0% 22%;
+    --chart-1: 4 75% 62%;
+    --chart-2: 36 80% 60%;
+    --chart-3: 154 45% 52%;
+    --chart-4: 223 78% 68%;
+    --chart-5: 271 60% 68%;
+    --chart-6: 213 8% 40%;
+
+    --nb-shadow-sm: 0 1px 2px hsl(0 0% 0% / 0.3);
+    --nb-shadow: 0 1px 2px hsl(0 0% 0% / 0.3), 0 4px 14px -8px hsl(0 0% 0% / 0.5);
+    --nb-shadow-lg: 0 2px 4px hsl(0 0% 0% / 0.35), 0 14px 34px -18px hsl(0 0% 0% / 0.6);
   }
 }
 
-/* === LIGHT THEME — cream neobrutalism === */
+/* === LIGHT THEME — papier / zeszyt === */
 @layer base {
   :root {
-    /* cream page background #f5f0eb */
-    --background: 33 23% 94%;
-    --foreground: 0 0% 10%;
+    /* papier #f7f5f0 */
+    --background: 43 30% 95%;
+    --foreground: 40 15% 12%;
 
-    /* white cards for contrast against cream */
+    /* białe karty na papierze */
     --card: 0 0% 100%;
-    --card-foreground: 0 0% 10%;
+    --card-foreground: 40 15% 12%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 0 0% 10%;
+    --popover-foreground: 40 15% 12%;
 
-    /* primary = solid black — the "accent" in a monochrome palette */
-    --primary: 0 0% 10%;
+    /* primary = ciepły pomarańcz #c85a3a */
+    --primary: 14 56% 51%;
     --primary-foreground: 0 0% 100%;
 
-    /* secondary = darker cream #ebe5dd */
-    --secondary: 30 14% 87%;
-    --secondary-foreground: 0 0% 10%;
+    /* secondary = jasny pomarańczowy tint #f7ede4 */
+    --secondary: 28 55% 93%;
+    --secondary-foreground: 14 56% 40%;
 
-    /* muted tokens */
-    --muted: 30 14% 90%;
-    --muted-foreground: 0 0% 35%;
+    /* muted */
+    --muted: 42 32% 92%;
+    --muted-foreground: 40 9% 49%;
 
-    /* accent = subtle cream-dark for hover states */
-    --accent: 30 14% 87%;
-    --accent-foreground: 0 0% 10%;
+    /* accent = hover tint */
+    --accent: 28 55% 93%;
+    --accent-foreground: 14 56% 40%;
 
-    /* destructive — dark neutral gray (not red in this palette) */
-    --destructive: 0 0% 20%;
+    /* destructive — prawdziwa czerwień */
+    --destructive: 9 68% 51%;
     --destructive-foreground: 0 0% 100%;
 
-    /* borders, inputs, rings — all black for neobrutalism */
-    --border: 0 0% 10%;
-    --input: 0 0% 10%;
-    --ring: 0 0% 10%;
+    /* statusy */
+    --success: 150 58% 41%;
+    --warning: 36 75% 54%;
 
-    --radius: 0.75rem;
+    /* miękkie granice #e7e2d6 */
+    --border: 39 26% 87%;
+    --input: 39 26% 84%;
+    --ring: 14 56% 51%;
 
-    /* Sidebar: cream bg, black text/borders */
-    --sidebar: hsl(33 23% 94%);
-    --sidebar-foreground: hsl(0 0% 10%);
-    --sidebar-primary: hsl(0 0% 10%);
+    --radius: 0.875rem;
+
+    /* Sidebar: biały, delikatna granica, pomarańczowy akcent */
+    --sidebar: hsl(0 0% 100%);
+    --sidebar-foreground: hsl(40 15% 12%);
+    --sidebar-primary: hsl(14 56% 51%);
     --sidebar-primary-foreground: hsl(0 0% 100%);
-    --sidebar-accent: hsl(30 14% 87%);
-    --sidebar-accent-foreground: hsl(0 0% 10%);
-    --sidebar-border: hsl(0 0% 10%);
-    --sidebar-ring: hsl(0 0% 10%);
+    --sidebar-accent: hsl(28 55% 93%);
+    --sidebar-accent-foreground: hsl(14 56% 40%);
+    --sidebar-border: hsl(39 26% 87%);
+    --sidebar-ring: hsl(14 56% 51%);
   }
 
-  /* === DARK THEME — inverted neobrutalism === */
+  /* === DARK THEME — grafitowe biurko === */
   .dark {
-    --background: 0 0% 8%;
-    --foreground: 33 23% 94%;
+    --background: 213 14% 9%;
+    --foreground: 210 14% 92%;
 
-    --card: 0 0% 12%;
-    --card-foreground: 33 23% 94%;
+    --card: 212 13% 13%;
+    --card-foreground: 210 14% 92%;
 
-    --popover: 0 0% 12%;
-    --popover-foreground: 33 23% 94%;
+    --popover: 212 13% 13%;
+    --popover-foreground: 210 14% 92%;
 
-    --primary: 33 23% 94%;
-    --primary-foreground: 0 0% 10%;
+    --primary: 15 100% 69%;
+    --primary-foreground: 15 60% 12%;
 
-    --secondary: 0 0% 18%;
-    --secondary-foreground: 33 23% 94%;
+    --secondary: 213 12% 18%;
+    --secondary-foreground: 15 90% 74%;
 
-    --muted: 0 0% 18%;
-    --muted-foreground: 0 0% 65%;
+    --muted: 213 12% 17%;
+    --muted-foreground: 211 9% 60%;
 
-    --accent: 0 0% 18%;
-    --accent-foreground: 33 23% 94%;
+    --accent: 213 12% 18%;
+    --accent-foreground: 15 90% 74%;
 
-    --destructive: 0 0% 80%;
-    --destructive-foreground: 0 0% 10%;
+    --destructive: 6 80% 64%;
+    --destructive-foreground: 0 0% 100%;
 
-    /* Borders stay cream for visible neobrutalism edge in dark mode */
-    --border: 33 23% 94%;
-    --input: 33 23% 94%;
-    --ring: 33 23% 94%;
+    --success: 152 50% 55%;
+    --warning: 36 80% 60%;
 
-    /* Sidebar: near-black bg, cream text/borders */
-    --sidebar: hsl(0 0% 8%);
-    --sidebar-foreground: hsl(33 23% 94%);
-    --sidebar-primary: hsl(33 23% 94%);
-    --sidebar-primary-foreground: hsl(0 0% 10%);
-    --sidebar-accent: hsl(0 0% 18%);
-    --sidebar-accent-foreground: hsl(33 23% 94%);
-    --sidebar-border: hsl(33 23% 94%);
-    --sidebar-ring: hsl(33 23% 94%);
+    --border: 212 13% 18%;
+    --input: 212 13% 22%;
+    --ring: 15 100% 69%;
+
+    /* Sidebar: głębszy grafit */
+    --sidebar: hsl(214 15% 7%);
+    --sidebar-foreground: hsl(210 14% 92%);
+    --sidebar-primary: hsl(15 100% 69%);
+    --sidebar-primary-foreground: hsl(15 60% 12%);
+    --sidebar-accent: hsl(213 12% 15%);
+    --sidebar-accent-foreground: hsl(15 90% 74%);
+    --sidebar-border: hsl(212 13% 15%);
+    --sidebar-ring: hsl(15 100% 69%);
   }
 }
 
@@ -209,17 +222,20 @@
     -moz-osx-font-smoothing: grayscale;
   }
 
-  /* Monospace for numbers, timers, code — neobrutalism signature */
-  .font-mono, code, kbd, pre, samp, .tabular-nums {
+  /* Tabelaryczne cyfry dla kwot */
+  .font-mono, code, kbd, pre, samp {
     font-family: var(--font-jetbrains-mono), 'Fira Code', ui-monospace, monospace;
+  }
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
   }
 
   ::selection {
-    background: hsl(var(--foreground));
-    color: hsl(var(--background));
+    background: hsl(var(--primary));
+    color: hsl(var(--primary-foreground));
   }
 
-  /* Heavier weights and tighter tracking for headlines */
+  /* Mocne nagłówki, ciasny tracking */
   h1, h2, h3, h4 {
     font-weight: 800;
     letter-spacing: -0.02em;
@@ -227,69 +243,101 @@
 }
 
 /* ═══════════════════════════════════════════
-   NEOBRUTALISM utility classes
+   NOTES utility classes
+   (nazwy nb-* zachowane dla zgodności wstecznej —
+    styl przemapowany z neobrutalizmu na miękki "zeszyt")
    ═══════════════════════════════════════════ */
 @layer utilities {
-  /* Hard offset shadows (no blur) */
+  /* Kropkowana siatka zeszytu — tło stron aplikacji */
+  .paper-grid {
+    background-image: radial-gradient(hsl(var(--foreground) / 0.08) 1px, transparent 1px);
+    background-size: 22px 22px;
+  }
+
+  /* Miękkie cienie */
   .nb-shadow-sm { box-shadow: var(--nb-shadow-sm); }
   .nb-shadow    { box-shadow: var(--nb-shadow); }
   .nb-shadow-lg { box-shadow: var(--nb-shadow-lg); }
 
-  /* Thick black borders */
-  .nb-border    { border: var(--nb-border-width) solid hsl(var(--foreground)); }
-  .nb-border-3  { border: 3px solid hsl(var(--foreground)); }
+  /* Cienkie granice */
+  .nb-border    { border: 1px solid hsl(var(--border)); }
+  .nb-border-3  { border: 1px solid hsl(var(--border)); }
 
-  /* Full neobrutalism card */
+  /* Karta */
   .nb-card {
     background: hsl(var(--card));
-    border: var(--nb-border-width) solid hsl(var(--foreground));
+    border: 1px solid hsl(var(--border));
     box-shadow: var(--nb-shadow);
     border-radius: var(--radius);
   }
 
-  /* Tactile press animation for interactive elements */
+  /* Subtelna interakcja (zamiast "wciskania") */
   .nb-press {
-    transition: transform 0.08s ease, box-shadow 0.08s ease;
+    transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
   }
   .nb-press:hover {
-    transform: translate(1px, 1px);
-    box-shadow: 3px 3px 0 hsl(var(--foreground));
+    transform: translateY(-1px);
+    box-shadow: var(--nb-shadow-lg);
   }
   .nb-press:active {
-    transform: translate(3px, 3px);
-    box-shadow: none;
+    transform: translateY(0);
+    box-shadow: var(--nb-shadow-sm);
   }
 
-  /* Uppercase mono label (section headings, eyebrow text) */
+  /* Etykieta sekcji */
   .nb-label {
-    font-family: var(--font-mono);
-    font-size: 0.75rem;
-    font-weight: 600;
+    font-size: 0.6875rem;
+    font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 0.2em;
-    color: hsl(var(--foreground));
+    letter-spacing: 0.08em;
+    color: hsl(var(--muted-foreground));
+  }
+
+  /* ── Progress bar zmieniający kolor wg zapełnienia ── */
+  .pb-track {
+    position: relative;
+    height: 1rem;
+    border-radius: 0.5625rem;
+    background: hsl(var(--muted));
+    overflow: hidden;
+  }
+  .pb-fill {
+    display: block;
+    height: 100%;
+    border-radius: 0.5625rem;
+    transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .pb-fill-ok   { background: linear-gradient(90deg, #2ea36b, #4cc487); }
+  .pb-fill-warn { background: linear-gradient(90deg, #e2962f, #f0b452); }
+  .pb-fill-bad  { background: linear-gradient(90deg, #d9432a, #e2685a); }
+  .pb-pin {
+    position: absolute;
+    top: -3px;
+    bottom: -3px;
+    width: 2px;
+    background: hsl(var(--foreground));
+    opacity: 0.55;
   }
 }
 
 @layer base {
-  /* Recharts tooltip — neobrutalism */
+  /* Recharts tooltip — Notes */
   .recharts-default-tooltip {
     background-color: hsl(var(--popover)) !important;
     color: hsl(var(--popover-foreground)) !important;
-    border: 2px solid hsl(var(--foreground)) !important;
+    border: 1px solid hsl(var(--border)) !important;
     border-radius: var(--radius-md) !important;
     padding: 0.625rem 0.875rem !important;
-    box-shadow: 3px 3px 0 hsl(var(--foreground)) !important;
-    font-family: var(--font-mono) !important;
+    box-shadow: var(--nb-shadow-lg) !important;
     font-size: 0.75rem !important;
   }
 
   .recharts-tooltip-label {
     color: hsl(var(--muted-foreground)) !important;
-    font-size: 0.75rem;
-    font-weight: 600;
+    font-size: 0.6875rem;
+    font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.06em;
     margin-bottom: 0.25rem;
   }
 }

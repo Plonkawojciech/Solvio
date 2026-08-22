@@ -10,6 +10,7 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 export function LoginForm() {
   const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [demoLoading, setDemoLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -24,14 +25,28 @@ export function LoginForm() {
       setError(pl ? 'Wprowadź prawidłowy adres e-mail.' : 'Please enter a valid email address.')
       return
     }
+    if (password.length < 8) {
+      setError(pl ? 'Hasło musi mieć co najmniej 8 znaków.' : 'Password must be at least 8 characters.')
+      return
+    }
     setLoading(true)
     setError(null)
     try {
       const res = await fetch('/api/auth/session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim() }),
+        body: JSON.stringify({ email: email.trim(), password }),
       })
+      if (res.status === 401) {
+        const data = await res.json().catch(() => null)
+        setError(
+          data?.code === 'invalid_credentials'
+            ? (pl ? 'Nieprawidłowy e-mail lub hasło.' : 'Invalid email or password.')
+            : (pl ? 'Hasło jest wymagane.' : 'Password is required.')
+        )
+        setLoading(false)
+        return
+      }
       if (!res.ok) throw new Error('Failed')
       localStorage.setItem('solvio_email', email.trim())
       window.location.href = '/dashboard'
@@ -44,14 +59,14 @@ export function LoginForm() {
   return (
     <div className="w-full">
       <div className="mb-8 flex items-center gap-2 text-base font-black tracking-tight">
-        <div className="flex h-9 w-9 items-center justify-center rounded-md border-2 border-foreground bg-foreground text-background shadow-[2px_2px_0_hsl(var(--foreground))]">
+        <div className="flex h-9 w-9 items-center justify-center rounded-md border border-border bg-primary text-primary-foreground shadow-[var(--nb-shadow-sm)]">
           <Wallet className="size-4" />
         </div>
         Solvio
       </div>
 
       <div className="mb-2 font-mono text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-        {'// '}{pl ? 'LOGOWANIE' : 'SIGN IN'}
+        {pl ? 'LOGOWANIE' : 'SIGN IN'}
       </div>
 
       <div className="mb-6">
@@ -86,12 +101,36 @@ export function LoginForm() {
           />
         </div>
 
+        <div className="space-y-1.5">
+          <Label htmlFor="password">{pl ? 'Hasło' : 'Password'}</Label>
+          <Input
+            id="password"
+            type="password"
+            placeholder="••••••••"
+            autoComplete="current-password"
+            required
+            aria-required="true"
+            minLength={8}
+            value={password}
+            onChange={(e) => {
+              setPassword(e.target.value)
+              if (error) setError(null)
+            }}
+            disabled={loading}
+          />
+          <p className="text-[11px] text-muted-foreground leading-snug">
+            {pl
+              ? 'Nowy adres? Pierwsze logowanie utworzy konto z tym hasłem.'
+              : 'New address? Your first sign-in creates the account with this password.'}
+          </p>
+        </div>
+
         {error && (
           <div
             id="email-error"
             role="alert"
             aria-live="assertive"
-            className="rounded-md border-2 border-destructive bg-destructive/10 px-3 py-2 text-sm font-medium text-destructive"
+            className="rounded-md border border-destructive bg-destructive/10 px-3 py-2 text-sm font-medium text-destructive"
           >
             {error}
           </div>
@@ -100,7 +139,7 @@ export function LoginForm() {
         <Button
           type="submit"
           className="w-full"
-          disabled={loading || !isEmailValid}
+          disabled={loading || !isEmailValid || password.length < 8}
           aria-label={pl ? 'Zaloguj się e-mailem' : 'Sign in with email'}
         >
           {loading ? (
@@ -115,7 +154,7 @@ export function LoginForm() {
 
         <div className="relative my-2">
           <div className="absolute inset-0 flex items-center" aria-hidden="true">
-            <span className="w-full border-t-2 border-dashed border-foreground/30" />
+            <span className="w-full border-t border-dashed border-border/30" />
           </div>
           <div className="relative flex justify-center">
             <span className="bg-background px-3 font-mono text-[10px] font-bold uppercase tracking-widest text-muted-foreground">

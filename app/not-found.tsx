@@ -39,7 +39,7 @@ export default function NotFound() {
           aria-label="Solvio — home"
           className="flex items-center gap-2 text-base font-black tracking-tight"
         >
-          <div className="flex h-9 w-9 items-center justify-center rounded-md border-2 border-foreground bg-foreground text-background shadow-[2px_2px_0_hsl(var(--foreground))]">
+          <div className="flex h-9 w-9 items-center justify-center rounded-md border border-border bg-primary text-primary-foreground shadow-[var(--nb-shadow-sm)]">
             <Wallet className="size-4" />
           </div>
           Solvio
@@ -55,7 +55,7 @@ export default function NotFound() {
           </span>
         </div>
 
-        <div className="flex h-14 w-14 items-center justify-center rounded-md border-2 border-foreground bg-card text-foreground shadow-[3px_3px_0_hsl(var(--foreground))]">
+        <div className="flex h-14 w-14 items-center justify-center rounded-md border border-border bg-card text-foreground shadow-[var(--nb-shadow-sm)]">
           <SearchX className="size-6" aria-hidden="true" />
         </div>
 

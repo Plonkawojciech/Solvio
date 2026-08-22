@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { AppIcon } from '@/lib/app-icons'
 import { motion } from 'framer-motion'
 import { toast } from 'sonner'
 import { useTranslation } from '@/lib/i18n'
@@ -153,8 +154,9 @@ export function SendRequestSheet({
       <SheetContent side="bottom" className="rounded-t-2xl max-h-[85vh] overflow-y-auto">
         <SheetHeader className="pb-2">
           <SheetTitle>{t('settlements.sendRequest')}</SheetTitle>
-          <SheetDescription>
-            {groupEmoji} {groupName}
+          <SheetDescription className="flex items-center gap-1.5">
+            <AppIcon value={groupEmoji} fallback="globe" size="sm" chipClassName="bg-transparent text-current" />
+            {groupName}
           </SheetDescription>
         </SheetHeader>
 
@@ -164,7 +166,7 @@ export function SendRequestSheet({
             <motion.div
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
-              className="relative rounded-2xl border-2 border-dashed border-muted-foreground/20 p-5 bg-muted/20"
+              className="relative rounded-2xl border border-dashed border-muted-foreground/20 p-5 bg-muted/20"
             >
               <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-4">
                 {t('settlements.preview')}

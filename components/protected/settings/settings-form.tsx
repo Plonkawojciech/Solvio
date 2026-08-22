@@ -14,6 +14,7 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@
 import { Input } from "@/components/ui/input"
 import { Separator } from "@/components/ui/separator"
 import { useTranslation, setLanguage, type Language } from "@/lib/i18n"
+import { AppIcon } from "@/lib/app-icons"
 
 const CURRENCIES = [
   { code: 'PLN', name: 'Polski Złoty', symbol: 'zł' },
@@ -257,7 +258,7 @@ export function SettingsForm({ initialCurrency, initialLanguage, categoryBudgets
                       <FormItem className="flex flex-col gap-2 rounded-lg border bg-muted/20 hover:bg-muted/30 transition-colors p-3 sm:p-4">
                         <FormLabel className="flex items-center gap-2 font-medium text-sm">
                           {categoryBudgets[index]?.icon && (
-                            <span className="text-lg leading-none">{categoryBudgets[index].icon}</span>
+                            <AppIcon value={categoryBudgets[index].icon} size="sm" />
                           )}
                           <span className="truncate">{budget.categoryName}</span>
                         </FormLabel>

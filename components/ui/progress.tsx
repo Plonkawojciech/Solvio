@@ -18,7 +18,7 @@ function Progress({
       aria-valuemin={0}
       aria-valuemax={100}
       className={cn(
-        "relative h-3 w-full overflow-hidden rounded-md border-2 border-foreground bg-card",
+        "relative h-3 w-full overflow-hidden rounded-md border border-border bg-card",
         className
       )}
       {...props}

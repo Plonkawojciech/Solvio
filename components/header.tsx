@@ -18,11 +18,11 @@ export default function Header() {
   const isMarketing = pathname === '/' || pathname === ''
 
   return (
-    <header className="sticky top-0 z-50 w-full border-b-2 border-foreground bg-background/95 backdrop-blur-md">
+    <header className="sticky top-0 z-50 w-full border-b border-border bg-background/95 backdrop-blur-md">
       <div className="mx-auto flex max-w-7xl items-center justify-between px-5 sm:px-8 py-3 sm:py-4">
         {/* Logo */}
         <Link href="/" className="flex items-center gap-2 text-lg sm:text-xl font-black tracking-tight">
-          <div className="flex h-9 w-9 items-center justify-center rounded-md border-2 border-foreground bg-foreground text-background shadow-[2px_2px_0_hsl(var(--foreground))] font-mono">
+          <div className="flex h-9 w-9 items-center justify-center rounded-md border border-border bg-primary text-primary-foreground shadow-[var(--nb-shadow-sm)] font-mono">
             <Wallet className="h-4 w-4" />
           </div>
           <span>Solvio</span>

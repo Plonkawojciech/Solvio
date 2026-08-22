@@ -54,7 +54,8 @@ describe('formatAmount()', () => {
     const result = formatAmount(1234567.89, 'PLN')
     expect(result).toContain('1')
     // Contains the major digits
-    expect(result).toMatch(/1[,. ]?234[,. ]?567/)
+    // Intl dla pl-PL rozdziela tysiące twardą spacją (U+00A0), nie zwykłą.
+    expect(result).toMatch(/1[,.\s\u00a0\u202f]?234[,.\s\u00a0\u202f]?567/)
   })
 
   it('rounds to 2 decimal places', () => {

@@ -17,6 +17,7 @@ import { toast } from 'sonner'
 import { format } from 'date-fns'
 import { cn } from '@/lib/utils'
 import { useTranslation } from '@/lib/i18n'
+import { AppIcon } from '@/lib/app-icons'
 
 import {
   Sheet,
@@ -70,16 +71,16 @@ function FileRow({
   }, [file, isImage, isHeic])
 
   return (
-    <div className="flex items-center gap-3 rounded-md border-2 border-foreground bg-card px-3 py-2 shadow-[2px_2px_0_hsl(var(--foreground))]">
+    <div className="flex items-center gap-3 rounded-md border border-border bg-card px-3 py-2 shadow-[var(--nb-shadow-sm)]">
       {previewSrc ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
           src={previewSrc}
           alt={file.name}
-          className="h-10 w-10 rounded-md border-2 border-foreground object-cover shrink-0"
+          className="h-10 w-10 rounded-md border border-border object-cover shrink-0"
         />
       ) : (
-        <div className="h-10 w-10 rounded-md border-2 border-foreground bg-secondary flex items-center justify-center shrink-0">
+        <div className="h-10 w-10 rounded-md border border-border bg-secondary flex items-center justify-center shrink-0">
           <FileText className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
         </div>
       )}
@@ -214,6 +215,31 @@ interface AddExpenseSheetProps {
   allExpenses?: ExpenseForSuggestion[]
 }
 
+/* Auto-tagowanie: kategoria → tag oraz słowa kluczowe sklepu/tytułu → tag.
+   Użytkownik nie musi klikać — tagi wypełniają się same, ale można je
+   poprawić (wtedy automat przestaje nadpisywać). */
+const AUTO_TAG_BY_CATEGORY: Record<string, string> = {
+  'Jedzenie': 'jedzenie', 'Food': 'jedzenie',
+  'Zakupy spożywcze': 'zakupy', 'Groceries': 'zakupy',
+  'Zdrowie': 'zdrowie', 'Health': 'zdrowie',
+  'Transport': 'transport',
+  'Zakupy': 'zakupy', 'Shopping': 'zakupy',
+  'Elektronika': 'elektronika', 'Electronics': 'elektronika',
+  'Dom i ogród': 'dom', 'Home & Garden': 'dom',
+  'Rozrywka': 'rozrywka', 'Entertainment': 'rozrywka',
+  'Rachunki i media': 'dom', 'Bills & Utilities': 'dom',
+}
+
+const AUTO_TAG_RULES: [RegExp, string][] = [
+  [/biedronka|lidl|kaufland|auchan|carrefour|żabka|zabka|aldi|netto|dino|rossmann/, 'zakupy'],
+  [/netflix|spotify|icloud|youtube|hbo|disney|prime|tidal|playstation|xbox|game pass/, 'subskrypcja'],
+  [/orlen|shell|circle k|moya|uber|bolt|freenow|pkp|ztm|mpk|parking|paliwo|benzyna/, 'transport'],
+  [/restauracj|pizzeri|pizza|kebab|sushi|mcdonald|kfc|burger|kawiarni|coffee|cafe|bistro/, 'wyjście'],
+  [/aptek|lekarz|dentyst|stomatolog|luxmed|medicover|siłowni|silowni|fitness/, 'zdrowie'],
+  [/czynsz|prąd|prad|gaz |woda|internet|energa|tauron|pge |t-mobile|orange|vectra/, 'dom'],
+  [/praca|biuro|służbow|sluzbow|delegacj|faktur/, 'praca'],
+]
+
 export function AddExpenseSheet({
   isOpen,
   onClose,
@@ -234,6 +260,9 @@ export function AddExpenseSheet({
   const [tags, setTags] = React.useState<string[]>([])
   const [tagInput, setTagInput] = React.useState('')
   const MAX_TAGS = 5
+  // Tagi dobierają się same z kategorii/sklepu/tytułu — dopóki użytkownik
+  // sam ich nie ruszy (wtedy przestajemy nadpisywać)
+  const tagsTouchedRef = React.useRef(false)
 
   // ── Merchant rules (auto-categorization) ─────────────────────────────────
   const [merchantRules, setMerchantRules] = React.useState<MerchantRule[]>([])
@@ -459,6 +488,7 @@ export function AddExpenseSheet({
       setFiles([])
       setTags([])
       setTagInput('')
+      tagsTouchedRef.current = false
       setCategoryAppliedByRule(null)
       onAction?.()
       onClose()
@@ -479,13 +509,31 @@ export function AddExpenseSheet({
   const addTag = (tag: string) => {
     const clean = tag.trim().toLowerCase()
     if (!clean || tags.includes(clean) || tags.length >= MAX_TAGS) return
+    tagsTouchedRef.current = true
     setTags(prev => [...prev, clean])
     setTagInput('')
   }
 
   const removeTag = (tag: string) => {
+    tagsTouchedRef.current = true
     setTags(prev => prev.filter(t => t !== tag))
   }
+
+  // ── Auto-tagi ────────────────────────────────────────────────────────────
+  const watchedCategoryId = form.watch('category')
+  React.useEffect(() => {
+    if (tagsTouchedRef.current) return
+    const auto = new Set<string>()
+    const catName = categories.find(c => c.id === watchedCategoryId)?.name
+    if (catName && AUTO_TAG_BY_CATEGORY[catName]) auto.add(AUTO_TAG_BY_CATEGORY[catName])
+    const text = `${debouncedVendor} ${debouncedDesc}`.toLowerCase()
+    if (text.trim().length >= 3) {
+      for (const [re, tag] of AUTO_TAG_RULES) {
+        if (re.test(text)) auto.add(tag)
+      }
+    }
+    setTags(Array.from(auto).slice(0, MAX_TAGS))
+  }, [watchedCategoryId, debouncedVendor, debouncedDesc, categories])
 
   const handleTagKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' || e.key === ',') {
@@ -504,6 +552,7 @@ export function AddExpenseSheet({
     setDebouncedDesc('')
     setTags([])
     setTagInput('')
+    tagsTouchedRef.current = false
     setCategoryAppliedByRule(null)
     onClose()
   }
@@ -591,12 +640,12 @@ export function AddExpenseSheet({
                             field.onChange(e)
                             if (categoryAppliedByRule) setCategoryAppliedByRule(null)
                           }}
-                          className="flex h-11 w-full items-center rounded-md border-2 border-foreground bg-background px-3 text-base md:text-sm font-medium shadow-[2px_2px_0_hsl(var(--foreground))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                          className="flex h-11 w-full items-center rounded-md border border-border bg-background px-3 text-base md:text-sm font-medium shadow-[var(--nb-shadow-sm)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                         >
                           <option value="">{t('addExpense.selectCategory')}</option>
                           {categories.map((cat) => (
                             <option key={cat.id} value={cat.id}>
-                              {cat.icon ? `${cat.icon} ${cat.name}` : cat.name}
+                              {cat.name}
                             </option>
                           ))}
                         </select>
@@ -678,9 +727,10 @@ export function AddExpenseSheet({
                     <button
                       type="button"
                       onClick={() => form.setValue('category', suggestedCategory.id, { shouldValidate: true })}
-                      className="font-extrabold underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/50 rounded-md px-1"
+                      className="inline-flex items-center gap-1.5 font-extrabold underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/50 rounded-md px-1"
                     >
-                      {suggestedCategory.icon ? `${suggestedCategory.icon} ${suggestedCategory.name}` : suggestedCategory.name}
+                      <AppIcon value={suggestedCategory.icon} size="sm" />
+                      {suggestedCategory.name}
                     </button>
                   </div>
                 </Alert>
@@ -702,7 +752,11 @@ export function AddExpenseSheet({
 
               {/* Tags input */}
               <div className="space-y-2">
-                <FormLabel suppressHydrationWarning>{t('expenses.tags')}</FormLabel>
+                <FormLabel suppressHydrationWarning>{t('expenses.tags')}
+                  <span className="ml-2 text-[10px] font-medium text-muted-foreground normal-case">
+                    {'· auto'}
+                  </span>
+                </FormLabel>
                 {/* Suggested tags */}
                 <div className="flex flex-wrap gap-1.5">
                   {(['praca', 'dom', 'jedzenie', 'transport', 'wyjście', 'subskrypcja'] as const).map((suggestion) => (
@@ -766,7 +820,7 @@ export function AddExpenseSheet({
                 <label
                   htmlFor="file-upload"
                   className={cn(
-                    'relative flex w-full cursor-pointer flex-col items-center justify-center gap-2 rounded-md border-2 border-dashed border-foreground/40 bg-secondary/30 p-8 transition-colors hover:bg-secondary/60 focus-within:outline-none focus-within:ring-2 focus-within:ring-foreground/50 focus-within:ring-offset-2',
+                    'relative flex w-full cursor-pointer flex-col items-center justify-center gap-2 rounded-md border border-dashed border-border/40 bg-secondary/30 p-8 transition-colors hover:bg-secondary/60 focus-within:outline-none focus-within:ring-2 focus-within:ring-foreground/50 focus-within:ring-offset-2',
                     isLoading && 'cursor-not-allowed opacity-50'
                   )}
                 >

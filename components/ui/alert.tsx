@@ -5,15 +5,15 @@ import { AlertCircle, CheckCircle2, Info, TriangleAlert } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const alertVariants = cva(
-  'relative flex gap-3 rounded-md border-2 border-foreground bg-card p-4 text-sm shadow-[3px_3px_0_hsl(var(--foreground))]',
+  'relative flex gap-3 rounded-md border border-border bg-card p-4 text-sm shadow-[var(--nb-shadow-sm)]',
   {
     variants: {
       variant: {
-        default: 'border-foreground bg-card text-foreground',
-        info: 'border-foreground bg-secondary text-foreground',
-        success: 'border-emerald-700 bg-emerald-50 text-emerald-950 shadow-[3px_3px_0_rgb(4_78_55)] dark:bg-emerald-950/30 dark:text-emerald-100',
-        warning: 'border-amber-700 bg-amber-50 text-amber-950 shadow-[3px_3px_0_rgb(120_53_15)] dark:bg-amber-950/30 dark:text-amber-100',
-        destructive: 'border-destructive bg-destructive/10 text-destructive-foreground shadow-[3px_3px_0_hsl(var(--destructive))]',
+        default: 'border-border bg-card text-foreground',
+        info: 'border-border bg-secondary text-secondary-foreground',
+        success: 'border-emerald-700 bg-emerald-50 text-emerald-950 shadow-[var(--nb-shadow-sm)] dark:bg-emerald-950/30 dark:text-emerald-100',
+        warning: 'border-amber-700 bg-amber-50 text-amber-950 shadow-[var(--nb-shadow-sm)] dark:bg-amber-950/30 dark:text-amber-100',
+        destructive: 'border-destructive bg-destructive/10 text-destructive-foreground shadow-[var(--nb-shadow-sm)]',
       },
     },
     defaultVariants: {

@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { toast } from 'sonner'
 import { useTranslation } from '@/lib/i18n'
+import { useSession } from '@/lib/use-session'
 import {
   Sheet,
   SheetContent,
@@ -22,9 +23,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Plus, Trash2, Loader2, Users, CalendarDays, ChevronDown, ChevronUp } from 'lucide-react'
-
-const EMOJIS = ['👥', '🏠', '🎉', '✈️', '🍕', '🎓', '💍', '🏋️', '🛒', '🎮', '💸', '🚗']
+import { Plus, Trash2, Loader2, Users, CalendarDays, ChevronDown, ChevronUp, UserPlus } from 'lucide-react'
+import { AppIcon, IconPicker } from '@/lib/app-icons'
 
 const CURRENCIES = [
   { code: 'PLN', label: 'PLN -- Zloty' },
@@ -56,60 +56,60 @@ interface TemplateConfig {
 const TEMPLATES: TemplateConfig[] = [
   {
     key: 'dinner',
-    emoji: '🍕',
+    emoji: 'pizza',
     labelKey: 'groups.templates.dinner',
     descKey: 'groups.templates.dinnerDesc',
-    defaultEmoji: '🍕',
+    defaultEmoji: 'pizza',
     defaultMode: 'default',
     hasDates: false,
     defaultMemberCount: 3,
   },
   {
     key: 'trip',
-    emoji: '✈️',
+    emoji: 'plane',
     labelKey: 'groups.templates.trip',
     descKey: 'groups.templates.tripDesc',
-    defaultEmoji: '✈️',
+    defaultEmoji: 'plane',
     defaultMode: 'trip',
     hasDates: true,
     defaultMemberCount: 4,
   },
   {
     key: 'household',
-    emoji: '🏠',
+    emoji: 'home',
     labelKey: 'groups.templates.household',
     descKey: 'groups.templates.householdDesc',
-    defaultEmoji: '🏠',
+    defaultEmoji: 'home',
     defaultMode: 'household',
     hasDates: false,
     defaultMemberCount: 3,
   },
   {
     key: 'event',
-    emoji: '🎉',
+    emoji: 'party',
     labelKey: 'groups.templates.event',
     descKey: 'groups.templates.eventDesc',
-    defaultEmoji: '🎉',
+    defaultEmoji: 'party',
     defaultMode: 'default',
     hasDates: true,
     defaultMemberCount: 5,
   },
   {
     key: 'quickDebt',
-    emoji: '💸',
+    emoji: 'banknote',
     labelKey: 'groups.templates.quickDebt',
     descKey: 'groups.templates.quickDebtDesc',
-    defaultEmoji: '💸',
+    defaultEmoji: 'banknote',
     defaultMode: 'default',
     hasDates: false,
     defaultMemberCount: 2,
   },
   {
     key: 'custom',
-    emoji: '➕',
+    emoji: 'globe',
     labelKey: 'groups.templates.custom',
     descKey: 'groups.templates.customDesc',
-    defaultEmoji: '👥',
+    defaultEmoji: 'globe',
     defaultMode: 'default',
     hasDates: false,
     defaultMemberCount: 2,
@@ -146,11 +146,12 @@ function generateMembers(count: number): Member[] {
 }
 
 export function NewGroupSheet({ open, onOpenChange, onCreated }: NewGroupSheetProps) {
-  const { t } = useTranslation()
+  const { t, lang } = useTranslation()
+  const { email: sessionEmail } = useSession()
 
   const [selectedTemplate, setSelectedTemplate] = useState<TemplateKey | null>(null)
   const [name, setName] = useState('')
-  const [emoji, setEmoji] = useState('👥')
+  const [emoji, setEmoji] = useState('globe')
   const [currency, setCurrency] = useState('PLN')
   const [mode, setMode] = useState('default')
   const [startDate, setStartDate] = useState('')
@@ -158,7 +159,6 @@ export function NewGroupSheet({ open, onOpenChange, onCreated }: NewGroupSheetPr
   const [showDates, setShowDates] = useState(false)
   const [members, setMembers] = useState<Member[]>(generateMembers(2))
   const [loading, setLoading] = useState(false)
-  const [showEmojiPicker, setShowEmojiPicker] = useState(false)
 
   const handleTemplateSelect = (template: TemplateConfig) => {
     setSelectedTemplate(template.key)
@@ -175,6 +175,26 @@ export function NewGroupSheet({ open, onOpenChange, onCreated }: NewGroupSheetPr
       ...prev,
       { id: String(Date.now()), name: '', email: '' },
     ])
+  }
+
+  // Dodaje zalogowanego użytkownika jako członka — imię z części lokalnej maila,
+  // można je potem edytować jak każde inne pole
+  const addSelf = () => {
+    if (!sessionEmail) return
+    if (members.some((m) => m.email.trim().toLowerCase() === sessionEmail.toLowerCase())) {
+      toast.info(t('groups.alreadyAdded'))
+      return
+    }
+    const local = sessionEmail.split('@')[0]
+    const selfName = local.charAt(0).toUpperCase() + local.slice(1)
+    setMembers((prev) => {
+      const emptyIdx = prev.findIndex((m) => !m.name.trim() && !m.email.trim())
+      const self = { name: selfName, email: sessionEmail }
+      if (emptyIdx >= 0) {
+        return prev.map((m, i) => (i === emptyIdx ? { ...m, ...self } : m))
+      }
+      return [...prev, { id: String(Date.now()), ...self }]
+    })
   }
 
   const removeMember = (id: string) => {
@@ -233,14 +253,13 @@ export function NewGroupSheet({ open, onOpenChange, onCreated }: NewGroupSheetPr
   const reset = () => {
     setSelectedTemplate(null)
     setName('')
-    setEmoji('👥')
+    setEmoji('globe')
     setCurrency('PLN')
     setMode('default')
     setStartDate('')
     setEndDate('')
     setShowDates(false)
     setMembers(generateMembers(2))
-    setShowEmojiPicker(false)
   }
 
   return (
@@ -254,9 +273,7 @@ export function NewGroupSheet({ open, onOpenChange, onCreated }: NewGroupSheetPr
       <SheetContent className="w-full sm:max-w-md overflow-y-auto flex flex-col gap-0 p-0">
         <SheetHeader className="p-6 pb-4 border-b">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-xl">
-              {emoji}
-            </div>
+            <AppIcon value={emoji} fallback="globe" size="lg" chipClassName="bg-primary/10 text-primary" />
             <div>
               <SheetTitle>{t('groups.createGroup')}</SheetTitle>
               <SheetDescription className="text-sm text-muted-foreground mt-0.5">
@@ -279,13 +296,13 @@ export function NewGroupSheet({ open, onOpenChange, onCreated }: NewGroupSheetPr
                     type="button"
                     onClick={() => handleTemplateSelect(template)}
                     whileTap={{ scale: 0.96 }}
-                    className={`relative flex flex-col items-center gap-1.5 rounded-xl border-2 py-3 px-2 text-center transition-all duration-200 ${
+                    className={`relative flex flex-col items-center gap-1.5 rounded-xl border py-3 px-2 text-center transition-all duration-200 ${
                       isActive
                         ? 'border-primary bg-primary/5 shadow-sm'
                         : 'border-border bg-muted/30 hover:bg-muted/60 hover:border-border'
                     }`}
                   >
-                    <span className="text-lg">{template.emoji}</span>
+                    <AppIcon value={template.emoji} size="sm" chipClassName="bg-transparent text-current" />
                     <span
                       className={`text-xs font-semibold leading-tight ${
                         isActive ? 'text-primary' : 'text-muted-foreground'
@@ -299,7 +316,7 @@ export function NewGroupSheet({ open, onOpenChange, onCreated }: NewGroupSheetPr
                     {isActive && (
                       <motion.div
                         layoutId="template-indicator"
-                        className="absolute -top-px -right-px h-3 w-3 rounded-full bg-primary border-2 border-background"
+                        className="absolute -top-px -right-px h-3 w-3 rounded-full bg-primary border border-background"
                         transition={{ type: 'spring', damping: 20, stiffness: 300 }}
                       />
                     )}
@@ -319,49 +336,10 @@ export function NewGroupSheet({ open, onOpenChange, onCreated }: NewGroupSheetPr
             />
           </div>
 
-          {/* Emoji picker (collapsible) */}
+          {/* Icon picker */}
           <div className="space-y-2">
-            <button
-              type="button"
-              onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-              className="flex items-center gap-2 text-sm font-medium hover:text-primary transition-colors"
-            >
-              <span>{t('groups.emoji')}</span>
-              <span className="text-lg">{emoji}</span>
-              {showEmojiPicker ? (
-                <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" />
-              ) : (
-                <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
-              )}
-            </button>
-            <AnimatePresence>
-              {showEmojiPicker && (
-                <motion.div
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: 'auto', opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  transition={{ duration: 0.2 }}
-                  className="overflow-hidden"
-                >
-                  <div className="flex flex-wrap gap-2 pt-1">
-                    {EMOJIS.map((e) => (
-                      <button
-                        key={e}
-                        type="button"
-                        onClick={() => setEmoji(e)}
-                        className={`flex h-10 w-10 items-center justify-center rounded-lg text-xl transition-all border-2 ${
-                          emoji === e
-                            ? 'border-primary bg-primary/10 scale-110'
-                            : 'border-transparent bg-muted hover:bg-muted/80'
-                        }`}
-                      >
-                        {e}
-                      </button>
-                    ))}
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
+            <Label>{lang === 'pl' ? 'Ikona' : 'Icon'}</Label>
+            <IconPicker value={emoji} onChange={setEmoji} pl={lang === 'pl'} />
           </div>
 
           {/* Optional dates */}
@@ -437,9 +415,22 @@ export function NewGroupSheet({ open, onOpenChange, onCreated }: NewGroupSheetPr
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <Label>{t('groups.addMembers')}</Label>
-              <span className="text-xs text-muted-foreground">
-                {members.filter((m) => m.name.trim()).length} / {members.length}
-              </span>
+              <div className="flex items-center gap-2">
+                {sessionEmail && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 gap-1.5 px-2 text-xs text-primary"
+                    onClick={addSelf}
+                  >
+                    <UserPlus className="h-3.5 w-3.5" />
+                    {t('groups.addMe')}
+                  </Button>
+                )}
+                <span className="text-xs text-muted-foreground">
+                  {members.filter((m) => m.name.trim()).length} / {members.length}
+                </span>
+              </div>
             </div>
 
             <AnimatePresence initial={false}>

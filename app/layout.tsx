@@ -29,9 +29,7 @@ export const metadata: Metadata = {
     title: "Solvio — Smart finance for humans",
     description: "AI-powered expense tracking with receipt scanning.",
   },
-  icons: {
-    icon: "/favicon.ico",
-  },
+  // Ikony przez file-convention: app/icon.svg + app/apple-icon.png
   formatDetection: {
     telephone: false,
   },
@@ -39,8 +37,8 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#f5f0eb" },
-    { media: "(prefers-color-scheme: dark)", color: "#141414" },
+    { media: "(prefers-color-scheme: light)", color: "#f7f5f0" },
+    { media: "(prefers-color-scheme: dark)", color: "#15181c" },
   ],
   width: "device-width",
   initialScale: 1,

@@ -8,13 +8,13 @@ export default function Footer() {
   const { t } = useTranslation()
 
   return (
-    <footer className="border-t-2 border-foreground bg-background">
+    <footer className="border-t border-border bg-background">
       <div className="mx-auto max-w-7xl px-5 sm:px-8 py-10 sm:py-12">
         <div className="flex flex-col sm:flex-row items-center justify-between gap-6">
           {/* Brand */}
           <div className="flex flex-col items-center sm:items-start gap-3">
             <Link href="/" className="flex items-center gap-2 font-black text-base">
-              <div className="flex h-9 w-9 items-center justify-center rounded-md border-2 border-foreground bg-foreground text-background shadow-[2px_2px_0_hsl(var(--foreground))]">
+              <div className="flex h-9 w-9 items-center justify-center rounded-md border border-border bg-primary text-primary-foreground shadow-[var(--nb-shadow-sm)]">
                 <Wallet className="h-4 w-4" aria-hidden="true" />
               </div>
               Solvio
@@ -36,7 +36,7 @@ export default function Footer() {
           </div>
         </div>
 
-        <div className="mt-8 pt-6 border-t-2 border-dashed border-foreground/30 text-center font-mono text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+        <div className="mt-8 pt-6 border-t border-dashed border-border/30 text-center font-mono text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
           <span suppressHydrationWarning>© {new Date().getFullYear()} Solvio. {t('footer.rights')}</span>
         </div>
       </div>

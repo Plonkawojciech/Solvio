@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { useParams } from 'next/navigation'
+import { useParams, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { motion, AnimatePresence } from 'framer-motion'
 import { toast } from 'sonner'
@@ -26,6 +26,7 @@ import {
 } from 'lucide-react'
 import dynamic from 'next/dynamic'
 import { GroupReceiptCard } from '@/components/protected/groups/group-receipt-card'
+import { AppIcon } from '@/lib/app-icons'
 
 /* Heavy sheet/modal components — lazy-loaded to reduce initial bundle */
 const SplitExpenseSheet = dynamic(() => import('@/components/protected/groups/split-expense-sheet').then(m => ({ default: m.SplitExpenseSheet })), { ssr: false })
@@ -245,13 +246,18 @@ export default function GroupDetailPage() {
   const { t } = useTranslation()
   const params = useParams()
   const groupId = params?.id as string
+  // Deep-linki z kart grup: ?add=1 otwiera dodawanie wydatku, ?tab=settlements zakładkę rozliczeń
+  const searchParams = useSearchParams()
 
   const [group, setGroup] = useState<Group | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
   const [settlingId, setSettlingId] = useState<string | null>(null)
-  const [splitSheetOpen, setSplitSheetOpen] = useState(false)
-  const [activeTab, setActiveTab] = useState<TabId>('overview')
+  const [splitSheetOpen, setSplitSheetOpen] = useState(() => searchParams?.get('add') === '1')
+  const [activeTab, setActiveTab] = useState<TabId>(() => {
+    const tab = searchParams?.get('tab')
+    return tab && ['overview', 'receipts', 'balances', 'settlements', 'timeline'].includes(tab) ? (tab as TabId) : 'overview'
+  })
 
   // Receipts state
   const [groupReceipts, setGroupReceipts] = useState<GroupReceipt[]>([])
@@ -410,9 +416,7 @@ export default function GroupDetailPage() {
 
         <div className="flex items-center justify-between gap-3 md:gap-4">
           <div className="flex items-center gap-3 md:gap-4 min-w-0">
-            <div className="flex h-11 w-11 md:h-14 md:w-14 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-2xl md:text-3xl">
-              {group.emoji || getModeEmoji(group.mode)}
-            </div>
+            <AppIcon value={group.emoji} fallback="globe" size="lg" chipClassName="bg-primary/10 text-primary" />
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <h1 className="text-lg sm:text-2xl font-bold tracking-tight truncate">{group.name}</h1>

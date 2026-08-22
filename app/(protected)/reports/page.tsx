@@ -215,12 +215,12 @@ export default function ReportsPage() {
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.4 }}
-              className="flex flex-col items-center justify-center py-16 gap-5 text-center rounded-md border-2 border-dashed border-foreground/40 bg-secondary/30"
+              className="flex flex-col items-center justify-center py-16 gap-5 text-center rounded-md border border-dashed border-border/40 bg-secondary/30"
             >
               <div className="font-mono text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                {'// '}{t('reports.noExpensesTitle')}
+                {t('reports.noExpensesTitle')}
               </div>
-              <div className="flex h-16 w-16 items-center justify-center rounded-md border-2 border-foreground bg-card text-foreground shadow-[3px_3px_0_hsl(var(--foreground))]">
+              <div className="flex h-16 w-16 items-center justify-center rounded-md border border-border bg-card text-foreground shadow-[var(--nb-shadow-sm)]">
                 <FileBarChart2 className="h-7 w-7" aria-hidden="true" />
               </div>
               <div className="space-y-2 max-w-xs">
@@ -242,7 +242,7 @@ export default function ReportsPage() {
                 <motion.div
                   initial={{ opacity: 0, y: -8 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="mb-4 flex items-center gap-3 rounded-md border-2 border-foreground bg-secondary px-4 py-3 text-sm shadow-[3px_3px_0_hsl(var(--foreground))]"
+                  className="mb-4 flex items-center gap-3 rounded-md border border-border bg-secondary px-4 py-3 text-sm shadow-[var(--nb-shadow-sm)]"
                   role="status"
                   aria-live="polite"
                 >

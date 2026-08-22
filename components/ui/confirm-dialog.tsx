@@ -50,7 +50,7 @@ export function ConfirmDialog({
         <AlertDialogHeader>
           <div className="flex items-start gap-3">
             {destructive && (
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border-2 border-destructive bg-destructive/10 text-destructive shadow-[2px_2px_0_hsl(var(--destructive))]">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-destructive bg-destructive/10 text-destructive shadow-[var(--nb-shadow-sm)]">
                 <TriangleAlert className="size-5" aria-hidden="true" />
               </div>
             )}
