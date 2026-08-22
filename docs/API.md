@@ -230,6 +230,21 @@ Solvio: **Ustawienia → CRM Programo**.
 
 ---
 
+## Hasło konta
+
+| Metoda | Ścieżka | Co robi |
+|---|---|---|
+| `POST` | `/api/auth/password` | `{ currentPassword, newPassword }` — zmiana hasła |
+
+Wymaga **bieżącego hasła** mimo aktywnej sesji: samo ciasteczko nie wystarczy,
+bo przejęta sesja mogłaby wtedy przejąć konto na stałe. Limit 5 prób na godzinę.
+
+> **Landmina projektowa:** logowanie na adres, który nie ma jeszcze wpisu
+> w `user_credentials`, **zajmuje konto** dowolnym podanym hasłem. Konto
+> z zaseedowanymi danymi, na które nikt się jeszcze nie zalogował, może
+> przejąć każdy, kto zna adres e-mail. Zmiana tego zachowania to osobna
+> decyzja — dziś to jedyny sposób ustawienia pierwszego hasła.
+
 ## Zarządzanie kluczami Solvio
 
 Ścieżki na sesji, nie na kluczu — klucza nie da się wystawić kluczem.
