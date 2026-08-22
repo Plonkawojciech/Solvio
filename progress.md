@@ -23,6 +23,57 @@
 
 ## Changelog
 
+### 2026-08-22 — Uporządkowanie repo: scalenie rozjechanych gałęzi + naprawa `db.batch` na self-hoście
+
+Stan zastany: trzy równoległe wersje projektu. `origin/main` miał 11 commitów AveJi
+z 7-9.07 (redesign Notes Classic, self-host na Dockerze/Coolify, subskrypcje,
+logowanie hasłem, ikony lucide zamiast emotek). Lokalny `main` miał 3 niewypchnięte
+commity, w tym duży hardening prod z 8.05. W drzewie roboczym leżało 69
+niezacommitowanych plików z sesji Androidowej z 9.06. Nic z tego się nie widziało.
+
+**(1) Zabezpieczenie WIP-a** — sesja z 9.06 zacommitowana na gałęzi
+`wip/android-parity-2026-06-09`, żeby merge nie mógł jej zjeść.
+
+**(2) Merge gałęzi AveJi jako bazy weba** (9 konfliktów). Warstwa produktowa
+i architektura idą po jego stronie, hardening zostaje. Rozstrzygnięcia:
+savings → jego pulpit jednoekranowy (karty lojalnościowe mają własny ekran
+`/loyalty`, nic nie ginie); auth/session → unia logowania hasłem z audit logiem
+i rate limiterem; dashboard → przeglądanie miesiąca + cache 5s z kluczem
+rozszerzonym o wybrany miesiąc; incomes → walidacja Zod z limitem ikony
+podniesionym z 10 na 24 znaki (nazwy lucide bywają dłuższe, np. `trending-up`).
+
+**(3) `db.batch` — realny błąd odsłonięty przez merge.** Dziewięć miejsc wołało
+`db.batch([...])`, które istnieje wyłącznie w driverze Neon HTTP. Po przejściu na
+self-host (`node-postgres`) wywaliłoby to dashboard, ustawienia, listę wydatków,
+grupy, rozliczenia, skan paragonu i seedowanie użytkownika — a TypeScript tego nie
+łapał, bo `lib/db/index.ts` rzutuje instancję pg na typ Neona. Odwrotnie też nie
+działa: neon-http nie ma `db.transaction()`. Nowy `lib/db/batch.ts` wybiera
+mechanizm per driver (batch na Neonie, transakcja na pg przy zapisach,
+`Promise.all` przy odczytach z `{ atomic: false }`). W `POST /api/groups` insert
+grupy powstaje teraz wewnątrz callbacka — inaczej na pg leciałby poza transakcją.
+
+**(4) Dociągnięcie sesji z czerwca** (4 konflikty). Weszło to, czego AveJa nie
+ruszał: pierwszy kompilujący się build Androida, 14 plików iOS, usuwanie konta
+(GDPR), `csrf-fetch-provider`, `lib/categorize.ts`, `lib/api-timing.ts`,
+paginacja w `GET /api/data/expenses`. Landmina z WIP-a: paginacja domyślnie
+ustawiała `pageSize=20`, a web, iOS i Android wołają ten endpoint bez parametrów —
+dostałyby po cichu 20 wydatków zamiast pełnej listy. Domyślka wróciła na 500.
+
+**(5) Sprzątanie** — 27 martwych kluczy i18n po przebudowie savings (parytet PL/EN
+zweryfikowany: 1549 kluczy, każdy dokładnie 2 razy), `android/local.properties`,
+`android/.kotlin/` i `xcuserdata` wypadły ze śledzenia, CLAUDE.md zaktualizowany
+(dual-driver DB, Gemini, logowanie hasłem, zakaz `db.batch`, deploy Coolify).
+
+**Weryfikacja:** `tsc --noEmit` czysty, `eslint` czysty, `vitest` 130/130,
+`next build` OK. Do tego przebieg na żywym Postgresie 16 w kontenerze
+(`DATABASE_PROVIDER=postgres`, `drizzle-kit push`): demo login, onboarding,
+`/api/data/dashboard`, `/api/data/settings`, `/api/data/expenses` (pageSize 500),
+`/api/groups` GET i POST (grupa + 2 wiersze członków w jednej transakcji),
+`/api/groups/:id`, `/api/groups/:id/dashboard`, `/api/subscriptions`,
+`/api/personal/incomes` z ikoną `trending-up` — wszystko 200/201, zero błędów
+w logu. Strony `/dashboard`, `/expenses`, `/savings`, `/subscriptions`, `/groups`,
+`/settings` renderują się po zalogowaniu.
+
 ### 2026-06-09 — Android: PIERWSZY DZIAŁAJĄCY BUILD + uruchomienie na emulatorze + start audytu pixel-parity
 Feedback Wojtka: „przejdź przez każdą funkcję, przeanalizuj dogłębnie, przepisz i zrób plan + implementację całego projektu, każdy popup, każda najmniejsza rzecz pixel po pixelu na Androidzie. Ma działać i wyglądać identycznie, popraw błędy. Działaj autonomicznie."
 

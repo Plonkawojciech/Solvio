@@ -22,11 +22,13 @@ Production URL: `https://solvio-lac.vercel.app`
 - **Framework**: Next.js 15.5.8, React 19, TypeScript (strict)
 - **Styling**: Tailwind CSS v4, tailwindcss-animate, framer-motion v12
 - **UI**: shadcn/ui (Radix primitives), Lucide icons, Sonner toasts, Recharts
-- **Database**: Neon (serverless PostgreSQL, eu-central-1)
+- **Database**: PostgreSQL — dwa drivery wybierane automatycznie w `lib/db/index.ts`:
+  Neon HTTP dla URL-i `*.neon.tech` (deploy Vercel), `node-postgres` dla zwykłego
+  Postgresa (self-host Docker/Coolify). Wymuszenie: `DATABASE_PROVIDER=neon|postgres`.
 - **ORM**: Drizzle ORM + drizzle-kit
 - **Auth**: Custom cookie-based session (`solvio_session` — base64-encoded email, 30-day expiry). Uses `lib/session.ts` + `lib/auth-compat.ts`
 - **File Storage**: Vercel Blob (`@vercel/blob`) for reports/receipts
-- **AI**: Azure OpenAI (primary, uses `AZURE_OPENAI_*` env) with OpenAI direct API as fallback. Unified via `lib/ai-client.ts` → `getAIClient()`.
+- **AI**: Gemini (`gemini-2.5-flash`, darmowy tier — domyślny na self-hoście), Azure OpenAI albo OpenAI direct. Unified via `lib/ai-client.ts` → `getAIClient()`.
 - **OCR**: Azure Document Intelligence (receipt scanning)
 - **Reports**: pdf-lib, pdfkit, docx (CSV/PDF/DOCX generation)
 - **Theme**: next-themes (light/dark), Geist font
@@ -37,7 +39,7 @@ Production URL: `https://solvio-lac.vercel.app`
 npm install
 npm run dev          # http://localhost:3000
 npm run build        # production build
-npm run db:push      # push Drizzle schema to Neon
+npm run db:push      # push Drizzle schema do bazy z DATABASE_URL
 npm run db:studio    # open Drizzle Studio
 ```
 
@@ -225,7 +227,9 @@ All routes use `auth()` from `lib/auth-compat.ts` for authentication. Returns 40
 
 The app uses a **custom cookie-based session**:
 
-1. Login: user submits email -> `POST /api/auth/session` sets `solvio_session` cookie (base64 JSON with email)
+1. Login: `POST /api/auth/session` ustawia cookie `solvio_session` podpisane HMAC-em (`SESSION_SECRET`).
+   Pierwsze logowanie danym mailem przejmuje konto i zapisuje hash hasła w `user_credentials`
+   (`lib/password.ts`); kolejne wymagają hasła. Konto demo zostaje otwarte.
 2. `userId` is derived deterministically: `sha256(email)` truncated to 32 chars, prefixed with `u_`
 3. Server-side: `getSession()` from `lib/session.ts` reads the cookie
 4. API routes: `auth()` from `lib/auth-compat.ts` wraps `getSession()`
@@ -249,6 +253,11 @@ The app uses a **custom cookie-based session**:
 - framer-motion for page transitions and micro-animations
 
 ### Database
+- **NIGDY `db.batch([...])` ani `db.transaction(...)` wprost.** Żaden driver nie ma obu:
+  `batch` istnieje tylko w Neon HTTP, `transaction` tylko w node-postgres. `lib/db/index.ts`
+  rzutuje instancję pg na typ Neona, więc TypeScript tego NIE złapie — wywali się dopiero
+  w runtime. Wsad zawsze przez `dbBatch()` z `lib/db/batch.ts`; przy czystych odczytach
+  dodaj `{ atomic: false }`.
 - All field names use camelCase in Drizzle schema (maps to snake_case in PostgreSQL)
 - Row-level isolation by `userId` text column (not FK to any users table)
 - Amounts stored as `decimal(12,2)` text — parse with `parseFloat()` when needed
@@ -267,8 +276,11 @@ The app uses a **custom cookie-based session**:
 
 ## Deployment
 
-- **Platform**: Vercel (project: `solvio`, team: plonkawojciechs-projects)
-- **Database**: Neon project "solvio" (still-surf-97743103), aws-eu-central-1
+- **Self-host (docelowo)**: Docker + Coolify — `Dockerfile` w rootcie (multi-stage, Next
+  standalone, port 3000), schemat dociągany przy starcie kontenera przez `drizzle-kit push`
+  w `docker-entrypoint.sh` (wyłącznik `SKIP_DB_PUSH=1`). Pełna instrukcja: `docs/DEPLOY-COOLIFY.md`.
+- **Vercel (wariant zastany)**: project `solvio`, team plonkawojciechs-projects
+- **Database**: zwykły Postgres na VM (self-host) albo Neon "solvio" (still-surf-97743103), aws-eu-central-1
 - **Blob Store**: `solvio-reports` (store_AvSDzhNckgVnFOs2) for generated reports
 - **Build**: `next build` (TS and ESLint errors ignored in config for CI)
 - **Webpack externals**: canvas, pdf-parse, sharp (server-side only)
@@ -276,6 +288,8 @@ The app uses a **custom cookie-based session**:
 
 ## Design Principles
 
+- **Zero emotek w UI.** Kolumny `emoji` w bazie trzymają NAZWY IKON lucide
+  (`briefcase`, `target`, `globe`), nie znaki emoji — renderuje je `<AppIcon>` z `lib/app-icons.tsx`.
 - Professional SaaS aesthetic with generous framer-motion animations
 - Full PL/EN bilingual everywhere — use `t()` hook
 - Dark + Light mode with toggle in sidebar (desktop) and mobile header
