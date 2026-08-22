@@ -1562,5 +1562,6 @@ extension L10n {
         "scan.errorTooLarge": "The photo is too large — retake it",
         "scan.errorUnreadable": "Could not read the receipt — take a sharper photo",
         "scan.errorTimeout": "Reading the receipt took too long — try again",
+        "settings.budgetFromCategories": "The dashboard sums category limits:",
     ]
 }

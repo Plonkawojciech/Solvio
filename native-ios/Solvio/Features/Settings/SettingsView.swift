@@ -69,6 +69,14 @@ struct SettingsView: View {
 
     // MARK: - Budżet
 
+    /// Panel liczy budżet jako SUMĘ limitów kategorii; to pole zapisuje
+    /// `user_settings.monthly_budget`, czyli fallback dla kont bez limitów.
+    /// Bez tego podpisu ustawienia pokazywały 0, a Panel 3500 zł i wyglądało
+    /// to na błąd, a nie na dwa różne pojęcia.
+    private var effectiveBudget: Double {
+        store.budgets.reduce(0) { $0 + $1.amount.double }
+    }
+
     private var budgetCard: some View {
         PaperCard(title: locale.t("settings.monthlyBudget"), label: locale.t("settings.budget")) {
             HStack(spacing: Theme.Spacing.sm) {
@@ -81,6 +89,12 @@ struct SettingsView: View {
                 Button(locale.t("common.save")) { saveBudget() }
                     .buttonStyle(SecondaryButtonStyle(fullWidth: false))
                     .disabled(savingBudget)
+            }
+            if effectiveBudget > 0 {
+                Text(locale.t("settings.budgetFromCategories") + " " + Fmt.amount(effectiveBudget, currency: store.currency))
+                    .font(AppFont.caption)
+                    .foregroundColor(Theme.mutedForeground)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }

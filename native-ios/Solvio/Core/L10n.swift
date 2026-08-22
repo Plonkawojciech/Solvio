@@ -1603,5 +1603,6 @@ enum L10n {
         "scan.errorTooLarge": "Zdjęcie jest za duże — zrób je ponownie",
         "scan.errorUnreadable": "Nie udało się odczytać paragonu — zrób ostrzejsze zdjęcie",
         "scan.errorTimeout": "Odczyt paragonu trwał za długo — spróbuj ponownie",
+        "settings.budgetFromCategories": "Panel liczy budżet z sumy limitów kategorii:",
     ]
 }
