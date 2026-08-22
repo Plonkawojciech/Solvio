@@ -6,6 +6,51 @@
 
 ---
 
+## 2026-08-22 (wieczór) — paragony od A do Z
+
+Audyt pokazał trzy rzeczy, których nie widać w kodzie, bo wynikają ze
+środowiska produkcyjnego (tylko `OPENAI_API_KEY`, żadnego Azure ani Blob):
+
+1. **Zdjęcia paragonów nigdy się nie zapisywały.** Upload szedł do Vercel Blob,
+   a bez tokenu `put()` w ogóle się nie wykonywało — `receipts.image_url`
+   zostawało `NULL`. Teraz zdjęcia leżą na wolumenie kontenera
+   (`RECEIPTS_DIR=/app/data/receipts`, wolumen `solvio-receipts` w Coolify)
+   i wychodzą przez `/api/{data,v1}/receipts/[id]/image`, tylko do właściciela.
+2. **OCR chodzi ścieżką vision, nie Azure.** Model wybrany pomiarem, nie na
+   wyczucie: benchmark na 8 wygenerowanych paragonach
+   (`scripts/receipt-fixtures/gen.py`, `tests/ocr-bench.test.ts`) dał
+   gpt-5.4-mini — ta sama trafność co gpt-4.1 i gpt-4o-mini, dwa razy szybciej.
+   Zmiana modelu to dziś zmienna `OCR_VISION_MODEL`, nie deploy.
+3. **`receipts.hash` nigdy nie dostawał wartości.** Odcisk SHA-256 pliku
+   sprawdzamy teraz PRZED wywołaniem OCR — ten sam plik wysłany drugi raz
+   kosztował wcześniej drugie wywołanie modelu.
+
+Przy okazji, znalezione przez nowe testy jednostkowe:
+
+- linie **PTU** (polski VAT, na każdym paragonie fiskalnym) trafiały na listę
+  zakupów jako produkt;
+- **„zł" nigdy nie było ucinane** z nazwy pozycji, bo granica słowa `\b`
+  w JS liczy się po ASCII i po „ł" jej nie ma — pozycja „12,99 zł" przechodziła
+  dalej jako nazwa produktu;
+- skan całej treści w poszukiwaniu sieci robił sprzedawcę **„Netto"** z każdego
+  paragonu, bo „netto" stoi w tabelce PTU. Marki-zwykłe-słowa szukamy teraz
+  wyłącznie w nagłówku;
+- **stacje paliw nie miały żadnego wzorca** — „PKN ORLEN S.A." zostawało jako
+  nazwa sprzedawcy. Doszły paliwa i gastronomia.
+
+Reszta zmian: surowy odczyt OCR zostaje w `raw_ocr` (bez niego złego odczytu
+nie da się zdiagnozować ani powtórzyć bez płacenia za OCR drugi raz),
+`chatParams`/`chatWithEffortRetry` dla modeli rozumujących (pusty `content`
+przy ciasnym limicie tokenów), rozbicie 622-liniowej trasy OCR na
+`lib/ocr/{upload,pipeline}.ts`, wspólny rdzeń paragonów (`lib/receipt-core.ts`)
+dla trasy sesyjnej i kluczowej, `/api/v1/receipts` dla integracji oraz paragon
+**generowany z danych** (`.../render`) — działa też dla paragonów bez zdjęcia.
+
+Weryfikacja na produkcji: skan `tests/fixtures/receipts/zabka-cztery-pozycje.jpg`
+przez klucz `slvk_` — 7,3 s, sprzedawca „Żabka", 23,76 zł, cztery pozycje
+z rozwiniętymi nazwami i kategoriami; zdjęcie do pobrania (57 KB); ten sam plik
+wysłany ponownie odrzucony jako duplikat bez wywołania OCR.
+
 ## 2026-08-22 — redesign do dwóch ekranów + API dla crm.programo.pl
 
 Solvio przestaje być kombajnem. Zostają **Panel** i **Wydatki**, mobilka

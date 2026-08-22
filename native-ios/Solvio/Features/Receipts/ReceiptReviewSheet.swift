@@ -183,7 +183,7 @@ struct ReceiptReviewSheet: View {
             VStack(spacing: 0) {
                 ForEach(Array(review.items.enumerated()), id: \.offset) { index, item in
                     HStack(spacing: Theme.Spacing.sm) {
-                        Text(item.nameTranslated ?? item.name)
+                        Text(item.displayName)
                             .font(AppFont.caption)
                             .foregroundColor(Theme.foreground)
                             .lineLimit(2)

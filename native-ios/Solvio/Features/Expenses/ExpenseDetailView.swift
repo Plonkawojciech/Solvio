@@ -138,16 +138,55 @@ struct ExpenseDetailView: View {
         return model.color(for: categoryId)
     }
 
+    /// Zdjęcie paragonu. Adres jest ścieżką z API, nie absolutnym URL-em —
+    /// magazyn zdjęć po stronie serwera zmieniał się już raz i klient nie ma
+    /// prawa o nim nic wiedzieć. Ciasteczko sesji leci automatycznie, bo
+    /// `AsyncImage` korzysta z `HTTPCookieStorage.shared`.
+    @ViewBuilder
+    private func receiptPhoto(_ path: String) -> some View {
+        let url = URL(string: path, relativeTo: AppConfig.apiBaseURL)
+        AsyncImage(url: url) { phase in
+            switch phase {
+            case .success(let image):
+                image.resizable().scaledToFit()
+            case .failure:
+                EmptyView()
+            default:
+                SkeletonBlock(height: 180)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
     @ViewBuilder
     private var receiptCard: some View {
         if loadingReceipt {
             PaperCard(label: locale.t("receipts.fromReceipt")) { SkeletonBlock(height: 80) }
-        } else if let receipt, let items = receipt.items, !items.isEmpty {
+        } else if let receipt, hasReceiptContent(receipt) {
             PaperCard(title: receipt.vendor ?? locale.t("receipts.title"), label: locale.t("receipts.fromReceipt")) {
+                VStack(spacing: Theme.Spacing.sm) {
+                    if let path = receipt.imageUrl, !path.isEmpty {
+                        receiptPhoto(path)
+                    }
+                    receiptItems(receipt)
+                }
+            }
+        }
+    }
+
+    private func hasReceiptContent(_ receipt: Receipt) -> Bool {
+        if let path = receipt.imageUrl, !path.isEmpty { return true }
+        return !(receipt.items?.isEmpty ?? true)
+    }
+
+    @ViewBuilder
+    private func receiptItems(_ receipt: Receipt) -> some View {
+        if let items = receipt.items, !items.isEmpty {
                 VStack(spacing: 0) {
                     ForEach(Array(items.enumerated()), id: \.offset) { index, item in
                         HStack(spacing: Theme.Spacing.sm) {
-                            Text(item.nameTranslated ?? item.name)
+                            Text(item.displayName)
                                 .font(AppFont.caption)
                                 .foregroundColor(Theme.foreground)
                                 .lineLimit(2)
@@ -167,7 +206,6 @@ struct ExpenseDetailView: View {
                         }
                     }
                 }
-            }
         }
     }
 

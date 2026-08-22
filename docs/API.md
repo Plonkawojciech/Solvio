@@ -152,6 +152,68 @@ natywny musi to zmapować na własny zestaw — inaczej wyświetli słowo.
 
 ---
 
+## `GET /api/v1/receipts`
+
+Lista paragonów. Parametry: `from`, `to` (YYYY-MM-DD), `q` (fragment nazwy
+sprzedawcy), `limit` (domyślnie 50, maks. 200), `offset`.
+
+```bash
+curl -H "X-Api-Key: slvk_…" "$BASE/api/v1/receipts?from=2026-08-01&limit=20"
+# {"receipts":[{…}],"limit":20,"offset":0,"hasMore":false}
+```
+
+Pozycje (`items`) w liście są PUSTE — lista zwraca `itemCount`. Pełne pozycje
+daje dopiero szczegół.
+
+## `GET /api/v1/receipts/{id}`
+
+Paragon ze wszystkim: pozycje, rabaty, `rawText` (surowy odczyt OCR),
+`ocrModel`, `expenseId` powiązanego wydatku.
+
+`imageUrl` to **ścieżka w tym API**, nie adres pliku w magazynie — zdjęcia
+leżą na wolumenie kontenera i wychodzą wyłącznie przez trasę poniżej.
+
+## `GET /api/v1/receipts/{id}/image`
+
+Zdjęcie paragonu (`image/jpeg` itd.). 404, gdy paragon nie ma zdjęcia —
+np. został wpisany ręcznie albo zeskanowany przed 22.08.2026, kiedy zdjęcia
+w ogóle się nie zapisywały.
+
+## `GET /api/v1/receipts/{id}/render`
+
+Paragon **wygenerowany z danych** jako HTML do podglądu i wydruku. Działa
+także dla paragonów bez zdjęcia.
+
+## `POST /api/v1/receipts`
+
+Paragon wpisany ręcznie. `total` można pominąć — wtedy liczy się z pozycji.
+Domyślnie powstaje też wydatek; `"createExpense": false` to wyłącza.
+
+```bash
+curl -X POST "$BASE/api/v1/receipts" -H "X-Api-Key: slvk_…" \
+  -H "Content-Type: application/json" \
+  -d '{"vendor":"Żabka","date":"2026-08-21",
+       "items":[{"name":"Kawa","quantity":1,"price":9.99}]}'
+```
+
+## `PATCH /api/v1/receipts/{id}`
+## `DELETE /api/v1/receipts/{id}`
+
+Edycja zmienia też powiązany wydatek (a przez niego wpis w CRM-ie, jeśli był
+tam wypchnięty) — paragon i wydatek to jedna prawda, nie dwie.
+Usunięcie kasuje wydatek razem z paragonem; `?keepExpense=1` zostawia wydatek.
+
+## `POST /api/v1/ocr-receipt`
+
+Skan paragonu ze zdjęcia (`multipart/form-data`, pole `files`, można kilka).
+Ten sam plik wysłany drugi raz wraca jako `"error":"duplicate"` **bez**
+wywołania OCR — odcisk SHA-256 sprawdzamy przed modelem.
+
+```bash
+curl -X POST "$BASE/api/v1/ocr-receipt" -H "X-Api-Key: slvk_…" \
+  -F "files=@paragon.jpg"
+```
+
 ## `GET /api/v1/summary`
 
 Agregaty miesiąca — ten sam kształt, którym karmi się Panel w apce, żeby

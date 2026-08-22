@@ -27,9 +27,9 @@ Production URL: `https://solvio-lac.vercel.app`
   Postgresa (self-host Docker/Coolify). Wymuszenie: `DATABASE_PROVIDER=neon|postgres`.
 - **ORM**: Drizzle ORM + drizzle-kit
 - **Auth**: Custom cookie-based session (`solvio_session` — base64-encoded email, 30-day expiry). Uses `lib/session.ts` + `lib/auth-compat.ts`
-- **File Storage**: Vercel Blob (`@vercel/blob`) for reports/receipts
+- **File Storage**: zdjęcia paragonów na wolumenie kontenera (`RECEIPTS_DIR`, `lib/receipts/storage.ts`); Vercel Blob tylko dla raportów i historycznych URL-i. **Blob NIE działa na Coolify** — bez `BLOB_READ_WRITE_TOKEN` `put()` cicho nic nie robiło i przez to żaden paragon nie miał zdjęcia (naprawione 22.08.2026).
 - **AI**: OpenAI direct (`OPENAI_API_KEY`, ten sam klucz co Estalo) — tak stoi produkcja od 22.08.2026. `lib/ai-client.ts` wybiera backend w kolejności Azure → OpenAI → Gemini, więc wystarczy nie ustawiać zmiennych Azure. Gemini zostaje w kodzie jako darmowy wariant awaryjny. Unified via `lib/ai-client.ts` → `getAIClient()`.
-- **OCR**: Azure Document Intelligence (receipt scanning)
+- **OCR**: model vision przez `lib/ocr/vision.ts` (domyślnie `gpt-5.4-mini`, zmienna `OCR_VISION_MODEL`) — **to jest ścieżka produkcyjna**. Azure Document Intelligence (`lib/ocr/azure.ts`) uruchamia się tylko przy ustawionych `AZURE_OCR_*`, których na produkcji nie ma; zostaje, bo czyta PDF-y.
 - **Reports**: pdf-lib, pdfkit, docx (CSV/PDF/DOCX generation)
 - **Theme**: next-themes (light/dark), Geist font
 
@@ -146,8 +146,8 @@ All tables defined in `lib/db/schema.ts`. UUIDs for primary keys, `user_id` (tex
 |---|---|---|
 | `user_settings` | Per-user preferences | userId (unique), currency, language |
 | `categories` | Expense categories | userId, name, icon, color, isDefault |
-| `receipts` | Scanned receipts | userId, vendor, date, total, imageUrl, items (jsonb), rawOcr (jsonb), hash |
-| `receipt_items` | Individual receipt line items | receiptId, name, quantity, unitPrice, totalPrice, categoryId |
+| `receipts` | Scanned receipts | userId, vendor, date, total, imageUrl (klucz magazynu, nie URL), items (jsonb), rawOcr (jsonb: text/promotions/model), hash (SHA-256 pliku) |
+| `receipt_items` | **Martwa tabela** — pozycje żyją w `receipts.items` (jsonb). Nie kasować: `drizzle-kit push` przy starcie kontenera usunąłby ją z produkcji | receiptId, name, quantity, unitPrice, totalPrice, categoryId |
 | `expenses` | Manual + receipt-linked expenses | userId, title, amount, date, categoryId, receiptId, vendor, notes, tags[], isRecurring |
 | `category_budgets` | Monthly/periodic budgets per category | userId, categoryId, amount, period; unique(userId, categoryId, period) |
 | `reports` | Generated report files | userId, type, periodStart/End, format, fileUrl, metadata (jsonb) |
@@ -181,7 +181,9 @@ All routes use `auth()` from `lib/auth-compat.ts` for authentication. Returns 40
 | `/api/data/dashboard` | GET | Dashboard stats (aggregated) |
 | `/api/data/expenses` | GET, POST, PUT, DELETE | Full expense CRUD; DELETE accepts `{ ids: [] }` |
 | `/api/data/categories` | POST, PUT, DELETE | Category management |
-| `/api/data/receipts` | GET, PUT | Receipt items retrieval and updates |
+| `/api/data/receipts` | GET, POST, PUT, DELETE | Paragony: lista, szczegół (`?id=`), wpis ręczny, edycja pozycji, usunięcie |
+| `/api/data/receipts/[id]/image` | GET | Zdjęcie paragonu (tylko właściciel) |
+| `/api/data/receipts/[id]/render` | GET | Paragon wygenerowany z danych (HTML do druku) |
 | `/api/data/settings` | GET, POST | User settings + categories + budgets |
 
 ### Auth
@@ -197,7 +199,9 @@ All routes use `auth()` from `lib/auth-compat.ts` for authentication. Returns 40
 |---|---|---|
 | `/api/analysis/ai` | POST | OpenAI spending analysis |
 | `/api/audit/generate` | POST | Shopping audit (web search + AI) |
-| `/api/v1/ocr-receipt` | POST | Azure OCR receipt scanning |
+| `/api/v1/ocr-receipt` | POST | Skan paragonu (sesja albo klucz `slvk_`); duplikat pliku odrzucany przed OCR |
+| `/api/v1/receipts` | GET, POST | Paragony dla integracji (dziś: zakładka „Prywatne" w CRM-ie) |
+| `/api/v1/receipts/[id]` | GET, PATCH, DELETE | Szczegół, edycja, usunięcie |
 | `/api/v1/convert-heic` | POST | HEIC to JPEG conversion |
 | `/api/v1/seed-categories` | POST | Seed default categories |
 

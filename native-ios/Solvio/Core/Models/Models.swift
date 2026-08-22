@@ -108,6 +108,9 @@ struct ExpenseWrap: Decodable {
 struct ReceiptItem: Codable, Identifiable, Hashable {
     let id: String?
     let name: String
+    /// Nazwa rozwinięta ze skrótu kasowego („PILOSJOG NAT" → „Pilos jogurt
+    /// naturalny"). Serwer ją liczy raz, przy odczycie paragonu.
+    let nameClean: String?
     let nameTranslated: String?
     let quantity: Double?
     let price: MoneyString?
@@ -118,6 +121,7 @@ struct ReceiptItem: Codable, Identifiable, Hashable {
     enum CodingKeys: String, CodingKey {
         case id
         case name
+        case nameClean
         case nameTranslated
         case quantity
         case price
@@ -128,6 +132,10 @@ struct ReceiptItem: Codable, Identifiable, Hashable {
 
     /// Preferred price field for display (OCR uses `price`, manual edits may use `totalPrice`).
     var displayPrice: MoneyString? { price ?? totalPrice }
+
+    /// Do pokazania człowiekowi: rozwinięta nazwa, tłumaczenie, dopiero potem
+    /// surowy skrót z kasy.
+    var displayName: String { nameClean ?? nameTranslated ?? name }
 }
 
 struct Receipt: Codable, Identifiable, Hashable {
@@ -174,6 +182,8 @@ struct ReceiptCreate: Encodable {
 
 struct OcrItem: Codable, Hashable {
     let name: String
+    /// Skrót z kasy rozwinięty przez serwer — patrz `ReceiptItem.nameClean`.
+    let nameClean: String?
     let nameTranslated: String?
     let quantity: Double?
     let price: Double?
@@ -181,11 +191,14 @@ struct OcrItem: Codable, Hashable {
 
     enum CodingKeys: String, CodingKey {
         case name
+        case nameClean
         case nameTranslated
         case quantity
         case price
         case categoryId = "category_id"
     }
+
+    var displayName: String { nameClean ?? nameTranslated ?? name }
 }
 
 struct OcrPromotion: Codable, Hashable {
