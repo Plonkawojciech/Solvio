@@ -8,6 +8,7 @@ import { put } from '@vercel/blob';
 import { getAIClient } from '@/lib/ai-client';
 import { normalizeStoreName, findStoreInText } from '@/lib/stores';
 import { dbBatch } from '@/lib/db/batch'
+import { syncExpenseWithCrm } from '@/lib/expense-core'
 
 export const runtime = 'nodejs';
 export const maxDuration = 60; // Vercel Hobby plan limit
@@ -1464,12 +1465,32 @@ export async function POST(req: NextRequest) {
           }),
         ]);
 
-        log(`[File ${i + 1}] ✅ Receipt updated + expense created (categoryId=${bestCategoryId})`);
+        // Klient potrzebuje id wydatku, żeby po skanie od razu otworzyć ekran
+        // potwierdzenia. Bez tego musiałby zgadywać, który wiersz przed chwilą
+        // powstał — a przy dwóch paragonach z tego samego sklepu tego samego
+        // dnia zgadłby źle.
+        const [createdExpense] = await db.select({ id: expenses.id })
+          .from(expenses)
+          .where(and(eq(expenses.receiptId, currentReceiptId), eq(expenses.userId, userId)))
+          .limit(1);
+
+        // Most do CRM-a. Paragon rodzi wydatek tą samą drogą co ręczne
+        // dodanie, więc `autoPush` musi zadziałać także tutaj.
+        if (createdExpense?.id) {
+          try {
+            await syncExpenseWithCrm(userId, createdExpense.id);
+          } catch (crmError) {
+            console.error('[OCR] CRM sync failed (nie blokuje skanu):', crmError);
+          }
+        }
+
+        log(`[File ${i + 1}] ✅ Receipt updated + expense created (categoryId=${bestCategoryId}, expenseId=${createdExpense?.id})`);
 
         results.push({
           file: file.name,
           success: true,
           receipt_id: currentReceiptId,
+          expense_id: createdExpense?.id ?? null,
           data: {
             merchant: finalMerchant,
             total: finalTotal,

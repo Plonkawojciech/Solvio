@@ -20,6 +20,7 @@
 		3178FC9F710A29C499D4DB9D /* AppTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3307232C0092760A40D85C77 /* AppTheme.swift */; };
 		36EC25A025F12F9A4B032B75 /* FontLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 914A13E95A57C5B2214E445E /* FontLoader.swift */; };
 		38BE2CB34AFFF937AC925019 /* ScanQueueManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CC5F0C4642F9C8B2107CCD0 /* ScanQueueManager.swift */; };
+		3E179128A1CB454E3B751457 /* Log.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DF9CB52B989231633073C82 /* Log.swift */; };
 		46CF9F3ABB7B375C33AEBA3B /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCB372E303126D02D67C6205 /* Models.swift */; };
 		4749756ADEFAFEE6C2A8022E /* Formatters.swift in Sources */ = {isa = PBXBuildFile; fileRef = 226851A463B366A968CE6C3F /* Formatters.swift */; };
 		4B4636DA5BE9860C3E7D62AD /* ExpenseEditorSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03B76FC8CFA09A49AA89F5F5 /* ExpenseEditorSheet.swift */; };
@@ -28,6 +29,7 @@
 		79CFE120CF26BFD497F202C4 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 027850E12E3403B5AFDB95B4 /* RootView.swift */; };
 		7A2C515B2E4669D2C802BD8B /* ToastCenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EAC82DB72FC502D7F96FAAE /* ToastCenter.swift */; };
 		83C7218FA1E5C1B91C36451F /* CameraPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24BD0456BC165D29B0F48B38 /* CameraPicker.swift */; };
+		8F249B7DA4009BDD381A56EE /* ReceiptReviewSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0091C5D72BBD694D62E59ED3 /* ReceiptReviewSheet.swift */; };
 		95C41312710F9E3C86946915 /* Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7067708AD65AA9D19404060F /* Components.swift */; };
 		9E3146B1F7628978E1B3FC15 /* SessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7AFD9B53A8560716EBC70437 /* SessionStore.swift */; };
 		A2320653A66EC7B4A006289F /* AppRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 942D50E6D12D96BB506456DB /* AppRouter.swift */; };
@@ -45,9 +47,11 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		0091C5D72BBD694D62E59ED3 /* ReceiptReviewSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReceiptReviewSheet.swift; sourceTree = "<group>"; };
 		01EF34F7339AED6F0B3DD142 /* SolvioApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SolvioApp.swift; sourceTree = "<group>"; };
 		027850E12E3403B5AFDB95B4 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		03B76FC8CFA09A49AA89F5F5 /* ExpenseEditorSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExpenseEditorSheet.swift; sourceTree = "<group>"; };
+		0DF9CB52B989231633073C82 /* Log.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Log.swift; sourceTree = "<group>"; };
 		1DE1E9E2CA1F78B679AFA117 /* AppDataStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDataStore.swift; sourceTree = "<group>"; };
 		1EAC82DB72FC502D7F96FAAE /* ToastCenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToastCenter.swift; sourceTree = "<group>"; };
 		226851A463B366A968CE6C3F /* Formatters.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Formatters.swift; sourceTree = "<group>"; };
@@ -86,6 +90,14 @@
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
+		21339D8BE56198D5C494EC0B /* Receipts */ = {
+			isa = PBXGroup;
+			children = (
+				0091C5D72BBD694D62E59ED3 /* ReceiptReviewSheet.swift */,
+			);
+			path = Receipts;
+			sourceTree = "<group>";
+		};
 		4480CFB76448173A6912FA9E /* Expenses */ = {
 			isa = PBXGroup;
 			children = (
@@ -149,6 +161,7 @@
 				226851A463B366A968CE6C3F /* Formatters.swift */,
 				F97FF74B94CD0518150E1087 /* L10n.swift */,
 				530336B12374C171AD5989AF /* L10n+EN.swift */,
+				0DF9CB52B989231633073C82 /* Log.swift */,
 				4CC5F0C4642F9C8B2107CCD0 /* ScanQueueManager.swift */,
 				1EAC82DB72FC502D7F96FAAE /* ToastCenter.swift */,
 			);
@@ -231,6 +244,7 @@
 				66CC3F84E892BDA56778D877 /* Auth */,
 				E3C412AB8C27B3ED995903D7 /* Dashboard */,
 				4480CFB76448173A6912FA9E /* Expenses */,
+				21339D8BE56198D5C494EC0B /* Receipts */,
 				D730A0BA27C51EE1D8A34AD6 /* Root */,
 				C07F397EA2D3A6C4A0B46DA3 /* Settings */,
 			);
@@ -341,10 +355,12 @@
 				BB0D40DD18824510CC83A62E /* Haptics.swift in Sources */,
 				D7410D9A0D3B31EE3B3B6A27 /* L10n+EN.swift in Sources */,
 				06A68DBC8E409D3D5EB95617 /* L10n.swift in Sources */,
+				3E179128A1CB454E3B751457 /* Log.swift in Sources */,
 				E39EDC02CF739209126B264F /* LoginView.swift in Sources */,
 				26C8F9BA9D9AFF91F5C8B609 /* MainTabView.swift in Sources */,
 				46CF9F3ABB7B375C33AEBA3B /* Models.swift in Sources */,
 				CD88D9BC7B018AD0FF2E6DDF /* Money.swift in Sources */,
+				8F249B7DA4009BDD381A56EE /* ReceiptReviewSheet.swift in Sources */,
 				2F7420A790B1D6D5B607CB8B /* Repositories.swift in Sources */,
 				79CFE120CF26BFD497F202C4 /* RootView.swift in Sources */,
 				38BE2CB34AFFF937AC925019 /* ScanQueueManager.swift in Sources */,

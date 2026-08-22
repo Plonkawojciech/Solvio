@@ -75,6 +75,26 @@ final class ScanQueueManager: ObservableObject {
 
     @Published private(set) var items: [ScanQueueItem] = []
 
+    /// Ustawiane po skanie POJEDYNCZEGO paragonu — `MainTabView` podnosi na
+    /// tej podstawie ekran potwierdzenia. Przy skanie wsadowym zostaje `nil`:
+    /// dziesięć arkuszy pod rząd to nie potwierdzanie, to udręka.
+    @Published var pendingReview: PendingReview?
+
+    struct PendingReview: Identifiable, Equatable {
+        let id = UUID()
+        let receiptId: String
+        let expenseId: String?
+        let merchant: String?
+        let total: Double?
+        let currency: String?
+        let date: String?
+        let items: [OcrItem]
+        let promotions: [OcrPromotion]
+        let totalSaved: Double?
+
+        static func == (lhs: PendingReview, rhs: PendingReview) -> Bool { lhs.id == rhs.id }
+    }
+
     /// Max parallel uploads. Tuned for typical mobile bandwidth — too many
     /// concurrent OCR calls bottleneck on the server side anyway.
     private let maxConcurrent = 2
@@ -216,10 +236,11 @@ final class ScanQueueManager: ObservableObject {
                            vendor: success.data?.merchant,
                            total: success.data?.total,
                            currency: success.data?.currency)
+                offerReview(success, receiptId: receiptId, batchSize: items.count)
             } else {
-                let msg = response.results.first?.error
-                    ?? response.results.first?.message
-                    ?? localized("receipts.noReceiptDetected")
+                let failure = response.results.first
+                let msg = message(forCode: failure?.error, fallback: failure?.message)
+                Log.warn(.scan, "OCR odrzucił plik: kod=\(failure?.error ?? "brak") — \(msg)")
                 if let nidx = items.firstIndex(where: { $0.id == id }) {
                     items[nidx].status = .failed(msg)
                 }
@@ -237,13 +258,12 @@ final class ScanQueueManager: ObservableObject {
             // aggressive resize/compress, then mark failed if still too big.
             await retryWithAggressiveCompression(id: id, original: item)
         } catch let apiError as ApiError {
+            Log.error(.scan, "upload paragonu odrzucony", apiError)
             if let nidx = items.firstIndex(where: { $0.id == id }) {
                 items[nidx].status = .failed(friendlyMessage(for: apiError))
             }
         } catch {
-            #if DEBUG
-            print("[ScanQueue] Unexpected error: \(error)")
-            #endif
+            Log.error(.scan, "nieoczekiwany błąd uploadu", error)
             if let nidx = items.firstIndex(where: { $0.id == id }) {
                 items[nidx].status = .failed(localized("errors.unknown"))
             }
@@ -277,10 +297,11 @@ final class ScanQueueManager: ObservableObject {
                            vendor: success.data?.merchant,
                            total: success.data?.total,
                            currency: success.data?.currency)
+                offerReview(success, receiptId: receiptId, batchSize: items.count)
             } else {
-                let msg = response.results.first?.error
-                    ?? response.results.first?.message
-                    ?? localized("receipts.noReceiptDetected")
+                let failure = response.results.first
+                let msg = message(forCode: failure?.error, fallback: failure?.message)
+                Log.warn(.scan, "OCR odrzucił plik: kod=\(failure?.error ?? "brak") — \(msg)")
                 if let nidx = items.firstIndex(where: { $0.id == id }) {
                     items[nidx].status = .failed(msg)
                 }
@@ -294,13 +315,12 @@ final class ScanQueueManager: ObservableObject {
                 items[nidx].status = .failed(localized("errors.payloadTooLarge"))
             }
         } catch let apiError as ApiError {
+            Log.error(.scan, "ponowienie uploadu odrzucone", apiError)
             if let nidx = items.firstIndex(where: { $0.id == id }) {
                 items[nidx].status = .failed(friendlyMessage(for: apiError))
             }
         } catch {
-            #if DEBUG
-            print("[ScanQueue] Retry unexpected error: \(error)")
-            #endif
+            Log.error(.scan, "nieoczekiwany błąd przy ponowieniu", error)
             if let nidx = items.firstIndex(where: { $0.id == id }) {
                 items[nidx].status = .failed(localized("errors.unknown"))
             }
@@ -321,6 +341,23 @@ final class ScanQueueManager: ObservableObject {
         }
         // New receipt → invalidate caches so dashboards refresh.
         store.didMutateReceipts()
+    }
+
+    /// Podnosi ekran potwierdzenia po skanie pojedynczego paragonu.
+    private func offerReview(_ result: OcrResult, receiptId: String, batchSize: Int) {
+        guard batchSize == 1, let data = result.data else { return }
+        pendingReview = PendingReview(
+            receiptId: receiptId,
+            expenseId: result.expenseId,
+            merchant: data.merchant,
+            total: data.total,
+            currency: data.currency,
+            date: data.date,
+            items: data.items ?? [],
+            promotions: data.promotions ?? [],
+            totalSaved: data.totalSaved
+        )
+        Self.log("review", "paragon \(receiptId): pozycji=\(data.items?.count ?? 0), promocji=\(data.promotions?.count ?? 0)")
     }
 
     /// Map an `ApiError` to the same user-friendly localized strings used
@@ -345,15 +382,34 @@ final class ScanQueueManager: ObservableObject {
         }
     }
 
+    /// Kod błędu z backendu na zdanie po polsku. Bez tego użytkownik widział
+    /// w kolejce dosłownie `duplicate` — kod z JSON-a, nie komunikat.
+    /// Nieznany kod spada na `message` z serwera, a dopiero potem na ogólnik,
+    /// żeby nowy kod po stronie backendu nie zamieniał się w pustkę.
+    private func message(forCode code: String?, fallback: String?) -> String {
+        switch code {
+        case "duplicate":            return localized("scan.errorDuplicate")
+        case "azure_invalid_format": return localized("scan.errorFormat")
+        case "invalid_type":         return localized("scan.errorFormat")
+        case "empty_file":           return localized("scan.errorEmpty")
+        case "file_too_large":       return localized("scan.errorTooLarge")
+        case "ocr_failed":           return localized("scan.errorUnreadable")
+        case "ocr_timeout":          return localized("scan.errorTimeout")
+        default:
+            return fallback ?? localized("receipts.noReceiptDetected")
+        }
+    }
+
     private func localized(_ key: String) -> String {
         locale?.t(key) ?? L10n.strings[.en]?[key] ?? key
     }
 
     private static func logScanAttempt(stage: String, bytes: Int, filename: String) {
-        #if DEBUG
-        let kb = Double(bytes) / 1024.0
-        print(String(format: "[ScanQueue] %@: %.1f KB (%@)", stage, kb, filename))
-        #endif
+        Log.info(.scan, String(format: "%@: %.1f KB (%@)", stage, Double(bytes) / 1024.0, filename))
+    }
+
+    private static func log(_ stage: String, _ message: String) {
+        Log.info(.scan, "\(stage): \(message)")
     }
 
     // MARK: - Image utilities

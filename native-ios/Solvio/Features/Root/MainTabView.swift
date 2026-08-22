@@ -41,6 +41,12 @@ struct MainTabView: View {
         .sheet(isPresented: $router.showingExpenseEditor) {
             ExpenseEditorSheet(expense: nil)
         }
+        // Potwierdzenie paragonu podnosi się samo po skanie POJEDYNCZEGO
+        // zdjęcia. Przy skanie wsadowym `pendingReview` zostaje pusty —
+        // dziesięć arkuszy pod rząd to nie potwierdzanie, to udręka.
+        .sheet(item: $scanQueue.pendingReview) { review in
+            ReceiptReviewSheet(review: review)
+        }
         .fullScreenCover(isPresented: $showCamera) {
             CameraPicker { image in
                 showCamera = false

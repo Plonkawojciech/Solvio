@@ -232,6 +232,10 @@ struct OcrResult: Codable {
     let file: String
     let success: Bool
     let receiptId: String?
+    /// Id wydatku utworzonego z tego paragonu. Bez niego ekran potwierdzenia
+    /// musiałby zgadywać, który wiersz przed chwilą powstał — a przy dwóch
+    /// paragonach z tego samego sklepu tego samego dnia zgadłby źle.
+    let expenseId: String?
     let error: String?
     let message: String?
     let data: OcrReceiptData?
@@ -239,6 +243,7 @@ struct OcrResult: Codable {
     enum CodingKeys: String, CodingKey {
         case file, success, error, message, data
         case receiptId = "receipt_id"
+        case expenseId = "expense_id"
     }
 }
 

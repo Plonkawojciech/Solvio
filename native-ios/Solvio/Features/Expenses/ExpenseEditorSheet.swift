@@ -89,9 +89,9 @@ struct ExpenseEditorSheet: View {
     private var detailsCard: some View {
         PaperCard {
             VStack(spacing: 0) {
-                field(locale.t("expenses.title"), text: $title, placeholder: locale.t("expenses.titlePlaceholder"))
+                field(locale.t("expenses.fieldName"), text: $title, placeholder: locale.t("expenses.fieldNamePlaceholder"))
                 Divider().overlay(Theme.border)
-                field(locale.t("expenses.vendor"), text: $vendor, placeholder: locale.t("expenses.vendorPlaceholder"))
+                field(locale.t("expenses.vendor"), text: $vendor, placeholder: locale.t("expenses.fieldVendorPlaceholder"))
                 Divider().overlay(Theme.border)
                 HStack {
                     Text(locale.t("expenses.date"))
