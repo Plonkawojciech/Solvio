@@ -28,7 +28,7 @@ Production URL: `https://solvio-lac.vercel.app`
 - **ORM**: Drizzle ORM + drizzle-kit
 - **Auth**: Custom cookie-based session (`solvio_session` — base64-encoded email, 30-day expiry). Uses `lib/session.ts` + `lib/auth-compat.ts`
 - **File Storage**: Vercel Blob (`@vercel/blob`) for reports/receipts
-- **AI**: Gemini (`gemini-2.5-flash`, darmowy tier — domyślny na self-hoście), Azure OpenAI albo OpenAI direct. Unified via `lib/ai-client.ts` → `getAIClient()`.
+- **AI**: OpenAI direct (`OPENAI_API_KEY`, ten sam klucz co Estalo) — tak stoi produkcja od 22.08.2026. `lib/ai-client.ts` wybiera backend w kolejności Azure → OpenAI → Gemini, więc wystarczy nie ustawiać zmiennych Azure. Gemini zostaje w kodzie jako darmowy wariant awaryjny. Unified via `lib/ai-client.ts` → `getAIClient()`.
 - **OCR**: Azure Document Intelligence (receipt scanning)
 - **Reports**: pdf-lib, pdfkit, docx (CSV/PDF/DOCX generation)
 - **Theme**: next-themes (light/dark), Geist font

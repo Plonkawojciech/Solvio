@@ -28,17 +28,17 @@ URL-i `*.neon.tech` albo gdy ustawisz `DATABASE_PROVIDER=neon`.
 |---|---|
 | `DATABASE_URL` | `postgres://solvio:HASLO@HOST:5432/solvio` |
 | `SESSION_SECRET` | 32+ losowych znaków (`openssl rand -hex 32`) — podpisuje cookie sesji |
-| `GEMINI_API_KEY` | **darmowy** klucz z https://aistudio.google.com/apikey — napędza skan paragonów (OCR + kategoryzacja), analizę AI, porównywarkę cen |
+| `OPENAI_API_KEY` | klucz OpenAI — napędza skan paragonów (OCR + kategoryzacja), analizę AI i porównywarkę cen. Produkcja Solvio używa tego samego klucza co Estalo (decyzja Wojtka 22.08.2026). |
 
 ### Opcjonalne
 
 | Zmienna | Po co |
 |---|---|
-| `GEMINI_MODEL` | domyślnie `gemini-2.5-flash` (darmowy tier) |
+| `GEMINI_API_KEY` + `GEMINI_MODEL` | darmowy wariant awaryjny zamiast OpenAI (`gemini-2.5-flash`, klucz z https://aistudio.google.com/apikey). Na produkcji NIE ustawiony. |
 | `NEXT_PUBLIC_APP_URL` | publiczny URL apki (linki w mailach itp.) |
 | `BLOB_READ_WRITE_TOKEN` | Vercel Blob — przechowywanie zdjęć paragonów i plików raportów; **bez tego skan działa**, tylko nie zapisuje zdjęcia |
-| `AZURE_OCR_ENDPOINT` + `AZURE_OCR_KEY` | Azure Document Intelligence — dokładniejszy OCR + obsługa PDF; bez tego paragony czyta Gemini (zdjęcia JPG/PNG/WebP) |
-| `AZURE_OPENAI_*` / `OPENAI_API_KEY` | płatne modele zamiast Gemini (priorytet: Azure → OpenAI → Gemini) |
+| `AZURE_OCR_ENDPOINT` + `AZURE_OCR_KEY` | Azure Document Intelligence — dokładniejszy OCR + obsługa PDF; bez tego paragony czyta model wizyjny wybranego providera AI |
+| `AZURE_OPENAI_*` | Azure zamiast OpenAI. Uwaga na kolejność w `lib/ai-client.ts`: Azure → OpenAI → Gemini, więc ustawienie zmiennych Azure PRZEJMUJE ruch z OpenAI. |
 | `GOCARDLESS_SECRET_ID` + `GOCARDLESS_SECRET_KEY` | integracja bankowa (import transakcji) |
 
 ### Czego NIE ustawiać na Coolify
