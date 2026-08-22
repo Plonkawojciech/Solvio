@@ -88,6 +88,7 @@ final class ScanQueueManager: ObservableObject {
         let total: Double?
         let currency: String?
         let date: String?
+        let categoryId: String?
         let items: [OcrItem]
         let promotions: [OcrPromotion]
         let totalSaved: Double?
@@ -353,6 +354,7 @@ final class ScanQueueManager: ObservableObject {
             total: data.total,
             currency: data.currency,
             date: data.date,
+            categoryId: data.categoryId,
             items: data.items ?? [],
             promotions: data.promotions ?? [],
             totalSaved: data.totalSaved

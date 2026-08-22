@@ -179,13 +179,40 @@ Parametry: `year`, `month` (1–12). Bez nich — bieżący miesiąc.
 API — wpina je człowiek z poziomu apki albo weba. Klucz CRM-a nigdy nie
 trafia na telefon: leży zaszyfrowany (AES-256-GCM) po stronie Solvio.
 
+### Połączenie
+
 | Metoda | Ścieżka | Co robi |
 |---|---|---|
 | `GET` | `/api/crm/connection` | stan połączenia (bez sekretu — tylko 4 ostatnie znaki) |
 | `PUT` | `/api/crm/connection` | zapisuje `{ baseUrl?, apiKey, autoPush?, defaultCategory? }`; **najpierw sprawdza klucz** i odmawia zapisu, jeśli CRM go odrzuci |
 | `DELETE` | `/api/crm/connection` | rozłącza |
-| `GET` | `/api/crm/entries` | czyta Finanse CRM-a (`from`, `to`, `type`, `limit`) plus podsumowanie |
-| `POST` | `/api/crm/push` | `{ ids: [...] }` — wypycha wskazane wydatki do Finansów |
+
+### Sterowanie Finansami
+
+Odwzorowanie ekranu `/finanse` w CRM-ie. Wpis to `FinanceEntry`:
+`{ id, type: INCOME|EXPENSE, date, amount, title, category, paid, note, client }`.
+
+| Metoda | Ścieżka | Co robi |
+|---|---|---|
+| `GET` | `/api/crm/entries` | wpisy (`from`, `to`, `type`, `limit`) plus podsumowanie miesiąca/roku/MRR |
+| `POST` | `/api/crm/entries` | nowy wpis — `{ type, date, amount, title, category?, paid?, note?, clientId? }` |
+| `PATCH` | `/api/crm/entries/{id}` | dowolny podzbiór pól. **`{"paid": true}` to najczęstsza operacja** na tym ekranie |
+| `DELETE` | `/api/crm/entries/{id}` | usuwa wpis |
+| `GET` | `/api/crm/context` | klienci (do przypisania wpisu) + zobowiązania cykliczne |
+| `POST` | `/api/crm/push` | `{ ids: [...] }` — wypycha wskazane wydatki Solvio do Finansów |
+
+```bash
+# oznacz fakturę jako zapłaconą
+curl -X PATCH -b cookies.txt -H "content-type: application/json" \
+  -d '{"paid":true}' https://solvio.programo.pl/api/crm/entries/clx123
+```
+
+Podsumowanie z `GET /api/crm/entries` jest **miękkie**: gdy endpoint sum
+w CRM-ie padnie, lista wpisów i tak wraca, a `summary` jest `null`. Padnięty
+agregat nie ma prawa zabrać użytkownikowi danych, które już mamy.
+
+`/api/crm/context` też degraduje się częściowo — sami klienci bez zobowiązań
+wystarczą, żeby przypisać wpis.
 
 Wydatek wypchnięty do CRM-a staje się tam wierszem `FinanceEntry` typu
 `EXPENSE`, a jego id ląduje w `expenses.crm_entry_id`. To powiązanie jest

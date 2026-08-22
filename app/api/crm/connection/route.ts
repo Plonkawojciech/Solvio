@@ -6,7 +6,7 @@ import {
   getCrmConnectionView,
   saveCrmConnection,
   testCrmConnection,
-} from '@/lib/crm-client'
+} from '@/lib/crm/connection'
 
 export const dynamic = 'force-dynamic'
 

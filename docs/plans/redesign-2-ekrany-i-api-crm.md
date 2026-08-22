@@ -55,3 +55,32 @@ produktów, sklepy w pobliżu, onboarding, tryb business.
 ## Poza zakresem
 
 Android (Solvio jest iOS-only), fizyczne kasowanie tabel w prodzie, App Store submission.
+
+---
+
+## Analiza `/finanse` w crm.programo.pl (2026-08-22)
+
+Co pokazuje ekran CRM-a i co Solvio musiało dobudować, żeby dało się nim sterować:
+
+| Element CRM-a | Skąd dane | Stan po stronie Solvio |
+|---|---|---|
+| Kafelki: Przychody, Koszty, Wynik, MRR, Łącznie | `GET /api/v1/finance/summary` | ✅ `GET /api/crm/entries` zwraca to w polu `summary` |
+| Lista wpisów miesiąca | `GET /api/v1/finance` | ✅ `GET /api/crm/entries` |
+| Dodanie wpisu | `POST /api/v1/finance` | ✅ `POST /api/crm/entries` |
+| Edycja / „zapłacone" | `PATCH /api/v1/finance/{id}` | ✅ `PATCH /api/crm/entries/{id}` |
+| Usunięcie wpisu | `DELETE /api/v1/finance/{id}` | ✅ `DELETE /api/crm/entries/{id}` |
+| Przypisanie klienta | `GET /api/v1/clients` | ✅ `GET /api/crm/context` |
+| Zobowiązania cykliczne | `GET /api/v1/recurring-commitments` | ✅ `GET /api/crm/context` (tylko odczyt) |
+| Stan konta + oś czasu | `GET /api/v1/account-balance` | ⚠️ funkcja `listBalances` gotowa, brak trasy — nie ma dziś ekranu, który by to pokazał |
+| Wykresy roczne | `getYearSummary` w `summary` | ⚠️ dane wracają, brak wizualizacji w apce |
+| Analiza Claude | `AskClaudeButton` w CRM-ie | ❌ poza zakresem — zostaje w CRM-ie |
+
+**Wniosek.** Warstwa danych jest kompletna: z apki da się dziś zrobić pełny
+CRUD na Finansach CRM-a plus przełączyć „zapłacone", czyli najczęstszą
+operację na tym ekranie. Czego NIE ma, to trzeciego ekranu, który by to
+pokazał — bo Wojtek świadomie ograniczył apkę do Panelu i Wydatków.
+Gdy przyjdzie czas na zakładkę „Firma", nie trzeba będzie dokładać backendu.
+
+**Świadomie pominięte:** stan konta i wykresy roczne (brak odbiorcy w UI),
+tworzenie i edycja zobowiązań cyklicznych (rzadka operacja, wygodniejsza
+na dużym ekranie), analiza Claude (żyje w CRM-ie i tam ma zostać).

@@ -2,7 +2,8 @@ import { and, asc, desc, eq, gte, ilike, inArray, lte, or, sql, type SQL } from 
 import { db } from './db'
 import { categories, expenses, merchantRules } from './db/schema'
 import { categorizeOne } from './categorize'
-import { createCrmEntry, deleteCrmEntry, getCrmConnection, updateCrmEntry } from './crm-client'
+import { getCrmConnection } from './crm/connection'
+import { createEntry, deleteEntry, updateEntry } from './crm/finance'
 
 /**
  * Jedno miejsce, w którym powstaje, zmienia się i znika wydatek.
@@ -249,7 +250,7 @@ export async function updateExpense(
   // Jeśli wydatek żyje już w CRM-ie, edycja ma go dociągnąć, nie zrobić duplikat.
   let synced = row
   if (row.crmEntryId) {
-    const res = await updateCrmEntry(userId, row.crmEntryId, {
+    const res = await updateEntry(userId, row.crmEntryId, {
       title: row.title, amount: row.amount, date: row.date, note: row.notes ?? '',
     })
     if (res.ok) {
@@ -277,7 +278,7 @@ export async function deleteExpenses(userId: string, ids: string[]): Promise<num
   // Sprzątanie w CRM-ie po skasowaniu u nas. Świadomie po fakcie i best-effort:
   // padnięty CRM nie może zablokować usunięcia wydatku we własnej bazie.
   for (const row of rows) {
-    if (row.crmEntryId) await deleteCrmEntry(userId, row.crmEntryId)
+    if (row.crmEntryId) await deleteEntry(userId, row.crmEntryId)
   }
   return deleted.length
 }
@@ -297,7 +298,7 @@ export async function maybePushToCrm(
   if (!conn) return row
   if (explicit !== true && !conn.autoPush) return row
 
-  const res = await createCrmEntry(userId, {
+  const res = await createEntry(userId, {
     title: row.title,
     amount: row.amount,
     date: row.date,
@@ -331,7 +332,7 @@ export async function syncExpenseWithCrm(userId: string, expenseId: string): Pro
   if (!row) return
 
   if (row.crmEntryId) {
-    const res = await updateCrmEntry(userId, row.crmEntryId, {
+    const res = await updateEntry(userId, row.crmEntryId, {
       title: row.title, amount: row.amount, date: row.date, note: row.notes ?? '',
     })
     if (res.ok) {
@@ -350,6 +351,6 @@ export async function unlinkExpensesFromCrm(userId: string, ids: string[]): Prom
     .from(expenses)
     .where(and(eq(expenses.userId, userId), inArray(expenses.id, ids)))
   for (const row of rows) {
-    if (row.crmEntryId) await deleteCrmEntry(userId, row.crmEntryId)
+    if (row.crmEntryId) await deleteEntry(userId, row.crmEntryId)
   }
 }

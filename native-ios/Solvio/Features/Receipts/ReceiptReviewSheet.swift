@@ -33,9 +33,14 @@ struct ReceiptReviewSheet: View {
         review.items.reduce(0) { $0 + ($1.price ?? 0) }
     }
 
+    /// Promocje TŁUMACZĄ różnicę między sumą pozycji a kwotą do zapłaty —
+    /// pokazywanie jej jako ostrzeżenia przy poprawnie odczytanym paragonie
+    /// z rabatem to fałszywy alarm. Ostrzegamy dopiero o reszcie, której
+    /// promocje nie wyjaśniają (kaucja, źle odczytana linia, literówka).
     private var mismatch: Double? {
         guard let total = parsedAmount, !review.items.isEmpty else { return nil }
-        let diff = total - itemsSum
+        let explained = review.totalSaved ?? 0   // ujemne
+        let diff = total - (itemsSum + explained)
         return abs(diff) >= 0.02 ? diff : nil
     }
 
@@ -174,10 +179,7 @@ struct ReceiptReviewSheet: View {
     // MARK: - Pozycje
 
     private var itemsCard: some View {
-        PaperCard(
-            title: locale.pluralized("receipts.itemsCount", count: review.items.count),
-            label: locale.t("receipts.items")
-        ) {
+        PaperCard(title: locale.pluralized("receipts.itemsCount", count: review.items.count)) {
             VStack(spacing: 0) {
                 ForEach(Array(review.items.enumerated()), id: \.offset) { index, item in
                     HStack(spacing: Theme.Spacing.sm) {
@@ -262,7 +264,10 @@ struct ReceiptReviewSheet: View {
         }
         // Kategorię proponuje backend (najczęstsza wśród pozycji paragonu);
         // czytamy ją z już zapisanego wydatku, żeby chip był zaznaczony.
-        categoryId = store.expenses.first { $0.id == review.expenseId }?.categoryId
+        // Kategorię podaje backend w odpowiedzi OCR. Szukanie jej w liście
+        // wydatków było wyścigiem: w chwili otwarcia arkusza panel jeszcze
+        // się nie odświeżył i żaden chip nie był zaznaczony.
+        categoryId = review.categoryId
     }
 
     private func confirm() {
