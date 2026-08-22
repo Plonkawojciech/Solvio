@@ -23,6 +23,113 @@
 
 ## Changelog
 
+### 2026-06-09 — Android: PIERWSZY DZIAŁAJĄCY BUILD + uruchomienie na emulatorze + start audytu pixel-parity
+Feedback Wojtka: „przejdź przez każdą funkcję, przeanalizuj dogłębnie, przepisz i zrób plan + implementację całego projektu, każdy popup, każda najmniejsza rzecz pixel po pixelu na Androidzie. Ma działać i wyglądać identycznie, popraw błędy. Działaj autonomicznie."
+
+Stan zastany: `android/` (57 plików Kotlin, ~19k LOC, 39 ekranów z poprzednich sesji) **nigdy nie był skompilowany** — brak Android SDK + JDK na maszynie. `native-android/` to starszy porzucony szkielet (tylko core, 19 plików) — pomijany, kanoniczny jest `android/`.
+
+**(1) Toolchain** — zainstalowany Android SDK przez brew commandlinetools (`platforms;android-35`, `build-tools;35.0.0`, `platform-tools`, system image `android-35;google_apis;arm64-v8a`), skonfigurowany JDK17 (`/opt/homebrew/opt/openjdk@17`), zapisany `android/local.properties` (`sdk.dir=/opt/homebrew/share/android-commandlinetools`).
+
+**(2) Pierwszy build** — `./gradlew assembleDebug`. Naprawione 4 błędy kompilacji blokujące cały build:
+- `core/ui/NBComponents.kt` — `nbShadowOnly` wołał `this then androidx.compose.ui.draw.drawBehind {…}` (drawBehind to extension na Modifier, nie free function) → zmienione na `this.drawBehind {…}` + dodany import `androidx.compose.ui.draw.drawBehind`. To naprawiło kaskadę 9 błędów (toPx/drawRoundRect/size unresolved).
+- `features/audit/AuditScreen.kt` — brak `import androidx.compose.runtime.setValue` (delegat `var by mutableStateOf`).
+- `features/groups/GroupSettlementsScreen.kt` — brak `import androidx.compose.foundation.clickable`.
+- `features/root/MainTabScreen.kt` — nawigacja do `GoalDetailScreen` używała `onBack=` zamiast `onClose=` (zła nazwa parametru).
+→ **`BUILD SUCCESSFUL`, powstał `app-debug.apk` (22 MB).**
+
+**(3) Pierwsza poprawka pixel-parity** — `core/theme/Palette.kt`: porównanie hexów z asset catalog iOS (`Assets.xcassets/*.colorset`) z paletą Androida. Dark = idealny (16/16). Light miał 4 mikro-rozjazdy → poprawione 1:1: Background `#F5F0EB`→`#F3F0EC`, Muted `#E9E5E1`→`#E9E6E2`, Accent `#E2DDD9`→`#E2DED9`, Chart6 `#DED9D4`→`#DED9D3`.
+
+**(4) Uruchomienie na emulatorze** (AVD `solvio_test`, Pixel 6, API 35, headless) — APK zainstalowany, app startuje bez crashy: splash → login (neobrutalism 1:1: brand „Solvio", `// SIGN IN`, pole email 2px border, „Continue" czarny + hard shadow, „Try the demo", `// PRIVACY`). Demo-login → realne połączenie z backendem `solvio-lac.vercel.app` → Dashboard renderuje (`// DASHBOARD` / „Your money" / total-spent card PLN0.00 / `0 txns` / Scan receipt + Add expense / tab bar DASHBOARD·EXPENSES·DEALS·GROUPS·SAVINGS + FAB).
+
+**(5) Znaleziony bug layoutu (do Fazy 4):** górny `AppMobileHeader` nachodzi na status bar (brak `statusBarsPadding()`).
+
+**W toku:** workflow audytu pixel-parity (23 agenty: po jednym na feature + DesignSystem/DataLayer/L10n) — czyta Swift+Kotlin i zwraca ustrukturyzowaną listę wszystkich rozbieżności. Po syntezie → Faza 4 (implementacja poprawek feature-po-featurze) → rebuild → ponowna weryfikacja wizualna na emulatorze.
+
+### 2026-05-29 — Rzetelność danych: domknięcie luk „live vs estymata" (anty-halucynacja)
+Audyt integralności (czy Okazje/ceny to realne dane czy halucynacje LLM) ujawnił 4 luki. Architektura jest dwutorowa: `web_search_preview` (OpenAI Responses API, wymaga `OPENAI_API_KEY` — POTWIERDZONE na prod via `vercel env ls`) = realne dane z URL; fallback = czysty LLM = estymata. Naprawione:
+- **shopping-advisor** (`app/api/personal/shopping-advisor/route.ts`): używał `getAIClient()` (prod=Azure) i web search tylko gdy `backend==='openai'` → na prod NIGDY nie groundował, zawsze estymata. Przełączony na `getAIClientForWebSearch()` (jak promotions/optimize/prices) → realnie groundu­je na prod. Dodany `dataSource: 'live_web_search'|'estimate'`. Fallback ma notę anty-halucynacyjną. iOS: `ShoppingAdvisorResponse.dataSource` (`Models.swift`) + `dataSourceRow` badge ŻYWE/ESTYMATA w `ShoppingAdvisorView` (był JEDYNY ekran AI-cenowy bez oznaczenia).
+- **promotions** (`app/api/personal/promotions/route.ts`): w trybie estymaty model mógł podać zmyślony URL gazetki (walidacja tylko formatu http). Teraz `allowUrls = dataSource==='live_web_search'` → w estymacie per-promo `sourceUrl/leafletUrl/dealUrl = null` (promo zostaje, ale bez fałszywego „dowodu").
+- **optimize** (`app/api/shopping/optimize/route.ts`): fallback chat dostawał prompt każący „użyć web_search tego tygodnia" mimo braku web. Dodana nota „brak internetu — nie zmyślaj dat/promocji, sources=[]" (spójnie z prices/compare).
+- **prices/compare** (`app/api/prices/compare/route.ts`): `store_intel.source` był zawsze null dla cen „live". Teraz zapisuje `payload.sources[0]` gdy live.
+- **Weryfikacja:** backend `tsc --noEmit` exit 0 + eslint czysty (4 pliki); iOS `xcodebuild` (symulator) BUILD SUCCEEDED.
+- **Werdykt:** twarde dane usera (wydatki/paragony/budżety/cele/grupy/raporty) = 100% realne; dane rynkowe (okazje/ceny) = realne gdy web search (na prod klucz jest), uczciwie oznaczone live/estymata w każdym ekranie po tym fixie; sklepy w pobliżu = OpenStreetMap (realne geo).
+
+### 2026-05-29 — P2: Savings hub (Wyzwania + teaser Okazji); flat-detail i perf zweryfikowane
+- **#6 Savings hub** (`Features/Savings/SavingsHubView.swift` + `Core/L10n.swift`):
+  - **Naprawiono sierotę Wyzwań** — po okrojeniu drawera do Settings+Logout `ChallengesView` nie miał wejścia z UI. Dodano `challengesPreviewSection` (podgląd ≤3 aktywnych + „Wszystkie" → `.more(.challenges)`) + `store.ensureChallenges()` w `.task`.
+  - **`okazjeTeaserCard`** — link do zakładki Deals (promocje/gazetki tam żyją po redesignie). Łączy Savings z okazjami bez duplikacji.
+  - 6 kluczy L10n PL+EN (`savings.challenges*`, `savings.dealsTeaser*`).
+  - Fix builda: `@ViewBuilder` przy `goalsPreviewSection` (wstawka przesunęła atrybut).
+  - Decyzja Wojtka: minimalne wpięcie, BEZ cofania redesignu (Okazje = osobna zakładka). Powiązanie celów z kategoriami WYDATKÓW świadomie odłożone.
+- **#5 Flat expense detail** — zweryfikowane jako JUŻ zgodne (0 zmian): `ExpenseDetailView` pokazuje pozycje paragonu inline (`itemsCard`/`itemRow`), 1 tap z listy/dashboardu, brak deeper-nav do `ReceiptDetailView`.
+- **#7 Audyt wydajności** — PASS bez zmian: duże listy wirtualizowane (`ExpensesListView`/`ReceiptsListView`/`GroupsListView` = `List`; Okazje = `LazyVGrid`); dashboard warm-cache + ETag/304 + skeletony; kompresja zdjęć off-main (`Task.detached`).
+- **Weryfikacja:** iOS `xcodebuild` (symulator) BUILD SUCCEEDED.
+
+### 2026-05-29 — Gazetki post-OCR: auto-insight oszczędności po skanie
+- **Co:** Po POJEDYNCZYM skanie paragonu apka automatycznie analizuje ceny vs gazetki i — gdy są realne oszczędności (≥1) — pokazuje tappable toast „Mogłeś zaoszczędzić X / Zobacz gdzie taniej", który deep-linkuje do analizy paragonu w zakładce Okazje.
+- **Dlaczego:** Zasada produktu — „po zakupie AI analizuje: w sklepie X kupiłeś to, w Y taniej, oszczędzisz N". Infra `receipt-analyze` istniała, ale odpalała się TYLKO ręcznie w OkazjeHub.
+- **Pliki iOS:**
+  - `Core/ScanQueueManager.swift` — wspólny `applySaved()` (dedup primary+retry success-path), `maybeAnalyzeSavings()` fire-and-forget po single-scan (`items.count==1`), `@Published savingsInsight`. Batch (≥2) NIE odpala (koszt AI + spam tostów).
+  - `Core/ToastCenter.swift` — `actionable()` (toast z przyciskiem akcji; reuse renderu undo).
+  - `Core/AppRouter.swift` — `pendingAnalyzeReceiptId` (deep-link).
+  - `Features/Root/MainTabView.swift` — obserwuje `savingsInsight` → toast „ZOBACZ" → tab Okazje + analiza.
+  - `Features/Deals/OkazjeHubView.swift` — obserwuje `pendingAnalyzeReceiptId` → rozwija sekcję + `analyzeVM.run()`.
+  - `Core/L10n.swift` — 3 klucze PL+EN (`scanInsight.*`).
+- **Weryfikacja:** iOS `xcodebuild` (symulator) BUILD SUCCEEDED.
+- **Uwagi/follow-up:** insight tylko single-scan; rate-limit `receipt-analyze` 20/h. Tap-through rozwija sekcję analizy bez auto-scroll (możliwy ScrollViewReader później).
+
+### 2026-05-29 — Auto-kategoryzacja ręcznych wydatków + wspólny `lib/categorize.ts`
+- **Co:** Ręczne dodanie wydatku bez wybranej kategorii teraz auto-kategoryzuje (zasada: „po ręcznym dodaniu AI musi kategoryzować"). Wcześniej `categoryId` zostawał `null`.
+- **Jak:** `app/api/data/expenses` POST — gdy `categoryId` puste, `resolveCategory()` rozwiązuje: (1) lookup merchant-rule (potwierdzona historia vendora → kategoria, instant/free), (2) AI + keyword-fallback względem WŁASNYCH kategorii usera (w tym custom). AI time-boxed (4s) — nigdy nie blokuje dodawania; przy timeout/braku → null (user może edytować). Reguły merchant uczone **tylko** z wyborów usera (nie zatruwamy zgadywaniami AI).
+- **Wspólny moduł:** `lib/categorize.ts` (NEW) — `aiCategorizeNames()` + `makeKeywordFallback()` + `KEYWORD_MAP` + `categorizeOne()`. Jedno źródło prawdy dla kategoryzacji.
+- **Custom kategorie:** OCR (`ocr-receipt`) już ładował wszystkie kategorie usera i walidował `catId` — custom respektowane. Manual teraz tak samo.
+- **Weryfikacja:** `tsc --noEmit` + `eslint` zielone (exit 0).
+- **Dług (follow-up):** `recategorize-receipts` i `ocr-receipt` mają własne kopie `KEYWORD_MAP`/fallback — do podpięcia pod `lib/categorize.ts` (nie ruszane teraz, by nie ryzykować działającego kodu).
+
+### 2026-05-29 — App Store readiness: usuwanie konta (5.1.1(v)) + strony prawne /privacy /terms
+- **Co:** Pełne usuwanie konta end-to-end (wymóg App Store Guideline 5.1.1(v)) + publiczne strony prawne, do których linkuje aplikacja iOS.
+- **Dlaczego:** Apple wymaga, by aplikacja z zakładaniem konta pozwalała usunąć je z poziomu apki. iOS (Settings → O aplikacji) linkował już do `/privacy` i `/terms`, które NIE istniały w web (404) — bloker review.
+- **Backend:**
+  - `app/api/personal/delete-account/route.ts` (NEW) — POST, `auth()` + `rateLimitPersistent` (5/h), atomowe `db.batch()` czyszczące dane usera w ~25 tabelach (receipts/items/expenses/categories/budgets/savings(+deposits)/incomes/challenges/loyalty/reports/audits/price-comparisons/merchant-rules/bank-*(txn→acct→conn)/invoices/vat/company-members/companies + groups createdBy z kaskadą). Anonimizacja członkostw w CUDZYCH grupach (`group_members.userId→null,email→null,name→'(usunięty)'`) — chroni FK z `expense_splits.paidBy`/`payment_requests`. Cleanup `receipt_item_assignments` (brak FK-kaskady). Na końcu czyści cookie sesji. Idempotentne; końcowy wpis `account.delete` w `audit_log`.
+  - `app/(marketing)/privacy/page.tsx` + `app/(marketing)/terms/page.tsx` (NEW) — PL, treść dopasowana do realnych przepływów (email-only auth, AI/OCR Azure/OpenAI, Neon EU, opcjonalny GoCardless/Nordigen, eksport + usuwanie). Renderowane w layoucie marketingu (Header/Footer).
+- **iOS:**
+  - `Core/Network/Repositories.swift` — `AccountRepo.deleteAccount()` → POST `/api/personal/delete-account` (z CSRF przez ApiClient).
+  - `Features/Settings/SettingsView.swift` — w `dangerZone` przycisk „Usuń konto" (destructive + ikona trash + spinner) + alert potwierdzenia + `deleteAccount()` (po sukcesie `session.logout()` → login). Linki `/privacy`+`/terms` w `aboutCard` już były.
+  - `Core/L10n.swift` — 8 nowych kluczy PL + EN (`settings.deleteAccount*`, `deletingAccount`, `deleteAccountDone/Failed`).
+- **Weryfikacja:** iOS `xcodebuild` (symulator) **BUILD SUCCEEDED**; web `tsc --noEmit` + `eslint` zielone (exit 0); `/privacy` i `/terms` → HTTP 200, render OK, zero błędów konsoli. NIE uruchamiano realnego usuwania na prod (destrukcyjne — dane Wojtka).
+- **Pending Wojtek:** przegląd treści prawnych (+ ewentualna wersja EN stron); test usuwania na koncie testowym; rebuild + TestFlight.
+
+### 2026-05-08 — Round 5 / SUPERVISOR REVIEW (production-hardening loop, 5/20)
+- **Co:** Piąta runda. **NIETYPOWA — 4 z 5 moich agentów padli na 401 authentication errors po ~11 min każdy** (combined 143 tool calls przed failure). **PARALLEL Worker 1 Claude session pokrył A1+A2+A4 territory** dwoma autonomous passami w międzyczasie (entries powyżej w changelog). A5 mój ukończył pracę przed 401 wave. Oba buildy zielone, tests 92→130/130 (Worker 1 dodał 4 testy w `lib/__tests__/rate-limit.test.ts` na top R4 +21 CSRF +13 plural).
+- **Skład rundy (z mojego strony + Worker 1 backfill):**
+  - **A1 Performance** ❌ **mój agent 401'd** → ✅ **Worker 1 backfill** — persistent DB-backed rate limiter (`lib/rate-limit.ts` + `rate_limit_buckets` table + `drizzle/0004_rate_limit_buckets.sql`) zamiast in-memory (cross-instance throttling na Vercel), rollout do ~30 cost-sensitive routes, additional throttles on bank/sync/disconnect/match + reports/generate+custom, dodatkowe input guards w reports/custom (`max 50` categories, date/amount range validation), persistent fallback do pamięci gdy DATABASE_URL/tabela nieaktywne. Edge-safe `lib/csrf.ts` (usunięto Node `crypto` import, Web Crypto + TextEncoder). Build unblock: `app/settlement/[id]/page.tsx` regression naprawiony (`lang` + `labels` z SSR language detection).
+  - **A2 Security** ❌ **mój agent 401'd** → ✅ **Worker 1 backfill** — domknięcie iOS CSRF round-trip (`Core/Network/ApiClient.swift` + `Core/Session/SessionStore.swift`: GET /api/auth/csrf na launch, cache, automatyczny `x-csrf-token` na mutating requests, retry once na 403 z `X-CSRF-Reason`, refresh przy login/restore/logout/forced-unauthorized) — zamyka R4 A2 deferred. API hardening: `app/api/v1/convert-heic` empty file guard + 10 MB limit (DoS), `app/api/v1/ocr-receipt` Azure OCR error sanitization (no upstream leakage, keep `azure_invalid_format` vs transient classification), `app/api/auth/demo/reset` rate limit + `receipt_items` orphan-row bug fix (martwy warunek `receiptId === ''`), `app/api/personal/export-data` per-user throttle.
+  - **A3 iOS UI/UX** ❌ **mój agent 401'd przed zapisem na dysk** → PENDING dla round 6. (find -newer pokazał `VirtualReceiptCreateView` ale `git diff --stat` zwraca empty — touch nie modyfikacja.)
+  - **A4 Correctness** ❌ **mój agent 401'd** → ✅ **Worker 1 backfill** — iOS bundle cleanup (`SavingsHubView.swift.bak` usunięte z Resources phase w `project.pbxproj` — backup file nie idzie do .app), iOS PrivacyInfo.xcprivacy (`native-ios/Solvio/Resources/PrivacyInfo.xcprivacy` z `NSPrivacyCollectedDataTypePhotosOrVideos` + required-reason API dla UserDefaults + tracking=false — **zamyka A5 R4 critical finding `ITMS-91053` rejection ryzyko**), localized camera+Photo Library Info.plist (`en.lproj/InfoPlist.strings` + `pl.lproj/InfoPlist.strings`), `project.yml` + `project.pbxproj` source-of-truth sync. Tests 126→130/130 (Worker 1 +4 rate-limit tests).
+  - **A5 Research** ✅ **mój agent ukończył przed 401** — 4 NEW docs landed czysto: `docs/research-round5.md` (908 linii, 3 deep dives: Live Activities ActivityKit budget pattern + Watch sync via `.supplementalActivityFamilies([.small])` zero-extra-code; App Intents code skeleton dla `LogExpenseIntent`/`ScanReceiptIntent`/`CheckBudgetIntent` + iOS 26 Apple Intelligence integration; **PSD2 CRITICAL FINDING: GoCardless przestał akceptować NEW Bank Account Data accounts od lipca 2025** — istniejące Solvio production accounts działają, ale Solvio NIE może onboardować NEW production tenants bez enterprise plan / migration; rekomendacja: dodać Yapily jako primary new-user path, plan 6-month migration, ~2 weeks effort), `docs/live-activities-spec.md` (172 linii), `docs/app-intents-spec.md` (229 linii), `docs/psd2-providers-comparison.md` (104 linii).
+- **NEW infrastructure tracker:** `WORKLOG-AUTONOMOUS-SOLVIO.md` (created przez Worker 1) — rolling checkpoints dla kolejnych autonomous workerów.
+- **Buildy:**
+  - **iOS build:** ✅ BUILD SUCCEEDED (clean po PrivacyInfo + InfoPlist localization).
+  - **Web build:** ✅ PASS (~106 routes, 103 kB FLJS, middleware 35.1 kB). NOTE: pierwszy supervisor pre-check skipnął faktyczny build bo `node_modules` było puste (chyba cleanup w międzyczasie — disk freed do 33GB free!). `npm install` przywrócił, retry PASS.
+- **Tests:** 130/130 PASS (z 126 — Worker 1 +4 rate-limit tests).
+- **Pliki round-5-only (~35):** `lib/rate-limit.ts` (NEW persistent), `lib/csrf.ts` (Edge-safe), `lib/db/schema.ts` (rate_limit_buckets), `drizzle/0004_rate_limit_buckets.sql` (NEW), `lib/__tests__/rate-limit.test.ts` (NEW), `middleware.ts` (verified), `WORKLOG-AUTONOMOUS-SOLVIO.md` (NEW), ~30 api routes z rateLimitPersistent rollout, `app/api/v1/convert-heic/route.ts`, `app/api/v1/ocr-receipt/route.ts`, `app/api/auth/demo/reset/route.ts`, `app/api/personal/export-data/route.ts`, `app/api/reports/{generate,custom}/route.ts`, `app/api/bank/{sync,disconnect,match}/route.ts`, `app/settlement/[id]/page.tsx`, `Core/Network/ApiClient.swift`, `Core/Session/SessionStore.swift`, `Solvio.xcodeproj/project.pbxproj`, `project.yml`, `Resources/PrivacyInfo.xcprivacy` (NEW), `Resources/{en,pl}.lproj/InfoPlist.strings` (NEW), 4 NEW docs/ research+spec, `progress.md`.
+- **Pending Wojtek/Bartek:**
+  - DB migrations: `drizzle/0002_perf_indexes.sql` (R1) + `drizzle/0003_audit_log.sql` (R2) + `drizzle/0004_rate_limit_buckets.sql` (R5) — `npm run db:push`.
+  - Set `CRON_SECRET` env na Vercel.
+  - Po iOS CSRF release → flip `CSRF_ENFORCE=1` env na Vercel.
+  - **GoCardless migration plan**: zacząć ewaluację Yapily przed potencjalnym onboardingu NEW production tenants.
+  - **Disk space**: dramatycznie poprawiło się (8→33GB free) — prawdopodobnie ktoś (Worker 1?) zrobił większy cleanup. OK.
+- **Defekty deferred do round 6+:**
+  - **A3 iOS UX polish lost to 401** — round 6 powinno wziąć VirtualReceiptCreateView + IncomesView + MainTabView/RootView (R5 planned candidates).
+  - Lighthouse CI workflow (R3 backlog, R5 A1 didn't get to it).
+  - More batch candidates w `/api/personal/{financial-health,shopping-advisor,promotions,subscriptions,budget}` (R4 A1 deferred, R5 nie tknięte).
+  - `bankConnections` orphan GC cron (R4 A1 deferred).
+  - HSTS preload submission (czeka na custom domain).
+- **Reguły zachowane:** Worker 1 + mój A5 zero git commitów, progress.md updated. iOS-only-product rule respected (Worker 1 dotykał iOS tylko dla CSRF wiring + PrivacyManifest — to są correctness/compliance, nie UX changes).
+- **Anomalia rundy:** 4 z 5 moich agentów padło na transient 401 (~11 min in). Parallel Worker 1 session zaczęła pracować w międzyczasie (prawdopodobnie odpalona przez Wojtka żeby pomóc w blockerze) i pokryła krytyczne items. Round zaliczam ALE z notatką że to było disaster recovery, nie standardowy pass.
+
+---
+
 ### 2026-05-08 — Worker 1 / autonomous Solvio pass (iOS CSRF completion, API hardening, build unblock)
 - **Co:** Dodatkowy autonomous pass skupiony na realnych blockerach po round-4 hardeningu: domknięcie iOS-side CSRF contract, poprawki bezpieczeństwa / integralności na wybranych API paths, usunięcie nowego web build blockera i przypadkowego shipping artifactu w iOS bundle.
 - **iOS / core flow:** `native-ios/Solvio/Core/Network/ApiClient.swift` + `native-ios/Solvio/Core/Session/SessionStore.swift`

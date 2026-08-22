@@ -2,6 +2,7 @@ import { auth, getHubAuth } from '@/lib/auth-compat'
 import { NextResponse } from 'next/server'
 import { db, expenses, receipts, categories, userSettings, categoryBudgets, monthlyBudgets } from '@/lib/db'
 import { eq, gte, lte, and, sql } from 'drizzle-orm'
+import { withApiTiming } from '@/lib/api-timing'
 
 /**
  * Per-instance dashboard memoization.
@@ -64,7 +65,7 @@ function writeDashboardCache(key: string, body: unknown) {
   dashboardCache.set(key, { body, expiresAt: Date.now() + DASHBOARD_TTL_MS })
 }
 
-export async function GET(request: Request) {
+async function getDashboard(request: Request) {
   let userId = (await auth()).userId
   if (!userId) {
     const hubAuth = getHubAuth(request)
@@ -195,3 +196,5 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Failed to fetch dashboard data' }, { status: 500 })
   }
 }
+
+export const GET = withApiTiming('api.data.dashboard.GET', getDashboard)

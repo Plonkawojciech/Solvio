@@ -63,6 +63,22 @@ struct MainTabView: View {
         }
         .background(Theme.background)
         .ignoresSafeArea(.keyboard)
+        // Post-scan savings insight → tappable toast that deep-links into the
+        // Deals tab's receipt analysis. Raised by `ScanQueueManager` after a
+        // single-receipt scan finds real savings vs current leaflets.
+        .onChange(of: scanQueue.savingsInsight) { insight in
+            guard let insight else { return }
+            toast.actionable(
+                String(format: locale.t("scanInsight.savingsTitle"), Fmt.amount(insight.amount, currency: insight.currency)),
+                description: locale.t("scanInsight.savingsDesc"),
+                kind: .success,
+                actionLabel: locale.t("scanInsight.action")
+            ) {
+                router.selectedTab = .deals
+                router.pendingAnalyzeReceiptId = insight.receiptId
+            }
+            scanQueue.savingsInsight = nil
+        }
         .sheet(isPresented: $router.showingMoreSheet, onDismiss: {
             if let route = router.pendingMoreRoute {
                 router.pendingMoreRoute = nil

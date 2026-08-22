@@ -30,6 +30,7 @@ struct ShoppingAdvisorView: View {
                     NBErrorCard(message: msg) { Task { await run() } }
                 }
                 if let r = result {
+                    dataSourceRow(r.dataSource)
                     if let summary = r.summary, !summary.isEmpty {
                         summaryCard(summary)
                     }
@@ -99,6 +100,28 @@ struct ShoppingAdvisorView: View {
         }
         .padding(Theme.Spacing.md)
         .nbCard(radius: Theme.Radius.md, shadow: Theme.Shadow.sm)
+    }
+
+    // MARK: - Data-source honesty badge
+    //
+    // Tells the user whether the prices below are grounded in a live web
+    // search ("ŻYWE") or a model estimate ("ESTYMATA"). Without it the
+    // advisor was the only AI-price screen that hid which mode produced
+    // the numbers — a no-fabricated-data gap.
+    @ViewBuilder
+    private func dataSourceRow(_ value: String?) -> some View {
+        switch value {
+        case "live_web_search":
+            NBTag(text: locale.t("shoppingList.badgeLive"),
+                  background: Theme.success.opacity(0.15),
+                  foreground: Theme.success)
+        case "estimate":
+            NBTag(text: locale.t("shoppingList.badgeEstimate"),
+                  background: Theme.warning.opacity(0.15),
+                  foreground: Theme.warning)
+        default:
+            EmptyView()
+        }
     }
 
     // MARK: - Summary

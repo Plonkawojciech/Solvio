@@ -5,12 +5,14 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalanceWallet
@@ -51,12 +53,19 @@ internal fun AppMobileHeader(onMenuClick: () -> Unit) {
     val appTheme = LocalAppTheme.current
     val mode by appTheme.mode.collectAsState()
 
+    // Cream fills behind the status bar; the 56dp content row sits in the
+    // safe area below it, capped by a 1dp bottom hairline divider (mirror
+    // iOS AppMobileHeader, which respects the top safe-area inset).
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(palette.background)
+            .statusBarsPadding(),
+    ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .height(56.dp)
-            .background(palette.background)
-            .border(SolvioTheme.Border.widthThin, palette.border)
             .padding(horizontal = SolvioTheme.Spacing.sm),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -123,6 +132,14 @@ internal fun AppMobileHeader(onMenuClick: () -> Unit) {
                 onClick = { appTheme.set(nextThemeMode(mode)) },
             )
         }
+    }
+        // Bottom hairline divider (mirror iOS bottom border on the header).
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(SolvioTheme.Border.widthThin)
+                .background(palette.border),
+        )
     }
 }
 

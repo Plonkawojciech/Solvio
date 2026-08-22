@@ -3,7 +3,7 @@
 import { motion } from 'framer-motion'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Clock, ShoppingCart } from 'lucide-react'
+import { Clock, ExternalLink, ShoppingCart, Tag } from 'lucide-react'
 import { useTranslation } from '@/lib/i18n'
 
 export interface PromotionData {
@@ -18,6 +18,11 @@ export interface PromotionData {
   validUntil: string | null
   category: string | null
   matchesPurchases?: boolean
+  promoType?: string | null
+  promoDescription?: string | null
+  leafletUrl?: string | null
+  dealUrl?: string | null
+  sourceUrl?: string | null
 }
 
 const STORE_COLORS: Record<string, { bg: string; text: string; border: string }> = {
@@ -49,6 +54,8 @@ export function PromotionCard({
   const locale = lang === 'pl' ? 'pl-PL' : 'en-US'
   const storeStyle = STORE_COLORS[promo.store] || { bg: 'bg-muted', text: 'text-muted-foreground', border: 'border-border' }
   const savingsPercent = calcSavingsPercent(promo.regularPrice, promo.promoPrice)
+  const sourceHref = promo.dealUrl || promo.leafletUrl || promo.sourceUrl || null
+  const promoLabel = promo.promoDescription || promo.discount || promo.promoType || null
 
   const formatPrice = (price: number) =>
     new Intl.NumberFormat(locale, {
@@ -59,6 +66,9 @@ export function PromotionCard({
 
   const daysLeft = promo.validUntil
     ? Math.max(0, Math.ceil((new Date(promo.validUntil).getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
+    : null
+  const validUntilLabel = promo.validUntil
+    ? new Intl.DateTimeFormat(locale, { day: '2-digit', month: 'short' }).format(new Date(promo.validUntil))
     : null
 
   return (
@@ -108,26 +118,57 @@ export function PromotionCard({
                 -{savingsPercent}%
               </Badge>
             )}
+            {savingsPercent <= 0 && promo.discount && (
+              <Badge className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/20 text-xs font-bold ml-auto">
+                {promo.discount}
+              </Badge>
+            )}
           </div>
 
+          {promoLabel && (
+            <div className="flex items-start gap-1.5 rounded-md bg-amber-500/10 border border-amber-500/20 px-2.5 py-2">
+              <Tag className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+              <p className="text-[11px] leading-snug text-amber-800 dark:text-amber-300 line-clamp-2">
+                {promoLabel}
+              </p>
+            </div>
+          )}
+
           {/* Footer */}
-          <div className="flex items-center justify-between mt-auto pt-2 border-t">
+          <div className="flex items-center justify-between gap-2 mt-auto pt-2 border-t">
             <Badge variant="outline" className={`text-[10px] ${storeStyle.text} ${storeStyle.border}`}>
               {promo.store}
             </Badge>
-            {daysLeft !== null && (
-              <span className={`text-[10px] flex items-center gap-1 ${
-                daysLeft <= 2
-                  ? 'text-red-600 dark:text-red-400 font-semibold'
-                  : 'text-muted-foreground'
-              }`}>
-                <Clock className="h-3 w-3" />
-                {daysLeft === 0
-                  ? (lang === 'pl' ? 'Ostatni dzień!' : 'Last day!')
-                  : `${daysLeft} ${lang === 'pl' ? (daysLeft === 1 ? 'dzień' : 'dni') : (daysLeft === 1 ? 'day' : 'days')}`
-                }
-              </span>
-            )}
+            <div className="flex items-center gap-2 min-w-0">
+              {daysLeft !== null && (
+                <span
+                  title={validUntilLabel ? `${t('promotions.validUntil')} ${validUntilLabel}` : undefined}
+                  className={`text-[10px] flex items-center gap-1 whitespace-nowrap ${
+                    daysLeft <= 2
+                      ? 'text-red-600 dark:text-red-400 font-semibold'
+                      : 'text-muted-foreground'
+                  }`}
+                >
+                  <Clock className="h-3 w-3" />
+                  {daysLeft === 0
+                    ? (lang === 'pl' ? 'Dziś' : 'Today')
+                    : `${daysLeft} ${lang === 'pl' ? (daysLeft === 1 ? 'dzień' : 'dni') : (daysLeft === 1 ? 'day' : 'days')}`
+                  }
+                </span>
+              )}
+              {sourceHref && (
+                <a
+                  href={sourceHref}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 text-[10px] font-medium text-primary hover:underline whitespace-nowrap"
+                  aria-label={lang === 'pl' ? `Otwórz źródło promocji ${promo.productName}` : `Open promotion source for ${promo.productName}`}
+                >
+                  {lang === 'pl' ? 'Źródło' : 'Source'}
+                  <ExternalLink className="h-3 w-3" />
+                </a>
+              )}
+            </div>
           </div>
         </CardContent>
       </Card>

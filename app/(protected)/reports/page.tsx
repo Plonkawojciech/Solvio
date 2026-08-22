@@ -54,7 +54,7 @@ export default function ReportsPage() {
           if (!r.ok) throw new Error('Failed to load settings')
           return r.json()
         }),
-        fetch('/api/data/expenses', { signal }).then(r => {
+        fetch('/api/data/expenses?page=1&pageSize=1000&sortPreset=newest', { signal }).then(r => {
           if (!r.ok) throw new Error('Failed to load expenses')
           return r.json()
         }),

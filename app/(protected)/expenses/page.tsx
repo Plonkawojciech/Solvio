@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useTranslation } from '@/lib/i18n'
@@ -175,8 +175,8 @@ export default function ExpensesPage() {
   const [amountTo, setAmountTo] = useState<string>('')
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Sort preset (overrides column sort when set)
-  type SortPreset = 'newest' | 'oldest' | 'highest' | 'lowest'
+  // Sort preset (column sort switches this to custom)
+  type SortPreset = 'newest' | 'oldest' | 'highest' | 'lowest' | 'custom'
   const [sortPreset, setSortPreset] = useState<SortPreset>('newest')
 
   // Sort
@@ -188,6 +188,9 @@ export default function ExpensesPage() {
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1)
+  const [totalResults, setTotalResults] = useState(0)
+  const [serverTotalPages, setServerTotalPages] = useState(1)
+  const [allTags, setAllTags] = useState<string[]>([])
 
   // Add expense sheet — controlled externally for keyboard shortcut
   const [isAddExpenseOpen, setIsAddExpenseOpen] = useState(false)
@@ -224,6 +227,7 @@ export default function ExpensesPage() {
   const hasAmountRange = amountFrom !== '' || amountTo !== ''
 
   const handleSort = (field: SortField) => {
+    setSortPreset('custom')
     if (sortField === field) {
       setSortDir(d => d === 'asc' ? 'desc' : 'asc')
     } else {
@@ -255,70 +259,42 @@ export default function ExpensesPage() {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [])
 
-  // ─── All unique tags from expense data ───────────────────────────────────
-  const allTags = useMemo(() => {
-    const tagSet = new Set<string>()
-    expenses.forEach(e => {
-      if (e.tags && e.tags.length > 0) {
-        e.tags.forEach(tag => tagSet.add(tag))
-      }
-    })
-    return Array.from(tagSet).sort()
-  }, [expenses])
-
-  // ─── Derived filtered + sorted + paginated list ───────────────────────────
-  const filteredExpenses = useMemo(() => {
-    return expenses.filter((e) => {
-      const matchesSearch =
-        debouncedSearch.trim() === '' ||
-        e.title.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
-        (e.vendor ?? '').toLowerCase().includes(debouncedSearch.toLowerCase())
-      const matchesCategory =
-        filterCategoryId === 'all' || e.categoryId === filterCategoryId
-      const matchesTag =
-        filterTag === 'all' || (e.tags && e.tags.includes(filterTag))
-      const expDate = e.date ? e.date.slice(0, 10) : ''
-      const matchesFrom = dateFrom === '' || expDate >= dateFrom
-      const matchesTo = dateTo === '' || expDate <= dateTo
-      const expAmount = parseFloat(String(e.amount))
-      const matchesAmountFrom = amountFrom === '' || expAmount >= parseFloat(amountFrom)
-      const matchesAmountTo = amountTo === '' || expAmount <= parseFloat(amountTo)
-      return matchesSearch && matchesCategory && matchesTag && matchesFrom && matchesTo && matchesAmountFrom && matchesAmountTo
-    })
-  }, [expenses, debouncedSearch, filterCategoryId, filterTag, dateFrom, dateTo, amountFrom, amountTo])
-
-  const sortedExpenses = useMemo(() => {
-    return [...filteredExpenses].sort((a, b) => {
-      // Sort preset takes precedence over column sort
-      if (sortPreset === 'newest') return b.date.localeCompare(a.date)
-      if (sortPreset === 'oldest') return a.date.localeCompare(b.date)
-      if (sortPreset === 'highest') return parseFloat(String(b.amount)) - parseFloat(String(a.amount))
-      if (sortPreset === 'lowest') return parseFloat(String(a.amount)) - parseFloat(String(b.amount))
-      let cmp = 0
-      if (sortField === 'title') {
-        cmp = a.title.localeCompare(b.title)
-      } else if (sortField === 'vendor') {
-        cmp = (a.vendor ?? '').localeCompare(b.vendor ?? '')
-      } else if (sortField === 'amount') {
-        cmp = parseFloat(String(a.amount)) - parseFloat(String(b.amount))
-      } else if (sortField === 'date') {
-        cmp = a.date.localeCompare(b.date)
-      }
-      return sortDir === 'asc' ? cmp : -cmp
-    })
-  }, [filteredExpenses, sortField, sortDir, sortPreset])
-
-  const totalPages = Math.max(1, Math.ceil(sortedExpenses.length / PAGE_SIZE))
+  // ─── Server-filtered + server-sorted + paginated list ─────────────────────
+  const filteredExpenses = expenses
+  const sortedExpenses = expenses
+  const totalPages = serverTotalPages
   const safePage = Math.min(currentPage, totalPages)
-  const pageStart = (safePage - 1) * PAGE_SIZE
-  const pageEnd = pageStart + PAGE_SIZE
-  const pagedExpenses = sortedExpenses.slice(pageStart, pageEnd)
+  const pageStart = totalResults === 0 ? 0 : (safePage - 1) * PAGE_SIZE
+  const pageEnd = pageStart + expenses.length
+  const pagedExpenses = expenses
 
   // ─── CSV Export ───────────────────────────────────────────────────────────
-  const handleExportCsv = () => {
+  const buildExpensesParams = useCallback((page: number, pageSize: number) => {
+    const params = new URLSearchParams({
+      page: String(page),
+      pageSize: String(pageSize),
+      sortPreset,
+      sortField,
+      sortDir,
+    })
+    if (debouncedSearch.trim()) params.set('q', debouncedSearch.trim())
+    if (filterCategoryId !== 'all') params.set('categoryId', filterCategoryId)
+    if (filterTag !== 'all') params.set('tag', filterTag)
+    if (dateFrom) params.set('dateFrom', dateFrom)
+    if (dateTo) params.set('dateTo', dateTo)
+    if (amountFrom) params.set('amountFrom', amountFrom)
+    if (amountTo) params.set('amountTo', amountTo)
+    return params
+  }, [amountFrom, amountTo, dateFrom, dateTo, debouncedSearch, filterCategoryId, filterTag, sortDir, sortField, sortPreset])
+
+  const handleExportCsv = async () => {
+    const exportParams = buildExpensesParams(1, 1000)
+    const res = await fetch(`/api/data/expenses?${exportParams.toString()}`)
+    const data = res.ok ? await res.json() : null
+    const rowsToExport: Expense[] = data?.expenses || sortedExpenses
     const rows = [
       ['Title', 'Vendor', 'Amount', 'Currency', 'Date', 'Category'],
-      ...sortedExpenses.map(e => [
+      ...rowsToExport.map(e => [
         `"${e.title.replace(/"/g, '""')}"`,
         `"${(e.vendor ?? '').replace(/"/g, '""')}"`,
         String(parseFloat(String(e.amount)).toFixed(2)),
@@ -342,11 +318,15 @@ export default function ExpensesPage() {
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch('/api/data/expenses', { signal })
+      const params = buildExpensesParams(currentPage, PAGE_SIZE)
+      const res = await fetch(`/api/data/expenses?${params.toString()}`, { signal })
       if (!res.ok) { setError(t('errors.fetchExpenses')); setLoading(false); return undefined }
       const data = await res.json()
       const exps: Expense[] = data.expenses || []
       setExpenses(exps)
+      setTotalResults(data.pagination?.total ?? exps.length)
+      setServerTotalPages(Math.max(1, data.pagination?.totalPages ?? 1))
+      setAllTags(Array.isArray(data.availableTags) ? data.availableTags : [])
 
       const cats = data.categories || []
       const catMap = new Map<string, string>()
@@ -359,15 +339,13 @@ export default function ExpensesPage() {
 
       setLoading(false)
       return exps
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } catch (err: any) {
-      if (err.name === 'AbortError') return undefined
+    } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') return undefined
       setError(t('errors.fetchExpenses'))
       setLoading(false)
       return undefined
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [buildExpensesParams, currentPage, t])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -522,12 +500,23 @@ export default function ExpensesPage() {
 
   const saveExpense = async (id: string) => {
     if (!validateExpense()) return
+    const original = expenses.find((expense) => expense.id === id)
+    if (!original) return
     setIsSavingExpense(true)
     try {
       const res = await fetch('/api/data/expenses', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id, title: editExpenseTitle.trim(), amount: parseFloat(editExpenseAmount) }),
+        body: JSON.stringify({
+          id,
+          title: editExpenseTitle.trim(),
+          amount: parseFloat(editExpenseAmount),
+          date: original.date.slice(0, 10),
+          categoryId: original.categoryId,
+          vendor: original.vendor,
+          notes: original.notes,
+          tags: original.tags,
+        }),
       })
       if (!res.ok) throw new Error('Save failed')
       setEditingExpenseId(null)
@@ -797,7 +786,7 @@ export default function ExpensesPage() {
                 </motion.div>
               )}
             </AnimatePresence>
-            {expenses.length > 0 && (
+            {totalResults > 0 && (
               <Button
                 variant="outline"
                 size="sm"
@@ -884,7 +873,7 @@ export default function ExpensesPage() {
                 {t('expenses.retry')}
               </Button>
             </motion.div>
-          ) : expenses.length === 0 ? (
+          ) : expenses.length === 0 && !hasActiveFilters ? (
             /* ── Empty state ── */
             <motion.div
               initial={{ opacity: 0, y: 16 }}
@@ -1455,8 +1444,8 @@ export default function ExpensesPage() {
                   {totalPages > 1 && (
                     <div className="flex items-center justify-between mt-4 pt-4 border-t text-sm">
                       <span className="text-muted-foreground text-xs" suppressHydrationWarning>
-                        {t('expenses.showing')} {pageStart + 1}–{Math.min(pageEnd, sortedExpenses.length)}{' '}
-                        {t('expenses.of')} {sortedExpenses.length} {t('expenses.results')}
+                        {t('expenses.showing')} {pageStart + 1}–{Math.min(pageEnd, totalResults)}{' '}
+                        {t('expenses.of')} {totalResults} {t('expenses.results')}
                       </span>
                       <div className="flex items-center gap-1.5">
                         <Button

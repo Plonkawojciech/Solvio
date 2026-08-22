@@ -56,6 +56,14 @@ final class ToastCenter: ObservableObject {
         show(Toast(kind: .info, title: title, description: nil, undo: UndoAction(label: undoLabel, handler: undo)))
     }
 
+    /// Show a toast with a tappable action button (e.g. "Zobacz" → navigate).
+    /// Reuses the inline-button rendering used by undo toasts; the button runs
+    /// `perform` then dismisses. Default kind `.info`; pass `.success` for a
+    /// positive nudge like the post-scan savings insight.
+    func actionable(_ title: String, description: String? = nil, kind: Kind = .info, actionLabel: String, perform: @escaping () -> Void) {
+        show(Toast(kind: kind, title: title, description: description, undo: UndoAction(label: actionLabel, handler: perform)))
+    }
+
     private func show(_ toast: Toast) {
         current = toast
         // Sync haptic feedback per toast kind — body should feel what the

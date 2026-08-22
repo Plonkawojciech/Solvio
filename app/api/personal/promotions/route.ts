@@ -8,6 +8,7 @@ import { PRICE_COMPARE_STORES } from '@/lib/stores'
 import { readAnyIntel, readIntel, writeIntel } from '@/lib/store-intel'
 import crypto from 'crypto'
 import { z } from 'zod'
+import { withApiTiming } from '@/lib/api-timing'
 
 // SECURITY (round 2 / A2): bound the request. Lang/currency/force are the
 // only inputs the handler reads — strict mode rejects extras silently.
@@ -15,6 +16,7 @@ const PromotionsRequestSchema = z.object({
   lang: z.enum(['pl', 'en']).optional().default('pl'),
   currency: z.string().length(3).optional().default('PLN'),
   force: z.boolean().optional().default(false),
+  cacheOnly: z.boolean().optional().default(false),
 })
 
 const STORES = PRICE_COMPARE_STORES
@@ -39,7 +41,7 @@ const STORES = PRICE_COMPARE_STORES
 const PROMO_TTL_S = 24 * 60 * 60
 const PROMO_REVALIDATE_S = 6 * 60 * 60
 
-export async function POST(request: Request) {
+async function postPromotions(request: Request) {
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
@@ -58,7 +60,7 @@ export async function POST(request: Request) {
       { status: 400 },
     )
   }
-  const { lang, currency, force } = parsedReq.data
+  const { lang, currency, force, cacheOnly } = parsedReq.data
   const isPolish = lang === 'pl'
 
   // PROMPT_VERSION bumps invalidate every cached row across the fleet.
@@ -121,6 +123,21 @@ export async function POST(request: Request) {
           'X-Cache': 'GLOBAL',
           'X-Fetched-At': globalCached.fetchedAt.toISOString(),
           'Cache-Control': 'private, max-age=300',
+        },
+      })
+    }
+
+    if (cacheOnly) {
+      return NextResponse.json({
+        promotions: [],
+        personalizedDeals: [],
+        weeklySummary: null,
+        totalPotentialSavings: 0,
+        cacheState: 'empty',
+      }, {
+        headers: {
+          'X-Cache': 'EMPTY',
+          'Cache-Control': 'private, max-age=60',
         },
       })
     }
@@ -468,3 +485,5 @@ ONLY reason for empty array: web_search completely failed and you have no leafle
     return NextResponse.json({ error: 'Failed to fetch promotions' }, { status: 500 })
   }
 }
+
+export const POST = withApiTiming('api.personal.promotions.POST', postPromotions)

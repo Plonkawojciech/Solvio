@@ -20,6 +20,8 @@ struct SettingsView: View {
     @State private var showSignOutConfirm = false
     @State private var pendingDeleteRuleVendor: String?
     @State private var deletingRuleVendor: String?
+    @State private var showDeleteAccountConfirm = false
+    @State private var isDeletingAccount = false
 
     var body: some View {
         ScrollView {
@@ -186,6 +188,14 @@ struct SettingsView: View {
         } message: {
             Text(locale.t("settings.signOutMessage"))
         }
+        .alert(locale.t("settings.deleteAccountConfirmTitle"), isPresented: $showDeleteAccountConfirm) {
+            Button(locale.t("common.cancel"), role: .cancel) {}
+            Button(locale.t("settings.deleteAccount"), role: .destructive) {
+                deleteAccount()
+            }
+        } message: {
+            Text(locale.t("settings.deleteAccountConfirmMsg"))
+        }
         .alert(
             locale.t("settings.ruleDeleteTitle"),
             isPresented: Binding(
@@ -237,6 +247,26 @@ struct SettingsView: View {
                 toast.success(locale.t("settings.exportSuccess"), description: filename)
             } catch {
                 toast.error(locale.t("settings.exportFailed"), description: error.localizedDescription)
+            }
+        }
+    }
+
+    private func deleteAccount() {
+        guard !isDeletingAccount else { return }
+        isDeletingAccount = true
+        Task {
+            do {
+                try await AccountRepo.deleteAccount()
+                Haptics.success()
+                // The server already cleared the session cookie as part of
+                // the deletion. Tear down local state + caches and route the
+                // now data-less client back to login. logout() also fires
+                // DELETE /session — a harmless no-op now the cookie is gone.
+                toast.success(locale.t("settings.deleteAccountDone"))
+                await session.logout()
+            } catch {
+                isDeletingAccount = false
+                toast.error(locale.t("settings.deleteAccountFailed"), description: error.localizedDescription)
             }
         }
     }
@@ -786,6 +816,32 @@ struct SettingsView: View {
                     .frame(maxWidth: .infinity, minHeight: 48)
             }
             .buttonStyle(NBDestructiveButtonStyle())
+
+            // Account deletion — required by App Store Review Guideline
+            // 5.1.1(v): users who can create an account must be able to
+            // delete it (and all server-side data) from inside the app.
+            Text(locale.t("settings.deleteAccountDesc"))
+                .font(AppFont.caption)
+                .foregroundColor(Theme.mutedForeground)
+                .padding(.top, Theme.Spacing.sm)
+
+            Button {
+                Haptics.warning()
+                showDeleteAccountConfirm = true
+            } label: {
+                HStack(spacing: 8) {
+                    if isDeletingAccount {
+                        ProgressView().tint(Theme.destructive)
+                        Text(locale.t("settings.deletingAccount"))
+                    } else {
+                        Image(systemName: "trash")
+                        Text(locale.t("settings.deleteAccount"))
+                    }
+                }
+                .frame(maxWidth: .infinity, minHeight: 48)
+            }
+            .buttonStyle(NBDestructiveButtonStyle())
+            .disabled(isDeletingAccount)
         }
         .padding(.top, Theme.Spacing.sm)
     }

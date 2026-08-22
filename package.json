@@ -6,7 +6,9 @@
     "start": "next start",
     "lint": "eslint .",
     "db:push": "drizzle-kit push",
+    "db:apply-manual": "node scripts/apply-manual-migrations.mjs",
     "db:studio": "drizzle-kit studio",
+    "release:check": "npm run lint && npm test && npm run build",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage"

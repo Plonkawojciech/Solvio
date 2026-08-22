@@ -849,6 +849,9 @@ struct ShoppingAdvisorResponse: Decodable {
     let productsAnalyzed: Int?
     let currency: String?
     let storesKnown: Int?
+    /// 'live_web_search' = grounded in real-time web search; 'estimate'
+    /// = LLM guess. Optional so legacy cached responses still decode.
+    let dataSource: String?
     let error: String?
 }
 

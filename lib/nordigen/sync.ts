@@ -236,6 +236,7 @@ export async function syncTransactions(
       .returning({ id: bankTransactions.id })
 
     stats.newTransactions++
+    existingIds.add(txnId)
 
     // 8. Auto-create expense for debit (outgoing) transactions
     if (isDebit && insertedTxn) {

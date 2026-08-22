@@ -6,6 +6,7 @@ import { db } from '@/lib/db'
 import { receipts } from '@/lib/db/schema'
 import { and, eq } from 'drizzle-orm'
 import { freshOrRefresh } from '@/lib/store-intel'
+import { withApiTiming } from '@/lib/api-timing'
 import crypto from 'crypto'
 
 /// `/api/personal/receipt-analyze` — given a receipt the user already
@@ -85,7 +86,7 @@ const VALID_PROMO_TYPES = new Set([
 ])
 const VALID_VERDICTS = new Set(['fair', 'overpaid', 'underpaid', 'no_data'])
 
-export async function POST(request: Request) {
+async function postReceiptAnalyze(request: Request) {
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
@@ -142,13 +143,24 @@ export async function POST(request: Request) {
     .update(`${body.receiptId}|${lang}|${contentSig}`)
     .digest('hex').slice(0, 48)
 
-  const entry = await freshOrRefresh<ReceiptAnalyzeResponse>(
-    'analyze',
-    key,
-    HARD_EXPIRES_SECONDS,
-    () => fetchAnalysis(receipt, items, isPolish),
-    { revalidateAfterSeconds: FRESH_SECONDS },
-  )
+  let entry: Awaited<ReturnType<typeof freshOrRefresh<ReceiptAnalyzeResponse>>>
+  try {
+    entry = await freshOrRefresh<ReceiptAnalyzeResponse>(
+      'analyze',
+      key,
+      HARD_EXPIRES_SECONDS,
+      () => fetchAnalysis(receipt, items, isPolish),
+      { revalidateAfterSeconds: FRESH_SECONDS },
+    )
+  } catch (err) {
+    console.error('[receipt-analyze POST]', err)
+    return NextResponse.json({
+      error: 'analysis_failed',
+      message: isPolish
+        ? 'Nie udało się teraz przeanalizować paragonu. Spróbuj ponownie za chwilę.'
+        : 'Could not analyze this receipt right now. Try again shortly.',
+    }, { status: 502 })
+  }
 
   const payload = {
     ...entry.data,
@@ -164,6 +176,8 @@ export async function POST(request: Request) {
     },
   })
 }
+
+export const POST = withApiTiming('api.personal.receipt-analyze.POST', postReceiptAnalyze)
 
 async function fetchAnalysis(
   receipt: typeof receipts.$inferSelect,

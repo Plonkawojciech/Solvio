@@ -1,6 +1,11 @@
 import type { NextConfig } from "next";
+import path from "node:path";
 
 const nextConfig: NextConfig = {
+  // Keep Next's file tracing scoped to this app. Without this, Next sees
+  // the parent /Users/wojciechplonka/package-lock.json and guesses the
+  // workspace root incorrectly during dev/build.
+  outputFileTracingRoot: path.resolve(process.cwd()),
   // Remove X-Powered-By header
   poweredByHeader: false,
   // Catch React issues early

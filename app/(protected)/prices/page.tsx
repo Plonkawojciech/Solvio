@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Input } from '@/components/ui/input'
 import Link from 'next/link'
 import {
   Tag,
@@ -25,6 +26,10 @@ import {
   Zap,
   Receipt,
   Info,
+  Search,
+  ExternalLink,
+  Database,
+  Globe2,
 } from 'lucide-react'
 
 /* ─── Types ─── */
@@ -33,6 +38,8 @@ interface StorePrice {
   price: number
   promotion?: string
   validUntil?: string
+  sourceUrl?: string | null
+  source?: string | null
 }
 
 interface PriceComparison {
@@ -57,6 +64,39 @@ interface PriceData {
   tip: string
   productsAnalyzed: number
   isEstimated?: boolean
+  dataSource?: 'live_web_search' | 'estimate' | 'empty'
+  fetchedAt?: string
+  cacheState?: string
+  sources?: string[]
+}
+
+interface ProductSearchResult {
+  store: string
+  productName: string
+  price: number
+  pricePerUnit?: string | null
+  isPromo?: boolean
+  promoDetails?: string | null
+  availability?: string | null
+  sourceUrl?: string | null
+}
+
+interface ProductSearchData {
+  query: string
+  product: string
+  category: string | null
+  results: ProductSearchResult[]
+  cheapestStore: string | null
+  cheapestPrice: number | null
+  averagePrice: number | null
+  priceRange: { min?: number; max?: number } | null
+  alternatives: Array<{ name: string; avgPrice: number; whyBetter: string }>
+  tip: string | null
+  currency: string
+  isEstimated?: boolean
+  dataSource?: 'live_web_search' | 'estimate'
+  fetchedAt?: string
+  cacheState?: string
 }
 
 // Safe number helper — handles strings, null, undefined from AI responses
@@ -318,6 +358,17 @@ function ComparisonCard({ item, currency, index, isPolish }: {
                     {n(sp.price) === n(item.bestPrice) && (
                       <CheckCircle2 className="h-3 w-3 text-emerald-500 shrink-0" />
                     )}
+                    {(sp.sourceUrl || sp.source) && /^https?:\/\//i.test(sp.sourceUrl || sp.source || '') && (
+                      <a
+                        href={sp.sourceUrl || sp.source || '#'}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-primary hover:underline shrink-0"
+                        aria-label={isPolish ? `Otwórz źródło ceny ${sp.store}` : `Open price source for ${sp.store}`}
+                      >
+                        <ExternalLink className="h-3 w-3" />
+                      </a>
+                    )}
                   </div>
                 ))}
               </div>
@@ -425,6 +476,166 @@ function SummaryBanner({ data, currency, isPolish }: { data: PriceData; currency
   )
 }
 
+function DataFreshnessStrip({ data, isPolish }: { data: PriceData | ProductSearchData; isPolish: boolean }) {
+  const isLive = data.dataSource === 'live_web_search'
+  const fetchedAt = data.fetchedAt ? new Date(data.fetchedAt) : null
+  return (
+    <div className={`flex flex-wrap items-center gap-2 rounded-lg border px-3 py-2 text-xs ${
+      isLive
+        ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400'
+        : 'border-amber-500/20 bg-amber-500/10 text-amber-700 dark:text-amber-400'
+    }`}>
+      {isLive ? <Globe2 className="h-3.5 w-3.5" /> : <Info className="h-3.5 w-3.5" />}
+      <span className="font-medium">
+        {isLive
+          ? (isPolish ? 'Dane sprawdzone w sieci' : 'Live web data')
+          : (isPolish ? 'Estymata AI' : 'AI estimate')}
+      </span>
+      {data.cacheState && (
+        <Badge variant="outline" className="h-5 border-current/20 bg-background/40 px-1.5 text-[10px] uppercase">
+          <Database className="mr-1 h-3 w-3" />
+          {data.cacheState}
+        </Badge>
+      )}
+      {fetchedAt && (
+        <span className="text-current/80">
+          {isPolish ? 'od' : 'as of'} {fetchedAt.toLocaleTimeString(isPolish ? 'pl-PL' : 'en-US', { hour: '2-digit', minute: '2-digit' })}
+        </span>
+      )}
+    </div>
+  )
+}
+
+function ProductSearchPanel({
+  query,
+  setQuery,
+  loading,
+  error,
+  data,
+  currency,
+  isPolish,
+  onSearch,
+}: {
+  query: string
+  setQuery: (value: string) => void
+  loading: boolean
+  error: string | null
+  data: ProductSearchData | null
+  currency: string
+  isPolish: boolean
+  onSearch: (force?: boolean) => void
+}) {
+  const sortedResults = [...(data?.results || [])].sort((a, b) => n(a.price) - n(b.price))
+  return (
+    <Card className="border-primary/20">
+      <CardHeader className="pb-3">
+        <div className="flex flex-col gap-1">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Search className="h-5 w-5 text-primary" />
+            {isPolish ? 'Szybka wyszukiwarka produktu' : 'Quick product search'}
+          </CardTitle>
+          <CardDescription>
+            {isPolish
+              ? 'Sprawdź cenę konkretnego produktu bez czekania na historię paragonów.'
+              : 'Check a product price without waiting for receipt history.'}
+          </CardDescription>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <form
+          className="flex flex-col gap-2 sm:flex-row"
+          onSubmit={(event) => {
+            event.preventDefault()
+            onSearch(false)
+          }}
+        >
+          <Input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder={isPolish ? 'np. mleko 2%, masło 200g, kawa ziarnista' : 'e.g. milk 2%, butter 200g, coffee beans'}
+            className="h-10"
+          />
+          <div className="flex gap-2">
+            <Button type="submit" disabled={loading || query.trim().length < 2} className="min-w-28">
+              {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4" />}
+              {isPolish ? 'Szukaj' : 'Search'}
+            </Button>
+            {data && (
+              <Button type="button" variant="outline" disabled={loading} onClick={() => onSearch(true)}>
+                <RefreshCcw className="h-4 w-4" />
+              </Button>
+            )}
+          </div>
+        </form>
+
+        {error && (
+          <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+            <AlertCircle className="h-3.5 w-3.5" />
+            <span>{error}</span>
+          </div>
+        )}
+
+        {data && (
+          <div className="space-y-3">
+            <DataFreshnessStrip data={data} isPolish={isPolish} />
+            <div className="grid gap-3 md:grid-cols-[240px_1fr]">
+              <div className="rounded-lg border border-border/60 bg-muted/30 p-3">
+                <p className="text-xs text-muted-foreground">{isPolish ? 'Najtaniej teraz' : 'Cheapest now'}</p>
+                <p className="mt-1 text-lg font-bold">
+                  {data.cheapestPrice != null ? `${n(data.cheapestPrice).toFixed(2)} ${currency}` : '—'}
+                </p>
+                <div className="mt-1 flex items-center gap-2">
+                  {data.cheapestStore && <StoreBadge store={data.cheapestStore} />}
+                  {data.category && <Badge variant="secondary" className="text-[10px]">{data.category}</Badge>}
+                </div>
+                {data.averagePrice != null && (
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    {isPolish ? 'Średnio' : 'Average'} {n(data.averagePrice).toFixed(2)} {currency}
+                  </p>
+                )}
+              </div>
+
+              <div className="rounded-lg border border-border/60 overflow-hidden">
+                {sortedResults.slice(0, 6).map((result, index) => (
+                  <div key={`${result.store}-${result.productName}-${index}`} className="flex items-start gap-3 border-b border-border/50 px-3 py-2.5 last:border-b-0">
+                    <StoreBadge store={result.store} />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">{result.productName}</p>
+                      <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+                        {result.pricePerUnit && <span>{result.pricePerUnit}</span>}
+                        {result.availability && <span>{result.availability}</span>}
+                        {result.isPromo && <Badge className="h-5 bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/20 text-[10px]">{isPolish ? 'Promocja' : 'Promo'}</Badge>}
+                      </div>
+                      {result.promoDetails && (
+                        <p className="mt-1 line-clamp-2 text-[11px] text-amber-700 dark:text-amber-400">{result.promoDetails}</p>
+                      )}
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <span className="text-sm font-semibold tabular-nums">{n(result.price).toFixed(2)} {currency}</span>
+                      {result.sourceUrl && /^https?:\/\//i.test(result.sourceUrl) && (
+                        <a href={result.sourceUrl} target="_blank" rel="noreferrer" className="text-primary hover:underline" aria-label={isPolish ? `Otwórz źródło ${result.store}` : `Open source ${result.store}`}>
+                          <ExternalLink className="h-3.5 w-3.5" />
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {data.tip && (
+              <div className="flex items-start gap-2 rounded-lg bg-primary/5 border border-primary/10 px-3 py-2">
+                <Lightbulb className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
+                <p className="text-xs leading-relaxed text-muted-foreground">{data.tip}</p>
+              </div>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
 /* ─── Page ─── */
 export default function PricesPage() {
   const { t, lang, mounted } = useTranslation()
@@ -436,6 +647,10 @@ export default function PricesPage() {
   const [currency, setCurrency] = useState('PLN')
   const [lastChecked, setLastChecked] = useState<Date | null>(null)
   const [noReceipts, setNoReceipts] = useState(false)
+  const [productQuery, setProductQuery] = useState('')
+  const [productLoading, setProductLoading] = useState(false)
+  const [productError, setProductError] = useState<string | null>(null)
+  const [productData, setProductData] = useState<ProductSearchData | null>(null)
 
   // Fetch currency from settings
   useEffect(() => {
@@ -469,13 +684,56 @@ export default function PricesPage() {
         return
       }
       setData(json)
-      setLastChecked(new Date())
+      setLastChecked(json?.fetchedAt ? new Date(json.fetchedAt) : new Date())
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
       setLoading(false)
     }
   }, [lang, currency])
+
+  const searchProduct = useCallback(async (force = false) => {
+    const q = productQuery.trim()
+    if (q.length < 2) return
+    setProductLoading(true)
+    setProductError(null)
+    try {
+      const res = await fetch('/api/personal/product-search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: q, lang, currency, force }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(json?.message || json?.error || `HTTP ${res.status}`)
+      setProductData(json)
+    } catch (err) {
+      setProductError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setProductLoading(false)
+    }
+  }, [productQuery, lang, currency])
+
+  useEffect(() => {
+    if (!mounted) return
+    const controller = new AbortController()
+    fetch('/api/prices/compare', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lang, currency, cacheOnly: true }),
+      signal: controller.signal,
+    })
+      .then(async (res) => (res.ok ? res.json() : null))
+      .then((json) => {
+        if (!json || json.cacheState === 'empty' || !Array.isArray(json.comparisons) || json.comparisons.length === 0) return
+        setData(json)
+        setLastChecked(json?.fetchedAt ? new Date(json.fetchedAt) : new Date())
+      })
+      .catch((err) => {
+        if (err instanceof Error && err.name === 'AbortError') return
+        console.error('Failed to fetch cached price comparison:', err)
+      })
+    return () => controller.abort()
+  }, [mounted, lang, currency])
 
   if (!mounted) return null
 
@@ -525,6 +783,19 @@ export default function PricesPage() {
             )}
           </Button>
         </div>
+      </motion.div>
+
+      <motion.div custom={1} initial="hidden" animate="show" variants={fadeUp}>
+        <ProductSearchPanel
+          query={productQuery}
+          setQuery={setProductQuery}
+          loading={productLoading}
+          error={productError}
+          data={productData}
+          currency={currency}
+          isPolish={isPolish}
+          onSearch={searchProduct}
+        />
       </motion.div>
 
       <AnimatePresence mode="wait">
@@ -690,6 +961,8 @@ export default function PricesPage() {
           animate={{ opacity: 1 }}
           className="flex flex-col gap-6"
         >
+          <DataFreshnessStrip data={data} isPolish={isPolish} />
+
           {/* Summary banner */}
           <SummaryBanner data={data} currency={currency} isPolish={isPolish} />
 

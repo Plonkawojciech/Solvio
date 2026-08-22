@@ -5,7 +5,10 @@ import { eq, gte, lte, and, inArray, sql } from 'drizzle-orm'
 import { buildCsvBuffer, buildPdfBuffer, buildDocxBuffer } from '@/lib/reports/builders'
 import JSZip from 'jszip'
 import { rateLimitPersistent } from '@/lib/rate-limit'
+import { withApiTiming } from '@/lib/api-timing'
 import { z } from 'zod'
+
+const MAX_REPORT_ROWS = 5_000
 
 const CustomReportSchema = z.object({
   dateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
@@ -35,7 +38,7 @@ const CustomReportSchema = z.object({
   }
 })
 
-export async function POST(request: Request) {
+async function postCustomReport(request: Request) {
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
@@ -91,7 +94,13 @@ export async function POST(request: Request) {
     }
   }
 
-  const expensesData = await db.select().from(expenses).where(and(...conditions))
+  const expensesData = await db.select().from(expenses).where(and(...conditions)).limit(MAX_REPORT_ROWS + 1)
+  if (expensesData.length > MAX_REPORT_ROWS) {
+    return NextResponse.json(
+      { error: 'Report too large. Narrow the filters and try again.', limit: MAX_REPORT_ROWS },
+      { status: 413 },
+    )
+  }
 
   const rows = expensesData.map((e) => ({
     id: e.id,
@@ -140,6 +149,7 @@ export async function POST(request: Request) {
         headers: {
           'Content-Type': contentType,
           'Content-Disposition': `attachment; filename="custom-report-${dateStr}.${ext}"`,
+          'Cache-Control': 'private, no-store',
         },
       })
     }
@@ -168,6 +178,7 @@ export async function POST(request: Request) {
       headers: {
         'Content-Type': 'application/zip',
         'Content-Disposition': `attachment; filename="custom-report-${dateStr}.zip"`,
+        'Cache-Control': 'private, no-store',
       },
     })
   } catch (err) {
@@ -179,3 +190,5 @@ export async function POST(request: Request) {
     )
   }
 }
+
+export const POST = withApiTiming('api.reports.custom.POST', postCustomReport)

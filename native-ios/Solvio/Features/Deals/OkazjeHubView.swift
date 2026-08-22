@@ -87,6 +87,14 @@ struct OkazjeHubView: View {
             shoppingVM.bind(locale: locale, store: store)
             analyzeVM.bind(locale: locale)
         }
+        // Deep-link from the post-scan savings toast: open the analysis
+        // section and run it for the just-scanned receipt, then consume.
+        .onChange(of: router.pendingAnalyzeReceiptId) { receiptId in
+            guard let receiptId else { return }
+            analyzeExpanded = true
+            analyzeVM.run(receiptId: receiptId, lang: locale.language.rawValue)
+            router.pendingAnalyzeReceiptId = nil
+        }
         .refreshable {
             Haptics.impact(.light)
             await store.awaitPromotions(force: true)

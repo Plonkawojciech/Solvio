@@ -136,10 +136,23 @@ export async function POST(request: Request) {
       center: { lat, lng },
     })
   } catch (err) {
+    // Overpass/OSM is a free community endpoint — it times out or 5xx's
+    // under load. That's not a Solvio failure, so don't surface a 500
+    // (which iOS renders as a scary error card). Degrade gracefully to an
+    // empty result the UI shows as a normal "no stores nearby" state.
     console.error('[nearby-stores POST]', err)
-    return NextResponse.json(
-      { error: isPolish ? 'Nie udało się pobrać sklepów w okolicy' : 'Failed to fetch nearby stores' },
-      { status: 500 },
-    )
+    return NextResponse.json({
+      stores: [],
+      total: 0,
+      knownStoresCount: 0,
+      nearbyBrands: [],
+      allKnownBrands: [...(ALL_POLISH_STORES as readonly string[])],
+      searchRadius: radius,
+      center: { lat, lng },
+      degraded: true,
+      message: isPolish
+        ? 'Mapa sklepów jest chwilowo niedostępna. Spróbuj ponownie za chwilę.'
+        : 'The store map is temporarily unavailable. Please try again shortly.',
+    })
   }
 }

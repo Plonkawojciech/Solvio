@@ -75,6 +75,18 @@ final class ScanQueueManager: ObservableObject {
 
     @Published private(set) var items: [ScanQueueItem] = []
 
+    /// Set after a SINGLE-receipt scan when the post-scan price analysis finds
+    /// real savings. `MainTabView` observes this and raises a tappable toast
+    /// ("you could've saved X — see where"). Stays nil for batch scans (no
+    /// per-item spam) and when savings are negligible.
+    @Published var savingsInsight: SavingsInsight?
+
+    struct SavingsInsight: Equatable {
+        let receiptId: String
+        let amount: Double
+        let currency: String
+    }
+
     /// Max parallel uploads. Tuned for typical mobile bandwidth — too many
     /// concurrent OCR calls bottleneck on the server side anyway.
     private let maxConcurrent = 2
@@ -212,15 +224,10 @@ final class ScanQueueManager: ObservableObject {
             )
             // Consider OCR work done; either succeeded or failed parsing.
             if let success = response.firstSuccess, let receiptId = success.receiptId {
-                if let nidx = items.firstIndex(where: { $0.id == id }) {
-                    items[nidx].status = .saved
-                    items[nidx].receiptId = receiptId
-                    items[nidx].vendor = success.data?.merchant
-                    items[nidx].total = success.data?.total
-                    items[nidx].currency = success.data?.currency
-                }
-                // New receipt → invalidate caches so dashboards refresh.
-                store.didMutateReceipts()
+                applySaved(id: id, receiptId: receiptId,
+                           vendor: success.data?.merchant,
+                           total: success.data?.total,
+                           currency: success.data?.currency)
             } else {
                 let msg = response.results.first?.error
                     ?? response.results.first?.message
@@ -278,14 +285,10 @@ final class ScanQueueManager: ObservableObject {
                 filename: original.filename
             )
             if let success = response.firstSuccess, let receiptId = success.receiptId {
-                if let nidx = items.firstIndex(where: { $0.id == id }) {
-                    items[nidx].status = .saved
-                    items[nidx].receiptId = receiptId
-                    items[nidx].vendor = success.data?.merchant
-                    items[nidx].total = success.data?.total
-                    items[nidx].currency = success.data?.currency
-                }
-                store.didMutateReceipts()
+                applySaved(id: id, receiptId: receiptId,
+                           vendor: success.data?.merchant,
+                           total: success.data?.total,
+                           currency: success.data?.currency)
             } else {
                 let msg = response.results.first?.error
                     ?? response.results.first?.message
@@ -312,6 +315,45 @@ final class ScanQueueManager: ObservableObject {
             #endif
             if let nidx = items.firstIndex(where: { $0.id == id }) {
                 items[nidx].status = .failed(localized("errors.unknown"))
+            }
+        }
+    }
+
+    /// Centralised "receipt saved" handling for both the primary and
+    /// aggressive-retry upload paths: flip status, stash metadata, refresh
+    /// caches, and — for a focused single-receipt scan only — kick off the
+    /// post-scan savings analysis.
+    private func applySaved(id: UUID, receiptId: String, vendor: String?, total: Double?, currency: String?) {
+        if let nidx = items.firstIndex(where: { $0.id == id }) {
+            items[nidx].status = .saved
+            items[nidx].receiptId = receiptId
+            items[nidx].vendor = vendor
+            items[nidx].total = total
+            items[nidx].currency = currency
+        }
+        // New receipt → invalidate caches so dashboards refresh.
+        store.didMutateReceipts()
+        // Only nudge on a focused single scan — a batch upload shouldn't fire
+        // N analyses (AI cost + toast spam). `items.count == 1` ⇒ one-off scan.
+        if items.count == 1 {
+            maybeAnalyzeSavings(receiptId: receiptId)
+        }
+    }
+
+    /// Fire-and-forget post-scan price analysis. On meaningful savings, sets
+    /// `savingsInsight` for the UI to surface. Best-effort: any error
+    /// (rate-limit, no leaflet data, offline) silently yields no insight.
+    private func maybeAnalyzeSavings(receiptId: String) {
+        let lang = locale?.language.rawValue ?? "pl"
+        Task { [weak self] in
+            do {
+                let res = try await ReceiptAnalyzeRepo.analyze(receiptId: receiptId, lang: lang)
+                guard let self else { return }
+                if res.potentialSavings >= 1.0 {
+                    self.savingsInsight = SavingsInsight(receiptId: receiptId, amount: res.potentialSavings, currency: res.currency)
+                }
+            } catch {
+                // Silent — no insight on failure.
             }
         }
     }

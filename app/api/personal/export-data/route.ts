@@ -4,6 +4,7 @@ import { db } from '@/lib/db'
 import { expenses, receipts, categories, categoryBudgets, userSettings, monthlyBudgets } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import { rateLimitPersistent } from '@/lib/rate-limit'
+import { withApiTiming } from '@/lib/api-timing'
 
 /**
  * GET /api/personal/export-data
@@ -23,7 +24,7 @@ import { rateLimitPersistent } from '@/lib/rate-limit'
  * Output is still a single valid JSON object — `JSON.parse(blob)` works
  * exactly as before.
  */
-export async function GET() {
+async function getExportData() {
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
@@ -143,3 +144,5 @@ export async function GET() {
     },
   })
 }
+
+export const GET = withApiTiming('api.personal.export-data.GET', getExportData)

@@ -30,6 +30,13 @@ struct SavingsHubView: View {
                 // "More → Cele" to see them. Tapping a goal pushes onto
                 // the savings nav stack via `.more(.goals)`.
                 goalsPreviewSection
+                // Challenges had no UI entry after the drawer was slimmed to
+                // Settings + Logout — surface the active ones here (where the
+                // product rules want them) and give ChallengesView a way in.
+                challengesPreviewSection
+                // Promotions/leaflets live in the dedicated Deals tab now;
+                // this teaser keeps Savings linked to them without duplicating.
+                okazjeTeaserCard
                 // Tab picker is intentionally hidden — Products / Stores
                 // / Deals moved to the new bottom-nav `Deals` tab. The
                 // planner is the only thing this hub renders now.
@@ -44,6 +51,7 @@ struct SavingsHubView: View {
         .refreshable { await vm.loadAll() }
         .task {
             vm.bind(store: store, locale: locale)
+            store.ensureChallenges()
             if vm.needsInitialLoad { await vm.loadAll() }
         }
         // Watch for store-side updates so the planner reflects fresh
@@ -373,6 +381,152 @@ struct SavingsHubView: View {
     // goals right inside Savings hub. Without this section the user had to
     // navigate through "More → Cele" to see goals, which made the hub feel
     // empty and hid the deadline / quick-amount UX changes shipped today.
+
+    // MARK: - Challenges preview
+    //
+    // Active challenges (max 3) + an entry into `ChallengesView` via
+    // `.more(.challenges)`. This is the only UI path to challenges after the
+    // hamburger drawer was slimmed to Settings + Logout.
+    private var challengesPreviewSection: some View {
+        let active = store.challenges.filter { $0.isCompleted != true }
+        let preview = Array(active.prefix(3))
+
+        return VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+            HStack {
+                Text(locale.t("savings.challengesTitle"))
+                    .font(AppFont.sectionTitle)
+                    .foregroundColor(Theme.foreground)
+                Spacer()
+                Button {
+                    Haptics.selection()
+                    router.push(.more(.challenges))
+                } label: {
+                    HStack(spacing: 4) {
+                        Text(locale.t("savings.viewAllChallenges"))
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 11, weight: .bold))
+                    }
+                    .font(AppFont.caption)
+                    .foregroundColor(Theme.foreground)
+                }
+                .buttonStyle(.plain)
+            }
+
+            if preview.isEmpty {
+                Button {
+                    Haptics.impact(.light)
+                    router.push(.more(.challenges))
+                } label: {
+                    HStack(spacing: Theme.Spacing.sm) {
+                        Image(systemName: "flag.checkered")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundColor(Theme.foreground)
+                            .frame(width: 36, height: 36)
+                            .background(Theme.muted)
+                            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                                    .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
+                            )
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(locale.t("savings.challengesEmptyTitle"))
+                                .font(AppFont.bodyMedium)
+                                .foregroundColor(Theme.foreground)
+                            Text(locale.t("savings.challengesEmptySub"))
+                                .font(AppFont.caption)
+                                .foregroundColor(Theme.mutedForeground)
+                        }
+                        Spacer()
+                        Image(systemName: "plus")
+                            .foregroundColor(Theme.mutedForeground)
+                    }
+                    .padding(Theme.Spacing.sm)
+                    .nbCard(radius: Theme.Radius.md, shadow: Theme.Shadow.sm)
+                }
+                .buttonStyle(.plain)
+            } else {
+                VStack(spacing: Theme.Spacing.xs) {
+                    ForEach(preview) { c in
+                        Button {
+                            Haptics.selection()
+                            router.push(.more(.challenges))
+                        } label: {
+                            challengePreviewRow(c)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+    }
+
+    private func challengePreviewRow(_ c: Challenge) -> some View {
+        let target = c.targetAmount?.double ?? 0
+        let current = c.currentProgress?.double ?? 0
+        let pct = target > 0 ? min(1, max(0, current / target)) : 0
+        return HStack(alignment: .center, spacing: Theme.Spacing.sm) {
+            Text(c.emoji ?? "💪")
+                .font(.system(size: 22))
+                .frame(width: 40, height: 40)
+                .background(Theme.muted)
+                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+            Text(c.name)
+                .font(AppFont.bodyMedium)
+                .foregroundColor(Theme.foreground)
+                .lineLimit(1)
+            Spacer()
+            if target > 0 {
+                Text("\(Int(pct * 100))%")
+                    .font(AppFont.mono(12))
+                    .foregroundColor(Theme.mutedForeground)
+            }
+            Image(systemName: "chevron.right")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundColor(Theme.mutedForeground)
+        }
+        .padding(Theme.Spacing.sm)
+        .nbCard(radius: Theme.Radius.md, shadow: Theme.Shadow.sm)
+    }
+
+    // MARK: - Deals teaser
+    //
+    // Promotions/leaflets moved to the dedicated Deals tab; this keeps Savings
+    // connected to them (product rule: savings surfaces deals) by deep-linking
+    // to that tab instead of duplicating the feature here.
+    private var okazjeTeaserCard: some View {
+        Button {
+            Haptics.selection()
+            router.selectedTab = .deals
+        } label: {
+            HStack(spacing: Theme.Spacing.sm) {
+                Image(systemName: "tag.fill")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(Theme.foreground)
+                    .frame(width: 36, height: 36)
+                    .background(Theme.muted)
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                            .stroke(Theme.border, lineWidth: Theme.Border.widthThin)
+                    )
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(locale.t("savings.dealsTeaserTitle"))
+                        .font(AppFont.bodyMedium)
+                        .foregroundColor(Theme.foreground)
+                    Text(locale.t("savings.dealsTeaserSub"))
+                        .font(AppFont.caption)
+                        .foregroundColor(Theme.mutedForeground)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundColor(Theme.mutedForeground)
+            }
+            .padding(Theme.Spacing.sm)
+            .nbCard(radius: Theme.Radius.md, shadow: Theme.Shadow.sm)
+        }
+        .buttonStyle(.plain)
+    }
 
     @ViewBuilder
     private var goalsPreviewSection: some View {

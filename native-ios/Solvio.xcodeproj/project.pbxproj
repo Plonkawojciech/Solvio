@@ -16,6 +16,7 @@
 		11676B1135A110F68E098C92 /* GoalsListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC6D04CB361A10B6F393BB80 /* GoalsListView.swift */; };
 		161749A0D446DCFA96FC8EC1 /* SolvioApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01EF34F7339AED6F0B3DD142 /* SolvioApp.swift */; };
 		172C21721BB0EB38FB037439 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A05E58B94F312BA721C737F /* DashboardView.swift */; };
+		1A9A537ACC4CC2D25F1E23C8 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B1EE5CE9AE2025F9FB1AEEBF /* Foundation.framework */; };
 		233274E70355C77E36B98A6D /* AppLocale.swift in Sources */ = {isa = PBXBuildFile; fileRef = 522E348991F119E01E636E4D /* AppLocale.swift */; };
 		235142DC0DBCEBC68B32A7DB /* LoyaltyView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6089528A3B00A79450D580F0 /* LoyaltyView.swift */; };
 		26C8F9BA9D9AFF91F5C8B609 /* MainTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66AF7168704B96615E13CBCB /* MainTabView.swift */; };
@@ -39,6 +40,7 @@
 		7E68AA1AE7F89FBDDF7F2FDF /* GroupSettlementsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC0470D24BB455FF9AA1B5BB /* GroupSettlementsView.swift */; };
 		8087BE57D18EE0A636D5E7C4 /* ChallengesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C1362BF1AEED1FA67CC9C17 /* ChallengesView.swift */; };
 		87397B3CB39CDB818AB2A150 /* GoalDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F0FDB003863824906C9F869 /* GoalDetailView.swift */; };
+		8A507FDEAFF0E6468FF49213 /* L10n+EN.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9845A94B89B233C9381E42C5 /* L10n+EN.swift */; };
 		8FC6E54123142282F3D2ED72 /* SavingsHubView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45A1D2015C56725BB81B9A5D /* SavingsHubView.swift */; };
 		982A388BEF589B25312938FF /* ReceiptDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1735161308315370C985F091 /* ReceiptDetailView.swift */; };
 		9D12AF8701967902F6BEB36E /* GroupsListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08A54866E1F4E98E6838C6AB /* GroupsListView.swift */; };
@@ -48,7 +50,11 @@
 		A2320653A66EC7B4A006289F /* AppRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 942D50E6D12D96BB506456DB /* AppRouter.swift */; };
 		A2E5237C8208BD47B5B3DBE7 /* ExpenseDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45CD193F6DE0F55C943947B8 /* ExpenseDetailView.swift */; };
 		A73E6234AB2755FE2B623A50 /* VirtualReceiptCreateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3EBB5860E4BFCECC30C0B4EF /* VirtualReceiptCreateView.swift */; };
+		A8BB415BDE214F921E6D7DFB /* FmtTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 337A89AEC4B2111BB2B76C14 /* FmtTests.swift */; };
 		ADDFAA39012F65182CEA3335 /* AppConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = BADCF30C6EE9DE05E2B12928 /* AppConfig.swift */; };
+		B0EB3ABB893369703EDF6BA4 /* MoneyStringTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 168B71E985821979A8BDD935 /* MoneyStringTests.swift */; };
+		B11A635C87D7E7E1945C31D8 /* ApiErrorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A027668D0599007854C4C73 /* ApiErrorTests.swift */; };
+		B20A436DF6C89F996007A0D1 /* FXRatesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FBB8E8C05AF0B6FAEFBAFB8B /* FXRatesTests.swift */; };
 		BB0D40DD18824510CC83A62E /* Haptics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E64076544EF5CE90D9DA407 /* Haptics.swift */; };
 		C5060E3F4F5EBED2A2C9FBE3 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = DBFF44586AEDDA2844628D83 /* Localizable.strings */; };
 		CBE95E9B4761D4413D569D4E /* ApiClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 655947DC980C807CA7A2CD49 /* ApiClient.swift */; };
@@ -67,13 +73,25 @@
 		FC524F477AA35A2F19C457F7 /* NearbyStoresView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D71D0F9505AC728F0312EA02 /* NearbyStoresView.swift */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		AB5288E892FB5F122BC0F7BD /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 6C9432961B455BA8D6944F98 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 55F4E63BFDB71EF7FE64EC1B;
+			remoteInfo = Solvio;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
 		01EF34F7339AED6F0B3DD142 /* SolvioApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SolvioApp.swift; sourceTree = "<group>"; };
 		027850E12E3403B5AFDB95B4 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		04FFD068F762EB9D6A026B3B /* DailyStackedChartCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DailyStackedChartCard.swift; sourceTree = "<group>"; };
 		08A54866E1F4E98E6838C6AB /* GroupsListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupsListView.swift; sourceTree = "<group>"; };
 		0F0FDB003863824906C9F869 /* GoalDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoalDetailView.swift; sourceTree = "<group>"; };
+		168B71E985821979A8BDD935 /* MoneyStringTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MoneyStringTests.swift; sourceTree = "<group>"; };
 		1735161308315370C985F091 /* ReceiptDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReceiptDetailView.swift; sourceTree = "<group>"; };
+		1A027668D0599007854C4C73 /* ApiErrorTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ApiErrorTests.swift; sourceTree = "<group>"; };
 		1DE1E9E2CA1F78B679AFA117 /* AppDataStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDataStore.swift; sourceTree = "<group>"; };
 		1EAC82DB72FC502D7F96FAAE /* ToastCenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToastCenter.swift; sourceTree = "<group>"; };
 		226851A463B366A968CE6C3F /* Formatters.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Formatters.swift; sourceTree = "<group>"; };
@@ -81,6 +99,7 @@
 		2966F14F7CB3867D2DFE1A3D /* GroupDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupDetailView.swift; sourceTree = "<group>"; };
 		2C3CE025F942AE589751DD5B /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		3307232C0092760A40D85C77 /* AppTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppTheme.swift; sourceTree = "<group>"; };
+		337A89AEC4B2111BB2B76C14 /* FmtTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FmtTests.swift; sourceTree = "<group>"; };
 		3494EB16FE8E3D7075771177 /* ExpensesListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExpensesListView.swift; sourceTree = "<group>"; };
 		3EBB5860E4BFCECC30C0B4EF /* VirtualReceiptCreateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VirtualReceiptCreateView.swift; sourceTree = "<group>"; };
 		3EF2600287A0365590AE70F8 /* ReceiptsListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReceiptsListView.swift; sourceTree = "<group>"; };
@@ -115,11 +134,14 @@
 		942D50E6D12D96BB506456DB /* AppRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppRouter.swift; sourceTree = "<group>"; };
 		95573F9A5AC55A1217D064C4 /* WelcomeOnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeOnboardingView.swift; sourceTree = "<group>"; };
 		978F13DE515AB79BBF895C08 /* QuickSplitStandaloneSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickSplitStandaloneSheet.swift; sourceTree = "<group>"; };
+		9845A94B89B233C9381E42C5 /* L10n+EN.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = "L10n+EN.swift"; sourceTree = "<group>"; };
 		A582703EBAD4799BDC976AF0 /* NBComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NBComponents.swift; sourceTree = "<group>"; };
 		A8980F8F7E7B062AAB3411B0 /* OkazjeHubView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OkazjeHubView.swift; sourceTree = "<group>"; };
 		AC0470D24BB455FF9AA1B5BB /* GroupSettlementsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupSettlementsView.swift; sourceTree = "<group>"; };
+		B1EE5CE9AE2025F9FB1AEEBF /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
 		B8727C6B896D2A937FEBF0FC /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		BADCF30C6EE9DE05E2B12928 /* AppConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfig.swift; sourceTree = "<group>"; };
+		C0CF93B7E316713F1D38AEEC /* SolvioTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SolvioTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		C411B54CEA4BCBA197088095 /* ProductSearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProductSearchView.swift; sourceTree = "<group>"; };
 		D71D0F9505AC728F0312EA02 /* NearbyStoresView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NearbyStoresView.swift; sourceTree = "<group>"; };
 		DB114981ED6A4FF3085B2E61 /* VendorLogo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VendorLogo.swift; sourceTree = "<group>"; };
@@ -129,9 +151,29 @@
 		EC6D04CB361A10B6F393BB80 /* GoalsListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoalsListView.swift; sourceTree = "<group>"; };
 		F85A91C707E84F48DCEF38D2 /* PricesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PricesView.swift; sourceTree = "<group>"; };
 		F97FF74B94CD0518150E1087 /* L10n.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = L10n.swift; sourceTree = "<group>"; };
+		FBB8E8C05AF0B6FAEFBAFB8B /* FXRatesTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FXRatesTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
+/* Begin PBXFrameworksBuildPhase section */
+		9ACC55C43BECFBEC6EB86014 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				1A9A537ACC4CC2D25F1E23C8 /* Foundation.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
 /* Begin PBXGroup section */
+		04618BFFE30F3526689833A3 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				AD005F3AEAD75485E8B097D8 /* iOS */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 		1D52E76A9998937120C3F974 /* Goals */ = {
 			isa = PBXGroup;
 			children = (
@@ -213,6 +255,18 @@
 			path = Solvio;
 			sourceTree = "<group>";
 		};
+		7E6005695798124A50F2D12D /* SolvioTests */ = {
+			isa = PBXGroup;
+			children = (
+				1A027668D0599007854C4C73 /* ApiErrorTests.swift */,
+				FBB8E8C05AF0B6FAEFBAFB8B /* FXRatesTests.swift */,
+				337A89AEC4B2111BB2B76C14 /* FmtTests.swift */,
+				168B71E985821979A8BDD935 /* MoneyStringTests.swift */,
+			);
+			name = SolvioTests;
+			path = SolvioTests;
+			sourceTree = "<group>";
+		};
 		884812F94EF8E922BD6AC617 /* Models */ = {
 			isa = PBXGroup;
 			children = (
@@ -268,6 +322,7 @@
 				F97FF74B94CD0518150E1087 /* L10n.swift */,
 				4CC5F0C4642F9C8B2107CCD0 /* ScanQueueManager.swift */,
 				1EAC82DB72FC502D7F96FAAE /* ToastCenter.swift */,
+				9845A94B89B233C9381E42C5 /* L10n+EN.swift */,
 			);
 			path = Core;
 			sourceTree = "<group>";
@@ -277,6 +332,8 @@
 			children = (
 				79140DD133864AF15EC193B5 /* Solvio */,
 				BB3FA1030605C688E0623A7E /* Products */,
+				04618BFFE30F3526689833A3 /* Frameworks */,
+				7E6005695798124A50F2D12D /* SolvioTests */,
 			);
 			sourceTree = "<group>";
 		};
@@ -297,6 +354,14 @@
 				654282E8C172B560969E4549 /* PrivacyInfo.xcprivacy */,
 			);
 			path = Resources;
+			sourceTree = "<group>";
+		};
+		AD005F3AEAD75485E8B097D8 /* iOS */ = {
+			isa = PBXGroup;
+			children = (
+				B1EE5CE9AE2025F9FB1AEEBF /* Foundation.framework */,
+			);
+			name = iOS;
 			sourceTree = "<group>";
 		};
 		B3DB2680AB5755B721C08062 /* Session */ = {
@@ -320,6 +385,7 @@
 			isa = PBXGroup;
 			children = (
 				500BF274EE1CA029AE5F6057 /* Solvio.app */,
+				C0CF93B7E316713F1D38AEEC /* SolvioTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -440,6 +506,24 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		44B6B4F478716BB3104A8F68 /* SolvioTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 7DEAC75E577FC14EE8B636AA /* Build configuration list for PBXNativeTarget "SolvioTests" */;
+			buildPhases = (
+				A6642CD04EF2EBDA274CF0C1 /* Sources */,
+				9ACC55C43BECFBEC6EB86014 /* Frameworks */,
+				76DD7980445ECE3874E9E17E /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				110CB3F1F1944CC94206ED89 /* PBXTargetDependency */,
+			);
+			name = SolvioTests;
+			productName = SolvioTests;
+			productReference = C0CF93B7E316713F1D38AEEC /* SolvioTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 		55F4E63BFDB71EF7FE64EC1B /* Solvio */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 21ED50E8A4B2CAA00EE65EDB /* Build configuration list for PBXNativeTarget "Solvio" */;
@@ -452,8 +536,6 @@
 			dependencies = (
 			);
 			name = Solvio;
-			packageProductDependencies = (
-			);
 			productName = Solvio;
 			productReference = 500BF274EE1CA029AE5F6057 /* Solvio.app */;
 			productType = "com.apple.product-type.application";
@@ -489,11 +571,19 @@
 			projectRoot = "";
 			targets = (
 				55F4E63BFDB71EF7FE64EC1B /* Solvio */,
+				44B6B4F478716BB3104A8F68 /* SolvioTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		76DD7980445ECE3874E9E17E /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		E2DA9916E02DB28CB1A878A6 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -566,10 +656,31 @@
 				E92C66E46B23655D5E286239 /* VendorLogo.swift in Sources */,
 				A73E6234AB2755FE2B623A50 /* VirtualReceiptCreateView.swift in Sources */,
 				EFD4BFAB70F7130B4AF8BF04 /* WelcomeOnboardingView.swift in Sources */,
+				8A507FDEAFF0E6468FF49213 /* L10n+EN.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A6642CD04EF2EBDA274CF0C1 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B11A635C87D7E7E1945C31D8 /* ApiErrorTests.swift in Sources */,
+				B20A436DF6C89F996007A0D1 /* FXRatesTests.swift in Sources */,
+				A8BB415BDE214F921E6D7DFB /* FmtTests.swift in Sources */,
+				B0EB3ABB893369703EDF6BA4 /* MoneyStringTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		110CB3F1F1944CC94206ED89 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = Solvio;
+			target = 55F4E63BFDB71EF7FE64EC1B /* Solvio */;
+			targetProxy = AB5288E892FB5F122BC0F7BD /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin PBXVariantGroup section */
 		00FEEDA26D964191A9D0A201 /* InfoPlist.strings */ = {
@@ -749,6 +860,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				ENABLE_TESTABILITY = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Solvio/Resources/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
@@ -759,6 +871,41 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.programo.solvio;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		D84C69C28D824A835FA1858E /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGNING_ALLOWED = NO;
+				DEVELOPMENT_TEAM = H7DS3ZG67S;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.programo.solvio.tests;
+				SDKROOT = iphoneos;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.9;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Solvio.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Solvio";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		E1A3F7D41908560AD572A019 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGNING_ALLOWED = NO;
+				DEVELOPMENT_TEAM = H7DS3ZG67S;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.programo.solvio.tests;
+				SDKROOT = iphoneos;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.9;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Solvio.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Solvio";
 			};
 			name = Debug;
 		};
@@ -773,6 +920,15 @@
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
+		};
+		7DEAC75E577FC14EE8B636AA /* Build configuration list for PBXNativeTarget "SolvioTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D84C69C28D824A835FA1858E /* Release */,
+				E1A3F7D41908560AD572A019 /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
 		};
 		82457B57850A77148DF080D8 /* Build configuration list for PBXProject "Solvio" */ = {
 			isa = XCConfigurationList;

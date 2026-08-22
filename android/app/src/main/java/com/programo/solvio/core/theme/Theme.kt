@@ -1,6 +1,5 @@
 package com.programo.solvio.core.theme
 
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -96,7 +95,7 @@ fun SolvioComposeTheme(
             primary = palette.foreground,
             onPrimary = palette.background,
             error = palette.destructive,
-            onError = palette.background,
+            onError = Color.White,
         )
     } else {
         lightColorScheme(
@@ -107,7 +106,7 @@ fun SolvioComposeTheme(
             primary = palette.foreground,
             onPrimary = palette.background,
             error = palette.destructive,
-            onError = palette.surface,
+            onError = Color.White,
         )
     }
 
@@ -122,16 +121,29 @@ fun SolvioComposeTheme(
 
 // MARK: - Animation helpers — mirror iOS Animation.nbSpring/nbGentle
 
+/// SwiftUI's `spring(response:dampingFraction:)` and Compose's
+/// `spring(stiffness:dampingRatio:)` are the same critically-damped model
+/// expressed differently. SwiftUI "response" is the natural period in
+/// seconds; Compose "stiffness" is the angular-frequency-squared. So the
+/// faithful mapping is `stiffness = (2π / response)²`, keeping the damping
+/// fraction identical. This reproduces iOS spring TIMING, not the coarse
+/// Spring.Stiffness* presets.
+///
+/// response 0.35 → (2π / 0.35)² ≈ 322.0
+/// response 0.50 → (2π / 0.50)² ≈ 157.9
+private fun stiffnessForResponse(response: Float): Float {
+    val omega = (2.0 * Math.PI / response).toFloat()
+    return omega * omega
+}
+
 /// Solvio default spring — snappy but not jarring (response 0.35, damping 0.85).
-/// Compose `spring()` doesn't take "response/damping" pair the way SwiftUI does;
-/// we approximate by mapping response → stiffness and damping → damping ratio.
 val NbSpring = spring<Float>(
     dampingRatio = 0.85f,
-    stiffness = Spring.StiffnessMedium,
+    stiffness = stiffnessForResponse(0.35f),
 )
 val NbGentle = spring<Float>(
     dampingRatio = 0.9f,
-    stiffness = Spring.StiffnessLow,
+    stiffness = stiffnessForResponse(0.5f),
 )
 
 // MARK: - Modifiers (nbCard, nbShadow, nbBorder)
@@ -176,3 +188,50 @@ fun Modifier.nbCard(
     .clip(RoundedCornerShape(radius))
     .background(fill ?: palette.surface)
     .border(SolvioTheme.Border.width, border ?: palette.border, RoundedCornerShape(radius))
+
+/// Glassmorphism variant — faithful Compose port of iOS `nbGlassCard`.
+/// iOS: `.ultraThinMaterial` background + softened 2px border (foreground
+/// @15%) + a blurred, low-opacity drop shadow (foreground @8%, radius 12,
+/// y 4). Opt-in alternative to [nbCard] for surfaces that should float
+/// above the background without the hard neobrutalist offset (sheets,
+/// floating panels, stats overlays).
+///
+/// Compose has no first-class `.ultraThinMaterial`, so we approximate the
+/// frosted look with a translucent surface scrim (surface @ ~70%) plus the
+/// same hairline border + soft drop shadow. A real blur can be layered by
+/// the caller via `Modifier.blur` on the content behind this surface.
+fun Modifier.nbGlassCard(
+    palette: Palette,
+    radius: Dp = SolvioTheme.Radius.lg,
+): Modifier = this
+    .nbSoftShadow(
+        color = palette.foreground.copy(alpha = 0.08f),
+        offsetY = 4.dp,
+        cornerRadius = radius,
+    )
+    .clip(RoundedCornerShape(radius))
+    .background(palette.surface.copy(alpha = 0.70f))
+    .border(
+        SolvioTheme.Border.width,
+        palette.foreground.copy(alpha = 0.15f),
+        RoundedCornerShape(radius),
+    )
+
+/// Soft, low-opacity drop shadow (blur approximation via a slightly-larger
+/// translucent rounded rect drawn behind). Unlike [nbShadow] this is offset
+/// only on Y and tinted faintly — used by [nbGlassCard] to lift floating
+/// surfaces gently rather than the hard neobrutalist offset.
+private fun Modifier.nbSoftShadow(
+    color: Color,
+    offsetY: Dp,
+    cornerRadius: Dp,
+): Modifier = this.drawBehind {
+    val yPx = offsetY.toPx()
+    val radiusPx = cornerRadius.toPx()
+    drawRoundRect(
+        color = color,
+        topLeft = Offset(0f, yPx),
+        size = Size(size.width, size.height),
+        cornerRadius = androidx.compose.ui.geometry.CornerRadius(radiusPx, radiusPx),
+    )
+}

@@ -12,6 +12,7 @@ import { bankAccounts } from '@/lib/db/schema'
 import { eq, and } from 'drizzle-orm'
 import { syncTransactions } from '@/lib/nordigen/sync'
 import { rateLimitPersistent } from '@/lib/rate-limit'
+import { withApiTiming } from '@/lib/api-timing'
 import { z } from 'zod'
 
 // SECURITY (round 2 / A2): bound the bank-sync body. accountId is a UUID
@@ -20,7 +21,7 @@ const BankSyncSchema = z.object({
   accountId: z.string().uuid('accountId must be a valid UUID'),
 }).strict()
 
-export async function POST(request: NextRequest) {
+async function postBankSync(request: NextRequest) {
   const { userId } = await auth()
   if (!userId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -84,3 +85,5 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Operation failed' }, { status: 500 })
   }
 }
+
+export const POST = withApiTiming('api.bank.sync.POST', postBankSync)

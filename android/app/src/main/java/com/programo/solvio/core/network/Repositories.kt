@@ -132,7 +132,8 @@ object CategoriesRepo {
 data class GroupsListResponse(val groups: List<Group> = emptyList())
 
 object GroupsRepo {
-    suspend fun list(): List<Group> = api.get("/api/groups", GroupsListResponse.serializer()).groups
+    // GET /api/groups returns a PLAIN JSON array (not wrapped) — mirror iOS GroupsRepo.list().
+    suspend fun list(): List<Group> = api.get("/api/groups", ListSerializer(Group.serializer()))
     suspend fun detail(id: String): Group = api.get("/api/groups/$id", Group.serializer())
     suspend fun create(body: GroupCreate): Group =
         api.post("/api/groups", body, GroupCreate.serializer(), Group.serializer())
@@ -256,11 +257,14 @@ object FinancialHealthRepo {
 
 // MARK: - Promotions
 
+@Serializable
+data class PromotionsBody(val lang: String? = null, val currency: String? = null, val force: Boolean? = null)
+
 object PromotionsRepo {
-    suspend fun fetch(force: Boolean? = null): PromotionsResponse {
-        val q = if (force == true) mapOf("force" to "true") else emptyMap()
-        return api.get("/api/personal/promotions", PromotionsResponse.serializer(), q)
-    }
+    // POST (not GET) — the route only exports POST; mirror iOS PromotionsRepo.fetch
+    // which posts { lang, currency }. Backend defaults lang=pl, currency=PLN.
+    suspend fun fetch(lang: String? = null, currency: String? = null, force: Boolean? = null): PromotionsResponse =
+        api.post("/api/personal/promotions", PromotionsBody(lang, currency, force), PromotionsBody.serializer(), PromotionsResponse.serializer())
 }
 
 // MARK: - Shopping list optimizer

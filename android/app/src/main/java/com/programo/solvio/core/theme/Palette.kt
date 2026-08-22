@@ -33,12 +33,12 @@ data class Palette(
     companion object {
         /// Cream + black neobrutalism — matches PWA `app/globals.css`.
         val Light = Palette(
-            background = Color(0xFFF5F0EB),
+            background = Color(0xFFF3F0EC),
             foreground = Color(0xFF1A1A1A),
             surface = Color(0xFFFFFFFF),
-            muted = Color(0xFFE9E5E1),
+            muted = Color(0xFFE9E6E2),
             mutedForeground = Color(0xFF595959),
-            accent = Color(0xFFE2DDD9),
+            accent = Color(0xFFE2DED9),
             destructive = Color(0xFFEF4444),
             success = Color(0xFF10B981),
             warning = Color(0xFFF59E0B),
@@ -48,7 +48,7 @@ data class Palette(
             chart3 = Color(0xFF737373),
             chart4 = Color(0xFF999999),
             chart5 = Color(0xFFBFBFBF),
-            chart6 = Color(0xFFDED9D4),
+            chart6 = Color(0xFFDED9D3),
             border = Color(0xFF1A1A1A),
             shadow = Color(0xFF1A1A1A),
         )

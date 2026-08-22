@@ -11,8 +11,9 @@ import { db } from '@/lib/db'
 import { bankConnections, bankAccounts } from '@/lib/db/schema'
 import { eq, and, desc } from 'drizzle-orm'
 import { getNordigenClient, NordigenApiError } from '@/lib/nordigen/client'
+import { withApiTiming } from '@/lib/api-timing'
 
-export async function GET() {
+async function getBankCallback() {
   const { userId } = await auth()
   const appUrl = process.env.NEXT_PUBLIC_APP_URL
     ?? (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000')
@@ -179,3 +180,5 @@ export async function GET() {
     return NextResponse.redirect(new URL(`/bank?error=${errorMsg}`, appUrl))
   }
 }
+
+export const GET = withApiTiming('api.bank.callback.GET', getBankCallback)
