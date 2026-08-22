@@ -5,6 +5,7 @@ import { db } from '@/lib/db'
 import { groups, groupMembers, expenseSplits } from '@/lib/db/schema'
 import { eq, inArray, or } from 'drizzle-orm'
 import { z } from 'zod'
+import { dbBatch } from '@/lib/db/batch'
 
 const GroupMemberInputSchema = z.object({
   displayName: z.string().max(100).optional(),
@@ -100,10 +101,10 @@ export async function GET() {
 
     // Round-4 perf: 2 parallel selects → 1 pipelined `db.batch` HTTP RTT
     // (was already 2 queries instead of 2N — now also 1 RTT instead of 2).
-    const [allMembers, allSplits] = await db.batch([
-      db.select().from(groupMembers).where(inArray(groupMembers.groupId, groupIds)),
-      db.select().from(expenseSplits).where(inArray(expenseSplits.groupId, groupIds)),
-    ])
+    const [allMembers, allSplits] = await dbBatch((x) => [
+      x.select().from(groupMembers).where(inArray(groupMembers.groupId, groupIds)),
+      x.select().from(expenseSplits).where(inArray(expenseSplits.groupId, groupIds)),
+    ], { atomic: false })
 
     // Index by groupId for O(1) lookup
     const membersByGroup = new Map<string, typeof allMembers>()
@@ -214,10 +215,12 @@ export async function POST(req: NextRequest) {
       })
     }
 
-    // Build the batch. We always include the group insert; the member
-    // insert is only added when there's at least one row (no empty
-    // INSERTs).
-    const groupInsert = db.insert(groups).values({
+    // Insert grupy budujemy w środku callbacka `dbBatch`, a nie z globalnego
+    // `db`: na driverze pg statement musi powstać z obiektu transakcji,
+    // inaczej poleciałby poza nią i przy błędzie drugiego INSERT-a zostałaby
+    // osierocona grupa bez członków. Member-insert dokładamy tylko wtedy, gdy
+    // są wiersze (żadnych pustych INSERT-ów).
+    const insertGroup = (x: typeof db) => x.insert(groups).values({
       id: newGroupId,
       name: data.name,
       description: data.description ?? null,
@@ -230,15 +233,14 @@ export async function POST(req: NextRequest) {
     }).returning()
 
     if (memberRows.length > 0) {
-      // Drizzle/neon-http `db.batch([...])` requires a tuple of statements
-      // whose return types it can infer. We discard the inserted-member
-      // rows and re-fetch via the SELECT below for the response shape.
-      await db.batch([
-        groupInsert,
-        db.insert(groupMembers).values(memberRows),
+      // Wstawione wiersze członków odrzucamy — kształt odpowiedzi i tak
+      // pochodzi z SELECT-a poniżej.
+      await dbBatch((x) => [
+        insertGroup(x),
+        x.insert(groupMembers).values(memberRows),
       ])
     } else {
-      await db.batch([groupInsert])
+      await dbBatch((x) => [insertGroup(x)])
     }
 
     // Re-read what we just wrote, scoped by the freshly-minted id.

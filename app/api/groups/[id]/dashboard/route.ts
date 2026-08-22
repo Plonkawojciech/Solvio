@@ -8,6 +8,7 @@ import {
   expenseSplits,
 } from '@/lib/db/schema'
 import { eq, and } from 'drizzle-orm'
+import { dbBatch } from '@/lib/db/batch'
 
 export async function GET(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { userId } = await auth()
@@ -36,8 +37,8 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
     // each one a separate Neon-HTTP POST. db.batch packs all three into one
     // pipelined request inside a read-only transaction snapshot. Biggest
     // single win on the trip-dashboard endpoint — was 3 RTTs, now 1.
-    const [members, groupReceipts, splits] = await db.batch([
-      db.select().from(groupMembers).where(eq(groupMembers.groupId, id)),
+    const [members, groupReceipts, splits] = await dbBatch((x) => [
+      x.select().from(groupMembers).where(eq(groupMembers.groupId, id)),
       db
         .select({
           id: receipts.id,
@@ -55,7 +56,7 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
         .select()
         .from(expenseSplits)
         .where(eq(expenseSplits.groupId, id)),
-    ])
+    ], { atomic: false })
 
     // Compute total group spend from receipts
     let totalGroupSpend = 0

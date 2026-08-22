@@ -5,6 +5,7 @@ import { expenseSplits, paymentRequests, groupMembers } from '@/lib/db/schema'
 import { eq, and } from 'drizzle-orm'
 import { recordAudit } from '@/lib/audit-log'
 import { z } from 'zod'
+import { dbBatch } from '@/lib/db/batch'
 
 // SECURITY FIX: Zod schema bounds memberId so an attacker cannot send a
 // payload that crashes JSON.parse / consumes excessive memory before we
@@ -51,11 +52,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ sp
     // between them landed the system in an inconsistent state — split
     // marked settled but the payment request still 'pending'. `db.batch`
     // pipelines them into one HTTP RTT and rolls back together on error.
-    await db.batch([
-      db.update(expenseSplits)
+    await dbBatch((x) => [
+      x.update(expenseSplits)
         .set({ splits: updatedSplits })
         .where(and(eq(expenseSplits.id, splitId), eq(expenseSplits.groupId, split.groupId))),
-      db.update(paymentRequests)
+      x.update(paymentRequests)
         .set({ status: 'settled', settledAt: new Date() })
         .where(and(eq(paymentRequests.splitId, splitId), eq(paymentRequests.toMemberId, memberId))),
     ])

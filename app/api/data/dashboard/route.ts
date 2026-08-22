@@ -1,7 +1,8 @@
 import { auth, getHubAuth } from '@/lib/auth-compat'
 import { NextResponse } from 'next/server'
-import { db, expenses, receipts, categories, userSettings, categoryBudgets, monthlyBudgets, incomes } from '@/lib/db'
+import { expenses, receipts, categories, userSettings, categoryBudgets, monthlyBudgets, incomes } from '@/lib/db'
 import { eq, gte, lte, and, sql } from 'drizzle-orm'
+import { dbBatch } from '@/lib/db/batch'
 
 /**
  * Per-instance dashboard memoization.
@@ -130,15 +131,14 @@ export async function GET(request: Request) {
       ? and(eq(expenses.userId, userId), gte(expenses.date, prevMonthStartStr), lte(expenses.date, prevMonthEndStr))
       : and(eq(expenses.userId, userId), gte(expenses.date, prev30Str), lte(expenses.date, sinceStr))
 
-    // Promise.all, nie db.batch: `.batch()` istnieje tylko w driverze Neon HTTP,
-    // a od self-hosta apka jedzie na zwykłym Postgresie (node-postgres), gdzie
-    // ta metoda nie istnieje. Pool `pg` i tak trzyma otwarte połączenia, więc
-    // narzut round-tripów jest tu nieporównywalnie mniejszy niż w Neon HTTP.
-    const [cats, settings, budgets, exps, recsCount, prevCatTotals, monthBudget, incomeRows] = await Promise.all([
-      db.select().from(categories).where(eq(categories.userId, userId)),
-      db.select().from(userSettings).where(eq(userSettings.userId, userId)).limit(1),
-      db.select().from(categoryBudgets).where(eq(categoryBudgets.userId, userId)),
-      db.select({
+    // Osiem odczytów jednym wsadem. `dbBatch` sam wybiera mechanizm: na Neonie
+    // jeden pipelined POST zamiast ośmiu, na zwykłym Postgresie równoległe
+    // zapytania z puli (`.batch()` w driverze pg nie istnieje).
+    const [cats, settings, budgets, exps, recsCount, prevCatTotals, monthBudget, incomeRows] = await dbBatch((x) => [
+      x.select().from(categories).where(eq(categories.userId, userId)),
+      x.select().from(userSettings).where(eq(userSettings.userId, userId)).limit(1),
+      x.select().from(categoryBudgets).where(eq(categoryBudgets.userId, userId)),
+      x.select({
         id: expenses.id,
         title: expenses.title,
         amount: expenses.amount,
@@ -152,10 +152,10 @@ export async function GET(request: Request) {
       }).from(expenses)
         .leftJoin(receipts, eq(expenses.receiptId, receipts.id))
         .where(expenseFilter),
-      db.select({ count: sql<number>`count(*)::int` }).from(receipts)
+      x.select({ count: sql<number>`count(*)::int` }).from(receipts)
         .where(receiptFilter),
       // Server-side aggregation: per-category totals with exchange rate conversion
-      db.select({
+      x.select({
         categoryId: expenses.categoryId,
         total: sql<string>`COALESCE(SUM(
           CASE WHEN ${receipts.exchangeRate} IS NOT NULL
@@ -167,16 +167,16 @@ export async function GET(request: Request) {
         .leftJoin(receipts, eq(expenses.receiptId, receipts.id))
         .where(prevRangeFilter)
         .groupBy(expenses.categoryId),
-      db.select({ totalIncome: monthlyBudgets.totalIncome, savingsTarget: monthlyBudgets.savingsTarget })
+      x.select({ totalIncome: monthlyBudgets.totalIncome, savingsTarget: monthlyBudgets.savingsTarget })
         .from(monthlyBudgets)
         .where(and(eq(monthlyBudgets.userId, userId), eq(monthlyBudgets.month, currentMonth)))
         .limit(1),
       // Przychody (tabela incomes) — fallback dla monthIncome, gdy brak
       // wpisu w monthly_budgets; normalizowane do kwoty miesięcznej
-      db.select({ amount: incomes.amount, period: incomes.period })
+      x.select({ amount: incomes.amount, period: incomes.period })
         .from(incomes)
         .where(and(eq(incomes.userId, userId), eq(incomes.isActive, true))),
-    ])
+    ], { atomic: false })
 
     const prevByCategory: Record<string, number> = {}
     let prevTotal = 0

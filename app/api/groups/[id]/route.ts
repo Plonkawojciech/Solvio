@@ -5,6 +5,7 @@ import { groups, groupMembers, expenseSplits } from '@/lib/db/schema'
 import { eq, and } from 'drizzle-orm'
 import { recordAudit } from '@/lib/audit-log'
 import { z } from 'zod'
+import { dbBatch } from '@/lib/db/batch'
 
 function normalizeMember(m: { id: string; displayName: string; email?: string | null; [key: string]: unknown }) {
   return { ...m, name: m.displayName }
@@ -64,10 +65,10 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
     // Round-4 perf: 2 parallel selects → 1 pipelined `db.batch` HTTP RTT.
     // Members + splits are independent reads inside one transaction snapshot —
     // halving HTTP overhead on every group detail load.
-    const [members, splits] = await db.batch([
-      db.select().from(groupMembers).where(eq(groupMembers.groupId, id)),
-      db.select().from(expenseSplits).where(eq(expenseSplits.groupId, id)),
-    ])
+    const [members, splits] = await dbBatch((x) => [
+      x.select().from(groupMembers).where(eq(groupMembers.groupId, id)),
+      x.select().from(expenseSplits).where(eq(expenseSplits.groupId, id)),
+    ], { atomic: false })
     const memberIds = members.map((m) => m.id)
     const totalBalance = computeTotalBalance(memberIds, splits)
     return NextResponse.json({ ...group, members: members.map(normalizeMember), splits, totalBalance })

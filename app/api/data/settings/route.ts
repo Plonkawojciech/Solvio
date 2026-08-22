@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server'
 import { db, categories, userSettings, categoryBudgets } from '@/lib/db'
 import { eq, and } from 'drizzle-orm'
 import { z } from 'zod'
+import { dbBatch } from '@/lib/db/batch'
 
 const UserSettingsDataSchema = z.object({
   currency: z.string().length(3).optional(),
@@ -39,11 +40,11 @@ export async function GET() {
   try {
     // Round-4 perf: 3 parallel selects → 1 pipelined `db.batch` HTTP RTT.
     // Same data, same shape, ~3× fewer round-trips on Settings page load.
-    const [cats, settings, budgets] = await db.batch([
-      db.select().from(categories).where(eq(categories.userId, userId)),
-      db.select().from(userSettings).where(eq(userSettings.userId, userId)).limit(1),
-      db.select().from(categoryBudgets).where(eq(categoryBudgets.userId, userId)),
-    ])
+    const [cats, settings, budgets] = await dbBatch((x) => [
+      x.select().from(categories).where(eq(categories.userId, userId)),
+      x.select().from(userSettings).where(eq(userSettings.userId, userId)).limit(1),
+      x.select().from(categoryBudgets).where(eq(categoryBudgets.userId, userId)),
+    ], { atomic: false })
 
     return NextResponse.json(
       { categories: cats, settings: settings[0] || null, budgets },

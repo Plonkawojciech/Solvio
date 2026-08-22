@@ -7,6 +7,7 @@ import { eq, and } from 'drizzle-orm';
 import { put } from '@vercel/blob';
 import { getAIClient } from '@/lib/ai-client';
 import { normalizeStoreName, findStoreInText } from '@/lib/stores';
+import { dbBatch } from '@/lib/db/batch'
 
 export const runtime = 'nodejs';
 export const maxDuration = 60; // Vercel Hobby plan limit
@@ -1423,8 +1424,8 @@ export async function POST(req: NextRequest) {
         // prevents partial-failure states where the receipt is marked
         // "processed" but the expense row never lands (or vice versa, where a
         // re-scan deletes the prior expense but the new one fails to insert).
-        await db.batch([
-          db.update(receipts)
+        await dbBatch((x) => [
+          x.update(receipts)
             .set({
               status: 'processed',
               vendor: finalMerchant,
@@ -1445,13 +1446,13 @@ export async function POST(req: NextRequest) {
               rawOcr: { promotions, totalSaved } as any,
             })
             .where(and(eq(receipts.id, currentReceiptId), eq(receipts.userId, userId))),
-          db.delete(expenses).where(
+          x.delete(expenses).where(
             and(
               eq(expenses.receiptId, currentReceiptId),
               eq(expenses.userId, userId)
             )
           ),
-          db.insert(expenses).values({
+          x.insert(expenses).values({
             userId,
             receiptId: currentReceiptId,
             title: `${finalMerchant}`,

@@ -1,5 +1,6 @@
 import { db, categories, userSettings } from './index'
 import { eq } from 'drizzle-orm'
+import { dbBatch } from './batch'
 
 const DEFAULT_CATEGORIES_PL = [
   { name: 'Jedzenie', icon: '🍕' },
@@ -152,9 +153,9 @@ export async function ensureUserSeeded(userId: string, lang: 'pl' | 'en' = 'pl')
   // could read settings as "exists". `db.batch([...])` runs both statements
   // inside one HTTP RTT to the Neon HTTP driver and rolls them back together
   // on any failure — same atomicity guarantee A4 R2 added in the OCR flow.
-  await db.batch([
-    db.insert(userSettings).values({ userId, language: lang }).onConflictDoNothing(),
-    db.insert(categories).values(
+  await dbBatch((x) => [
+    x.insert(userSettings).values({ userId, language: lang }).onConflictDoNothing(),
+    x.insert(categories).values(
       defaultCats.map(c => ({ ...c, userId, isDefault: true }))
     ),
   ])

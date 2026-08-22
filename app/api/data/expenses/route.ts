@@ -4,6 +4,7 @@ import { db, expenses, categories, userSettings, merchantRules, receipts, receip
 import { eq, desc, and, inArray, sql } from 'drizzle-orm'
 import { recordAudit } from '@/lib/audit-log'
 import { z } from 'zod'
+import { dbBatch } from '@/lib/db/batch'
 
 const CreateExpenseSchema = z.object({
   title: z.string().min(1, 'Title is required').max(200),
@@ -115,8 +116,8 @@ export async function GET(request: Request) {
     // db.batch([...]) packs them into ONE pipelined HTTP request inside a
     // single read-only transaction snapshot. Same selects, ~3× fewer
     // round-trips. Result tuple order matches statement order.
-    const [exps, cats, settings] = await db.batch([
-      db.select({
+    const [exps, cats, settings] = await dbBatch((x) => [
+      x.select({
         id: expenses.id,
         title: expenses.title,
         amount: expenses.amount,
@@ -129,9 +130,9 @@ export async function GET(request: Request) {
         tags: expenses.tags,
         isRecurring: expenses.isRecurring,
       }).from(expenses).where(eq(expenses.userId, userId)).orderBy(desc(expenses.date)).limit(500),
-      db.select().from(categories).where(eq(categories.userId, userId)),
-      db.select().from(userSettings).where(eq(userSettings.userId, userId)).limit(1),
-    ])
+      x.select().from(categories).where(eq(categories.userId, userId)),
+      x.select().from(userSettings).where(eq(userSettings.userId, userId)).limit(1),
+    ], { atomic: false })
 
     return NextResponse.json(
       { expenses: exps, categories: cats, settings: settings[0] || null },
