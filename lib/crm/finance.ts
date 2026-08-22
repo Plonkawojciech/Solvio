@@ -116,11 +116,22 @@ export function deleteEntry(userId: string, entryId: string) {
 
 // ─── Podsumowania i konteksty ─────────────────────────────────────────────────
 
+/** Kształt z `GET /api/v1/finance/summary` w CRM-ie. Kwoty są liczbami,
+ *  nie stringami — inaczej niż w naszych wydatkach, gdzie `numeric` z Postgresa
+ *  wychodzi jako string. */
+export interface CrmMonthSummary {
+  year: number
+  month: number
+  income: number
+  expense: number
+  balance: number
+}
+
 export interface CrmSummary {
-  month: { income: string; cost: string; result: string } | null
-  year: unknown
-  mrr: unknown
-  allTime: unknown
+  month: CrmMonthSummary | null
+  year: { year: number; months: CrmMonthSummary[]; income: number; expense: number; balance: number } | null
+  mrr: { total: number; clientCount: number } | null
+  allTime: { income: number; expense: number; balance: number } | null
 }
 
 export function summary(userId: string, params: { year?: number; month?: number } = {}) {
@@ -156,6 +167,8 @@ export function listCommitments(userId: string) {
 export interface CrmClient {
   id: string
   name: string
+  status?: string
+  monthlyFee?: string
 }
 
 export function listClients(userId: string) {

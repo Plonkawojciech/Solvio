@@ -10,11 +10,23 @@ struct ExpensesListView: View {
     @EnvironmentObject private var router: AppRouter
     @EnvironmentObject private var locale: AppLocale
     @EnvironmentObject private var toast: ToastCenter
+    @EnvironmentObject private var crm: CrmStore
 
     @State private var query = ""
     @State private var categoryFilter: String? = nil
     @State private var sort: Sort = .newest
     @State private var pendingDelete: Expense?
+    /// Który zbiór pieniędzy oglądamy: własne wydatki czy Finanse CRM-a.
+    /// Świadomie zakładka wewnątrz ekranu, a nie trzeci ekran — apka ma dwa.
+    @State private var scope: Scope = .mine
+    @State private var editingCrmEntry: CrmEntry?
+    @State private var creatingCrmEntry = false
+
+    enum Scope: String, CaseIterable, Identifiable {
+        case mine, company
+        var id: String { rawValue }
+        var labelKey: String { self == .mine ? "expenses.scopeMine" : "expenses.scopeCompany" }
+    }
 
     enum Sort: String, CaseIterable, Identifiable {
         case newest, oldest, highest, lowest
@@ -54,6 +66,54 @@ struct ExpensesListView: View {
     var body: some View {
         VStack(spacing: 0) {
             headerBar
+            scopePicker
+
+            if scope == .company {
+                CrmEntriesList(editing: $editingCrmEntry, creating: $creatingCrmEntry)
+            } else {
+                mineContent
+            }
+        }
+        .sheet(item: $editingCrmEntry) { entry in
+            CrmEntryEditorSheet(entry: entry)
+        }
+        .sheet(isPresented: $creatingCrmEntry) {
+            CrmEntryEditorSheet(entry: nil)
+        }
+        .refreshable { await store.awaitDashboard(force: true) }
+        .task { store.ensureDashboard() }
+        .confirmationDialog(
+            locale.t("expenses.deleteConfirm"),
+            isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }),
+            titleVisibility: .visible
+        ) {
+            Button(locale.t("common.delete"), role: .destructive) {
+                if let expense = pendingDelete { delete(expense) }
+                pendingDelete = nil
+            }
+            Button(locale.t("common.cancel"), role: .cancel) { pendingDelete = nil }
+        }
+    }
+
+    /// Przełącznik pojawia się TYLKO, gdy CRM jest wpięty — bez niego byłby
+    /// pustą zakładką prowadzącą do zachęty na integrację.
+    @ViewBuilder
+    private var scopePicker: some View {
+        if crm.connected == true {
+            Picker("", selection: $scope) {
+                ForEach(Scope.allCases) { s in
+                    Text(locale.t(s.labelKey)).tag(s)
+                }
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal, Theme.Spacing.md)
+            .padding(.top, Theme.Spacing.sm)
+        }
+    }
+
+    @ViewBuilder
+    private var mineContent: some View {
+        VStack(spacing: 0) {
             filters
 
             if store.dashboardLoading && store.dashboard == nil {
@@ -76,19 +136,6 @@ struct ExpensesListView: View {
                 list
             }
         }
-        .refreshable { await store.awaitDashboard(force: true) }
-        .task { store.ensureDashboard() }
-        .confirmationDialog(
-            locale.t("expenses.deleteConfirm"),
-            isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }),
-            titleVisibility: .visible
-        ) {
-            Button(locale.t("common.delete"), role: .destructive) {
-                if let expense = pendingDelete { delete(expense) }
-                pendingDelete = nil
-            }
-            Button(locale.t("common.cancel"), role: .cancel) { pendingDelete = nil }
-        }
     }
 
     // MARK: - Nagłówek
@@ -99,12 +146,14 @@ struct ExpensesListView: View {
                 Text(locale.t("nav.expenses"))
                     .font(AppFont.pageTitle)
                     .foregroundColor(Theme.foreground)
-                SectionLabel(text: locale.pluralized("dashboard.transactions", count: filtered.count))
+                SectionLabel(text: scope == .company
+                    ? locale.pluralized("crm.entriesCount", count: crm.entries.count)
+                    : locale.pluralized("dashboard.transactions", count: filtered.count))
             }
             Spacer()
             Button {
                 Haptics.impact(.light)
-                router.showingExpenseEditor = true
+                if scope == .company { creatingCrmEntry = true } else { router.showingExpenseEditor = true }
             } label: {
                 Image(systemName: "plus")
                     .font(.system(size: 15, weight: .semibold))

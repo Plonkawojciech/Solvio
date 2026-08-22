@@ -24,13 +24,16 @@
 		46CF9F3ABB7B375C33AEBA3B /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCB372E303126D02D67C6205 /* Models.swift */; };
 		4749756ADEFAFEE6C2A8022E /* Formatters.swift in Sources */ = {isa = PBXBuildFile; fileRef = 226851A463B366A968CE6C3F /* Formatters.swift */; };
 		4B4636DA5BE9860C3E7D62AD /* ExpenseEditorSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03B76FC8CFA09A49AA89F5F5 /* ExpenseEditorSheet.swift */; };
+		4EAC3793CB09BB192C88A4E7 /* CrmStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A46FEDE41DE354180E43AF7 /* CrmStore.swift */; };
 		58F83302451948336CE59AEA /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 654282E8C172B560969E4549 /* PrivacyInfo.xcprivacy */; };
 		61C41E7A97C4FC7113BEEC4C /* DashboardModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA60ACD41B5585902505B25F /* DashboardModel.swift */; };
 		79CFE120CF26BFD497F202C4 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 027850E12E3403B5AFDB95B4 /* RootView.swift */; };
 		7A2C515B2E4669D2C802BD8B /* ToastCenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EAC82DB72FC502D7F96FAAE /* ToastCenter.swift */; };
+		7B3ED58AFDC6928AB8F72E72 /* CrmModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBA4FAA0DB438737C72D8317 /* CrmModels.swift */; };
 		83C7218FA1E5C1B91C36451F /* CameraPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24BD0456BC165D29B0F48B38 /* CameraPicker.swift */; };
 		8F249B7DA4009BDD381A56EE /* ReceiptReviewSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0091C5D72BBD694D62E59ED3 /* ReceiptReviewSheet.swift */; };
 		95C41312710F9E3C86946915 /* Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7067708AD65AA9D19404060F /* Components.swift */; };
+		997DCE46100A7D082ED4B8A9 /* CrmEntriesList.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A369D38E658BB9CAE76CF9E /* CrmEntriesList.swift */; };
 		9E3146B1F7628978E1B3FC15 /* SessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7AFD9B53A8560716EBC70437 /* SessionStore.swift */; };
 		A2320653A66EC7B4A006289F /* AppRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 942D50E6D12D96BB506456DB /* AppRouter.swift */; };
 		A2E5237C8208BD47B5B3DBE7 /* ExpenseDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45CD193F6DE0F55C943947B8 /* ExpenseDetailView.swift */; };
@@ -39,9 +42,11 @@
 		BDC51B287138487FBC34ACBD /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 82FFCF79B10F3E0C3D003458 /* InfoPlist.strings */; };
 		C5060E3F4F5EBED2A2C9FBE3 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = DBFF44586AEDDA2844628D83 /* Localizable.strings */; };
 		CBE95E9B4761D4413D569D4E /* ApiClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 655947DC980C807CA7A2CD49 /* ApiClient.swift */; };
+		CCEEF2E4A71330A7D8DC6714 /* CrmEntryEditorSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 720DDDBC05720D48B1163A12 /* CrmEntryEditorSheet.swift */; };
 		CD88D9BC7B018AD0FF2E6DDF /* Money.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6BD460121BBB810C4F316D07 /* Money.swift */; };
 		D7410D9A0D3B31EE3B3B6A27 /* L10n+EN.swift in Sources */ = {isa = PBXBuildFile; fileRef = 530336B12374C171AD5989AF /* L10n+EN.swift */; };
 		E39EDC02CF739209126B264F /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D1835BA3160285A014F04A5 /* LoginView.swift */; };
+		E407080350525E2B13E789DE /* CrmSummaryCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87CD3E7643B3FEDAFB89E949 /* CrmSummaryCard.swift */; };
 		E42161C793ABA1780DDFE2AF /* ExpensesListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3494EB16FE8E3D7075771177 /* ExpensesListView.swift */; };
 		E5ACED9A769AE9839BEDFC1D /* ScanQueueWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8ED6EC478BCBD240EAA0050F /* ScanQueueWidget.swift */; };
 /* End PBXBuildFile section */
@@ -56,6 +61,7 @@
 		1EAC82DB72FC502D7F96FAAE /* ToastCenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToastCenter.swift; sourceTree = "<group>"; };
 		226851A463B366A968CE6C3F /* Formatters.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Formatters.swift; sourceTree = "<group>"; };
 		24BD0456BC165D29B0F48B38 /* CameraPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraPicker.swift; sourceTree = "<group>"; };
+		2A46FEDE41DE354180E43AF7 /* CrmStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CrmStore.swift; sourceTree = "<group>"; };
 		2C3CE025F942AE589751DD5B /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		3307232C0092760A40D85C77 /* AppTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppTheme.swift; sourceTree = "<group>"; };
 		3494EB16FE8E3D7075771177 /* ExpensesListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExpensesListView.swift; sourceTree = "<group>"; };
@@ -74,13 +80,17 @@
 		66AF7168704B96615E13CBCB /* MainTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabView.swift; sourceTree = "<group>"; };
 		6BD460121BBB810C4F316D07 /* Money.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Money.swift; sourceTree = "<group>"; };
 		7067708AD65AA9D19404060F /* Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Components.swift; sourceTree = "<group>"; };
+		720DDDBC05720D48B1163A12 /* CrmEntryEditorSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CrmEntryEditorSheet.swift; sourceTree = "<group>"; };
 		7AFD9B53A8560716EBC70437 /* SessionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionStore.swift; sourceTree = "<group>"; };
+		87CD3E7643B3FEDAFB89E949 /* CrmSummaryCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CrmSummaryCard.swift; sourceTree = "<group>"; };
 		8A05E58B94F312BA721C737F /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
 		8ED6EC478BCBD240EAA0050F /* ScanQueueWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanQueueWidget.swift; sourceTree = "<group>"; };
 		914A13E95A57C5B2214E445E /* FontLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FontLoader.swift; sourceTree = "<group>"; };
 		942D50E6D12D96BB506456DB /* AppRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppRouter.swift; sourceTree = "<group>"; };
+		9A369D38E658BB9CAE76CF9E /* CrmEntriesList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CrmEntriesList.swift; sourceTree = "<group>"; };
 		B8727C6B896D2A937FEBF0FC /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		BADCF30C6EE9DE05E2B12928 /* AppConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfig.swift; sourceTree = "<group>"; };
+		BBA4FAA0DB438737C72D8317 /* CrmModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CrmModels.swift; sourceTree = "<group>"; };
 		D664CD3667905708C0527E3B /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		DA60ACD41B5585902505B25F /* DashboardModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardModel.swift; sourceTree = "<group>"; };
 		DCB372E303126D02D67C6205 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
@@ -130,10 +140,21 @@
 		884812F94EF8E922BD6AC617 /* Models */ = {
 			isa = PBXGroup;
 			children = (
+				BBA4FAA0DB438737C72D8317 /* CrmModels.swift */,
 				DCB372E303126D02D67C6205 /* Models.swift */,
 				6BD460121BBB810C4F316D07 /* Money.swift */,
 			);
 			path = Models;
+			sourceTree = "<group>";
+		};
+		897A13797C8C271BF8B976B7 /* Crm */ = {
+			isa = PBXGroup;
+			children = (
+				9A369D38E658BB9CAE76CF9E /* CrmEntriesList.swift */,
+				720DDDBC05720D48B1163A12 /* CrmEntryEditorSheet.swift */,
+				87CD3E7643B3FEDAFB89E949 /* CrmSummaryCard.swift */,
+			);
+			path = Crm;
 			sourceTree = "<group>";
 		};
 		8C377267385ADD337E213022 /* Theme */ = {
@@ -157,6 +178,7 @@
 				522E348991F119E01E636E4D /* AppLocale.swift */,
 				942D50E6D12D96BB506456DB /* AppRouter.swift */,
 				3307232C0092760A40D85C77 /* AppTheme.swift */,
+				2A46FEDE41DE354180E43AF7 /* CrmStore.swift */,
 				914A13E95A57C5B2214E445E /* FontLoader.swift */,
 				226851A463B366A968CE6C3F /* Formatters.swift */,
 				F97FF74B94CD0518150E1087 /* L10n.swift */,
@@ -242,6 +264,7 @@
 			isa = PBXGroup;
 			children = (
 				66CC3F84E892BDA56778D877 /* Auth */,
+				897A13797C8C271BF8B976B7 /* Crm */,
 				E3C412AB8C27B3ED995903D7 /* Dashboard */,
 				4480CFB76448173A6912FA9E /* Expenses */,
 				21339D8BE56198D5C494EC0B /* Receipts */,
@@ -345,6 +368,11 @@
 				3178FC9F710A29C499D4DB9D /* AppTheme.swift in Sources */,
 				83C7218FA1E5C1B91C36451F /* CameraPicker.swift in Sources */,
 				95C41312710F9E3C86946915 /* Components.swift in Sources */,
+				997DCE46100A7D082ED4B8A9 /* CrmEntriesList.swift in Sources */,
+				CCEEF2E4A71330A7D8DC6714 /* CrmEntryEditorSheet.swift in Sources */,
+				7B3ED58AFDC6928AB8F72E72 /* CrmModels.swift in Sources */,
+				4EAC3793CB09BB192C88A4E7 /* CrmStore.swift in Sources */,
+				E407080350525E2B13E789DE /* CrmSummaryCard.swift in Sources */,
 				61C41E7A97C4FC7113BEEC4C /* DashboardModel.swift in Sources */,
 				172C21721BB0EB38FB037439 /* DashboardView.swift in Sources */,
 				A2E5237C8208BD47B5B3DBE7 /* ExpenseDetailView.swift in Sources */,

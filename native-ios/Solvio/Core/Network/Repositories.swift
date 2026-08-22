@@ -205,6 +205,24 @@ enum ReceiptsRepo {
 }
 
 
+// MARK: - Hasło
+
+enum PasswordRepo {
+    private struct Body: Encodable {
+        let currentPassword: String
+        let newPassword: String
+    }
+
+    /// Wymaga BIEŻĄCEGO hasła mimo aktywnej sesji — samo ciasteczko nie
+    /// wystarczy, bo przejęta sesja mogłaby przejąć konto na stałe.
+    static func change(current: String, new: String) async throws {
+        try await ApiClient.shared.postVoid(
+            "/api/auth/password",
+            body: Body(currentPassword: current, newPassword: new)
+        )
+    }
+}
+
 // MARK: - Konserwacja
 
 enum MaintenanceRepo {
@@ -242,6 +260,40 @@ enum CrmRepo {
     struct PushResult: Decodable {
         let ok: Bool
         let pushed: Int
+    }
+
+    // ─── Finanse CRM-a ────────────────────────────────────────────────────
+
+    /// Wpisy miesiąca plus podsumowanie. Podsumowanie bywa `nil`, gdy endpoint
+    /// sum w CRM-ie padnie — lista wtedy i tak wraca.
+    static func entries(from: String, to: String) async throws -> CrmEntriesResponse {
+        try await ApiClient.shared.get("/api/crm/entries", query: [
+            URLQueryItem(name: "from", value: from),
+            URLQueryItem(name: "to", value: to),
+            URLQueryItem(name: "limit", value: "200"),
+        ])
+    }
+
+    /// Klienci i zobowiązania cykliczne — jedno żądanie, bo apka potrzebuje
+    /// obu naraz i nic z tego nie zmienia się w trakcie edycji.
+    static func context() async throws -> CrmContextResponse {
+        try await ApiClient.shared.get("/api/crm/context")
+    }
+
+    private struct EntryWrap: Decodable { let entry: CrmEntry? }
+
+    static func createEntry(_ body: CrmEntryInput) async throws -> CrmEntry? {
+        let wrap: EntryWrap = try await ApiClient.shared.post("/api/crm/entries", body: body)
+        return wrap.entry
+    }
+
+    static func updateEntry(id: String, _ body: CrmEntryInput) async throws -> CrmEntry? {
+        let wrap: EntryWrap = try await ApiClient.shared.patch("/api/crm/entries/\(id)", body: body)
+        return wrap.entry
+    }
+
+    static func deleteEntry(id: String) async throws {
+        try await ApiClient.shared.deleteVoid("/api/crm/entries/\(id)")
     }
 
     static func connection() async throws -> Connection {

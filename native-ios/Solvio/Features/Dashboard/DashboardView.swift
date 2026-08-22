@@ -40,6 +40,7 @@ struct DashboardView: View {
                     }
                     heroCard(m)
                     tiles(m)
+                    CrmSummaryCard()
                     if !m.split.isEmpty { splitCard(m) }
                     if !m.topCategories.isEmpty { categoriesCard(m) }
                     recentCard(m)

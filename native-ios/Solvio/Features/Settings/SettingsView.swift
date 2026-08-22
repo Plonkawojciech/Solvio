@@ -23,6 +23,7 @@ struct SettingsView: View {
                         accountCard
                         budgetCard
                         categoriesCard
+                        PasswordCard()
                         CrmConnectionCard()
                         appearanceCard
                         signOutButton
@@ -191,6 +192,62 @@ struct SettingsView: View {
             }
         }
         .buttonStyle(SecondaryButtonStyle())
+    }
+}
+
+// MARK: - Hasło
+
+/// Zmiana hasła. Do tej pory apka nie miała jak tego zrobić: hasło powstawało
+/// przy pierwszym logowaniu i zostawało na zawsze.
+private struct PasswordCard: View {
+    @EnvironmentObject private var locale: AppLocale
+    @EnvironmentObject private var toast: ToastCenter
+
+    @State private var current = ""
+    @State private var new = ""
+    @State private var busy = false
+
+    private var canSave: Bool { !current.isEmpty && new.count >= 8 && !busy }
+
+    var body: some View {
+        PaperCard(title: locale.t("settings.changePassword"), label: locale.t("settings.security")) {
+            VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                secureField(locale.t("settings.currentPassword"), text: $current)
+                secureField(locale.t("settings.newPassword"), text: $new)
+                Text(locale.t("settings.passwordRule"))
+                    .font(AppFont.caption)
+                    .foregroundColor(Theme.mutedForeground)
+                Button(locale.t("common.save")) { save() }
+                    .buttonStyle(SecondaryButtonStyle(fullWidth: false))
+                    .disabled(!canSave)
+            }
+        }
+    }
+
+    private func secureField(_ placeholder: String, text: Binding<String>) -> some View {
+        SecureField(placeholder, text: text)
+            .font(AppFont.body)
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
+            .padding(.horizontal, Theme.Spacing.sm)
+            .frame(height: 40)
+            .background(Theme.muted)
+            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm, style: .continuous))
+    }
+
+    private func save() {
+        busy = true
+        Task {
+            defer { busy = false }
+            do {
+                try await PasswordRepo.change(current: current, new: new)
+                current = ""; new = ""
+                toast.success(locale.t("settings.passwordChanged"))
+            } catch {
+                Log.error(.session, "nie udało się zmienić hasła", error)
+                toast.error(locale.t("settings.passwordChangeFailed"))
+            }
+        }
     }
 }
 

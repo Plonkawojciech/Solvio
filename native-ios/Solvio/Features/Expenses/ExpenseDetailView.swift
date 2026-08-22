@@ -141,9 +141,9 @@ struct ExpenseDetailView: View {
     @ViewBuilder
     private var receiptCard: some View {
         if loadingReceipt {
-            PaperCard(label: locale.t("receipts.items")) { SkeletonBlock(height: 80) }
+            PaperCard(label: locale.t("receipts.fromReceipt")) { SkeletonBlock(height: 80) }
         } else if let receipt, let items = receipt.items, !items.isEmpty {
-            PaperCard(title: receipt.vendor ?? locale.t("receipts.title"), label: locale.t("receipts.items")) {
+            PaperCard(title: receipt.vendor ?? locale.t("receipts.title"), label: locale.t("receipts.fromReceipt")) {
                 VStack(spacing: 0) {
                     ForEach(Array(items.enumerated()), id: \.offset) { index, item in
                         HStack(spacing: Theme.Spacing.sm) {

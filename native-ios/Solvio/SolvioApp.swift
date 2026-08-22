@@ -13,6 +13,9 @@ struct SolvioApp: App {
     /// Kolejka uploadów OCR w tle. Siedzi w korzeniu, żeby pływający
     /// wskaźnik postępu był widoczny na obu ekranach.
     @StateObject private var scanQueue: ScanQueueManager
+    /// Dane z crm.programo.pl — osobno od `AppDataStore`, bo to nie są nasze
+    /// dane: źródłem prawdy zostaje CRM, a apka jest pilotem.
+    @StateObject private var crm = CrmStore()
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
@@ -32,6 +35,7 @@ struct SolvioApp: App {
                 .environmentObject(appLocale)
                 .environmentObject(dataStore)
                 .environmentObject(scanQueue)
+                .environmentObject(crm)
                 .task { await session.restore() }
                 .onAppear {
                     // Komunikaty błędów kolejki mają być zlokalizowane,
@@ -41,6 +45,7 @@ struct SolvioApp: App {
                 .onChange(of: session.currentUser?.email) { email in
                     guard email != nil else {
                         dataStore.resetAll()
+                        crm.reset()
                         return
                     }
                     // Rozgrzewamy cache w chwili logowania, żeby pierwszy
@@ -56,6 +61,7 @@ struct SolvioApp: App {
                     // ekranie były aktualne. Bez spinnera, jeśli cache żyje.
                     if phase == .active, session.currentUser != nil {
                         dataStore.refreshAll(force: false)
+                        crm.ensureLoaded()
                     }
                 }
                 .preferredColorScheme(appTheme.mode.colorScheme)

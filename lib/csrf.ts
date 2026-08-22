@@ -132,11 +132,11 @@ const CSRF_BYPASS_PREFIXES = [
   '/api/auth/csrf',        // GET = mint token (must be reachable without one)
   // Cron endpoints — shared-secret authorised via lib/cron-auth.ts
   '/api/cron/',
-  // Public share-token settlement endpoint — uses opaque share tokens, no session
-  '/api/settlement/',
-  // Receipt public view (token-gated)
-  '/api/receipt/',
 ]
+
+// Uwaga: `/api/auth/password` celowo NIE jest tu wymienione. Zmiana hasła
+// dzieje się przy aktywnej sesji, więc token CSRF istnieje i ma obowiązywać —
+// to dokładnie ta operacja, przed którą CSRF ma chronić.
 
 /**
  * Should this path require a CSRF check on mutating methods?
