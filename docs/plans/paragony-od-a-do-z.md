@@ -71,3 +71,37 @@ Do tego:
 - Powrót Azure Document Intelligence (nie ma go w env i nie ma po co).
 - Odzyskanie zdjęć paragonów zeskanowanych przed tą zmianą — ich nie ma.
 - Tabela `receipt_items` jako drugie źródło prawdy.
+
+---
+
+## Wynik (2026-08-22, wieczór)
+
+**Benchmark modeli** (`OCR_BENCH=1 npx vitest run tests/ocr-bench.test.ts`,
+8 wygenerowanych paragonów, ta sama seria dla każdego modelu):
+
+| model | sklep | suma | data | pozycje | mediana |
+|---|---|---|---|---|---|
+| gpt-4o-mini | 88% | 100% | 88% | 100% | 6415 ms |
+| gpt-4.1-mini | 88% | 100% | 100% | 100% | 6335 ms |
+| gpt-4.1 | 88% | 100% | 100% | 100% | 4323 ms |
+| **gpt-5.4-mini** | 88% → **100%** | 100% | 100% | 100% | **3263 ms** |
+
+Nietrafiony sklep był we wszystkich przypadkach TEN SAM paragon (Orlen) i nie
+był winą modelu — w `lib/stores.ts` nie było ani jednej stacji paliw. Po
+dołożeniu wzorców gpt-5.4-mini ma 100% na całej ósemce.
+
+**Weryfikacja na produkcji** (klucz `slvk_`, `solvio.programo.pl`):
+
+- skan `zabka-cztery-pozycje.jpg` → 7,3 s, „Żabka", 23,76 zł, 4 pozycje
+  z rozwiniętymi nazwami („Woda Zywiec Zdroj 0,5L" → „Woda Żywiec Zdrój 0,5L")
+  i kategoriami;
+- `GET /api/v1/receipts/{id}/image` → 200, `image/jpeg`, 57 729 B;
+- ten sam plik wysłany drugi raz → `duplicate` **bez** wywołania modelu;
+- `DELETE` paragonu skasował wydatek i plik z wolumenu (katalog paragonu
+  sprzątnięty).
+
+**Testy:** 168 przechodzi, 1 pominięty (benchmark, wymaga sieci i pieniędzy).
+
+**Znalezione przy okazji, nietknięte:** `app/api/personal/receipt-analyze`
+(371 linii) to porównywarka cen z wyciętego modułu Oszczędności — nic jej nie
+woła. Do decyzji Wojtka, czy wraca, czy znika.
