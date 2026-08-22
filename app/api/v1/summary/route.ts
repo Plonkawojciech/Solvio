@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { and, eq, gte, lte, sql } from 'drizzle-orm'
 import { requireApiUser } from '@/lib/api-auth'
 import { db } from '@/lib/db'
-import { categories, expenses, monthlyBudgets } from '@/lib/db/schema'
+import { categories, categoryBudgets, expenses, monthlyBudgets } from '@/lib/db/schema'
 
 export const dynamic = 'force-dynamic'
 
@@ -51,17 +51,29 @@ export async function GET(req: Request) {
     .groupBy(expenses.categoryId, categories.name, categories.color)
     .orderBy(sql`sum(${expenses.amount}) desc`)
 
+  // Budżet miesiąca to SUMA limitów kategorii — tak liczy to panel na webie
+  // i w apce. `monthly_budgets.total_budget` jest fallbackiem dla kont bez
+  // limitów per kategoria. Bez tej zgodności ten sam miesiąc pokazywał
+  // 3500 zł na telefonie i 5000 zł w odpowiedzi API.
+  const [categorySum] = await db
+    .select({ total: sql<string>`coalesce(sum(${categoryBudgets.amount}), 0)` })
+    .from(categoryBudgets)
+    .where(eq(categoryBudgets.userId, auth.userId))
+
   const [budget] = await db
     .select()
     .from(monthlyBudgets)
     .where(and(eq(monthlyBudgets.userId, auth.userId), eq(monthlyBudgets.month, `${year}-${String(month).padStart(2, '0')}`)))
     .limit(1)
 
+  const fromCategories = Number(categorySum?.total ?? 0)
+  const totalBudget = fromCategories > 0 ? fromCategories.toFixed(2) : (budget?.totalBudget ?? null)
+
   return NextResponse.json({
     period: { year, month, from: first, to: last },
     total: totals?.total ?? '0',
     count: totals?.count ?? 0,
-    budget: budget?.totalBudget ?? null,
+    budget: totalBudget,
     byCategory: byCategory.map((c) => ({
       categoryId: c.categoryId,
       name: c.categoryName ?? 'Bez kategorii',

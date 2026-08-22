@@ -11,7 +11,7 @@ import { eq, and } from 'drizzle-orm';
 import { put } from '@vercel/blob';
 import { findStoreInText, normalizeStoreName } from '@/lib/stores';
 import { dbBatch } from '@/lib/db/batch'
-import { syncExpenseWithCrm } from '@/lib/expense-core'
+import { resolveCategory, syncExpenseWithCrm } from '@/lib/expense-core'
 import { AZURE_ENDPOINT, AZURE_KEY, json, log, OCR_ERROR_CODES } from '@/lib/ocr/shared'
 import { processAzureOCR, processVisionOCR } from '@/lib/ocr/providers'
 import { getExchangeRate, getExchangeRates } from '@/lib/ocr/fx'
@@ -412,11 +412,31 @@ export async function POST(req: NextRequest) {
           log(`[File ${i + 1}] 🔄 Keyword fallback assigned categories to ${fallbackCount}/${finalItems.length} items`);
         }
 
-        // Wyznacz najlepszą kategorię dla expense (kategoria najdroższego itemu)
-        const withCat = finalItems.filter(it => it.category_id);
-        const bestCategoryId: string | null = withCat.length > 0
-          ? ([...withCat].sort((a, b) => (b.price ?? 0) - (a.price ?? 0))[0].category_id ?? null)
-          : null;
+        // Kategoria wydatku = ta, na którą poszło NAJWIĘCEJ pieniędzy, a nie
+        // kategoria najdroższej pojedynczej pozycji. Paragon z ośmioma
+        // produktami spożywczymi i jedną drogą żarówką lądował wcześniej
+        // w „Dom i ogród".
+        const spendByCategory = new Map<string, number>();
+        for (const item of finalItems) {
+          if (!item.category_id) continue;
+          spendByCategory.set(item.category_id, (spendByCategory.get(item.category_id) ?? 0) + (item.price ?? 0));
+        }
+        let bestCategoryId: string | null = null;
+        let bestSpend = -1;
+        for (const [id, spend] of spendByCategory) {
+          if (spend > bestSpend) { bestSpend = spend; bestCategoryId = id; }
+        }
+
+        // Żadna pozycja nie dostała kategorii — zostaje sprzedawca. Ta sama
+        // ścieżka, którą idzie ręcznie dodany wydatek (reguła sprzedawcy →
+        // model), więc paragon z rozpoznanego sklepu nigdy nie ląduje bez
+        // kategorii tylko dlatego, że OCR nie poradził sobie z pozycjami.
+        if (!bestCategoryId && finalMerchant) {
+          bestCategoryId = await resolveCategory(userId, finalMerchant, finalMerchant);
+          if (bestCategoryId) {
+            log(`[File ${i + 1}] 🏷️ Kategoria z nazwy sklepu "${finalMerchant}"`);
+          }
+        }
 
         // 9-11. ATOMIC: update receipt + delete prior expenses + insert new expense.
         // Neon HTTP driver doesn't support db.transaction(async tx) but it does
