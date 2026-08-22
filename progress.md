@@ -41,6 +41,41 @@ dzięki niemu edycja dociąga wpis, a nie dubluje. Dokumentacja: `docs/API.md`.
 3. iOS logował się samym e-mailem, choć backend od scalenia gałęzi AveJi
    wymaga hasła. Na telefonie działało wyłącznie konto demo.
 
+### Domknięcie tego samego dnia — paragon, CRM, sprzątanie
+
+**Paragon.** Po skanie POJEDYNCZEGO zdjęcia podnosi się ekran potwierdzenia:
+sklep, data i kwota do poprawienia, pozycje i wykryte promocje do wglądu,
+kategoria do wyboru, „Odrzuć" kasuje wydatek razem z paragonem. Pokazujemy
+też różnicę między kwotą a sumą pozycji — pomniejszoną o promocje, bo
+poprawnie odczytany paragon z rabatem wyglądał wcześniej jak błąd odczytu.
+
+Zweryfikowane na prawdziwym paragonie (Biedronka, 10 pozycji, 2 promocje):
+sklep, `130,96 zł`, data, wszystkie pozycje i `-12,70 zł` oszczędności
+odczytane co do grosza.
+
+**Trzy błędy w kategoryzacji paragonu:**
+1. Kategorię wybierała pozycja NAJDROŻSZA — paragon z ośmioma produktami
+   spożywczymi i jedną drogą żarówką lądował w „Dom i ogród". Teraz decyduje
+   suma wydatków w kategorii.
+2. Gdy żadna pozycja nie dostała kategorii, wydatek szedł bez niej. Teraz
+   spada na sprzedawcę, tą samą ścieżką co ręczne dodanie.
+3. `/api/v1/summary` liczyło budżet z `monthly_budgets`, a panel z sumy
+   limitów kategorii — ten sam sierpień pokazywał 3500 zł na telefonie
+   i 5000 zł w odpowiedzi API.
+
+**CRM.** Po przejrzeniu ekranu `/finanse` most dostał pełny CRUD na
+`FinanceEntry` plus `{"paid": true}` — najczęstszą operację na tym ekranie —
+oraz `/api/crm/context` z klientami i zobowiązaniami cyklicznymi. Pokrycie
+funkcja po funkcji w `docs/plans/redesign-2-ekrany-i-api-crm.md`.
+
+**Sprzątanie.** `ocr-receipt/route.ts` 1598 → 598 linii (reszta w `lib/ocr/*`),
+`crm-client.ts` rozbity na `lib/crm/{connection,http,finance}.ts`,
+`lib/i18n.ts` 1549 → 368 kluczy, klient Android usunięty (był w tyle o cały
+redesign i wołał nieistniejące endpointy), martwe linki i bramki
+personal/business wycięte z middleware i layoutu.
+
+Łącznie: **357 plików, +7 051 / −86 820 linii.**
+
 ## Uwaga: 100% AI Codebase
 
 > Ten projekt jest w **100% pisany i utrzymywany przez agenty AI** (Claude opus-4.6 / sonnet) za pomocą Claude Code. Nie ma kodu pisanego ręcznie przez człowieka.
