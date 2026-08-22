@@ -12,11 +12,6 @@ struct SessionLoginResponse: Decodable {
     let userId: String
 }
 
-struct DemoLoginResponse: Decodable {
-    let success: Bool
-    let redirect: String?
-}
-
 // MARK: - Categories
 
 struct Category: Codable, Identifiable, Hashable {

@@ -178,10 +178,21 @@ struct ExpensesListView: View {
                     .background(Theme.primary)
                     .clipShape(Circle())
             }
-            .accessibilityLabel(locale.t("expenses.add"))
+            .accessibilityLabel(locale.t(addLabelKey))
         }
         .padding(.horizontal, Theme.Spacing.md)
         .padding(.top, Theme.Spacing.md)
+    }
+
+    /// Co doda „+" — zależy od zakładki i sekcji. Bez tego VoiceOver mówiłby
+    /// „dodaj wydatek" nad listą klientów.
+    private var addLabelKey: String {
+        guard scope != .mine else { return "expenses.add" }
+        switch companySection {
+        case .commitments: return "crm.newCommitment"
+        case .clients:     return "crm.newClient"
+        default:           return "crm.newEntry"
+        }
     }
 
     /// Podpis pod tytułem: liczba rzeczy, które faktycznie widać.

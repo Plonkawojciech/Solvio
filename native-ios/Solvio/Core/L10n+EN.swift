@@ -1507,6 +1507,8 @@ extension L10n {
         "login.password": "Password",
         "login.submit": "Sign in",
         "login.demo": "Try the demo",
+        "login.needEmail": "Enter your email address.",
+        "login.needPassword": "Password must be at least 8 characters.",
         "login.passwordHint": "The first sign-in for an address sets the account password.",
         "login.invalidCredentials": "Wrong email or password",
 

@@ -1,8 +1,10 @@
 import SwiftUI
 
 /// Logowanie. Adres e-mail plus hasło — pierwsze logowanie na dany adres
-/// zajmuje konto i ustawia hasło. Konto demo wchodzi jednym przyciskiem,
-/// bez poświadczeń.
+/// zajmuje konto i ustawia hasło.
+///
+/// Wejścia „na demo" tu nie ma: to apka finansowa jednej osoby, a przycisk
+/// wpuszczający kogokolwiek na cudze dane jest w niej tylko ryzykiem.
 struct LoginView: View {
     @EnvironmentObject private var session: SessionStore
     @EnvironmentObject private var locale: AppLocale
@@ -11,12 +13,19 @@ struct LoginView: View {
     @State private var email = ""
     @State private var password = ""
     @State private var busy = false
+    /// Powód, dla którego formularz nie przechodzi. Pokazujemy go POD polami,
+    /// zamiast wygaszać przycisk — martwy przycisk bez wyjaśnienia to
+    /// najgorszy możliwy komunikat.
+    @State private var formError: String?
     @FocusState private var focus: Field?
 
     private enum Field { case email, password }
 
-    private var canSubmit: Bool {
-        email.contains("@") && password.count >= 8 && !busy
+    /// Zwraca klucz błędu albo `nil`, gdy da się wysłać.
+    private func validationError() -> String? {
+        if !email.contains("@") { return "login.needEmail" }
+        if password.count < 8 { return "login.needPassword" }
+        return nil
     }
 
     var body: some View {
@@ -27,7 +36,6 @@ struct LoginView: View {
                     Spacer(minLength: Theme.Spacing.xl)
                     brand
                     form
-                    demoButton
                     Spacer(minLength: Theme.Spacing.lg)
                 }
                 .padding(Theme.Spacing.lg)
@@ -77,7 +85,7 @@ struct LoginView: View {
                         .textContentType(.password)
                         .focused($focus, equals: .password)
                         .submitLabel(.go)
-                        .onSubmit { if canSubmit { signIn() } }
+                        .onSubmit { signIn() }
                 }
             }
             .paperCard()
@@ -92,11 +100,11 @@ struct LoginView: View {
                 }
             }
             .buttonStyle(PrimaryButtonStyle())
-            .disabled(!canSubmit)
+            .disabled(busy)
 
-            Text(locale.t("login.passwordHint"))
+            Text(formError.map { locale.t($0) } ?? locale.t("login.passwordHint"))
                 .font(AppFont.caption)
-                .foregroundColor(Theme.mutedForeground)
+                .foregroundColor(formError == nil ? Theme.mutedForeground : Theme.destructive)
                 .multilineTextAlignment(.center)
         }
     }
@@ -135,23 +143,17 @@ struct LoginView: View {
         placeholder == locale.t("login.email") ? email.isEmpty : password.isEmpty
     }
 
-    private var demoButton: some View {
-        Button(locale.t("login.demo")) {
-            busy = true
-            Task {
-                defer { busy = false }
-                do {
-                    try await session.loginDemo()
-                } catch {
-                    toast.error(locale.t("login.failed"))
-                }
-            }
-        }
-        .buttonStyle(SecondaryButtonStyle())
-        .disabled(busy)
-    }
-
     private func signIn() {
+        // Walidacja przy tapnięciu, nie przez wygaszenie przycisku: użytkownik
+        // ma się dowiedzieć, CZEGO brakuje, a nie zgadywać, czemu nic się
+        // nie dzieje.
+        if let problem = validationError() {
+            formError = problem
+            focus = problem == "login.needEmail" ? .email : .password
+            Haptics.impact(.light)
+            return
+        }
+        formError = nil
         busy = true
         Task {
             defer { busy = false }

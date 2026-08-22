@@ -1547,6 +1547,8 @@ enum L10n {
         "login.password": "Hasło",
         "login.submit": "Zaloguj się",
         "login.demo": "Wypróbuj demo",
+        "login.needEmail": "Podaj adres e-mail.",
+        "login.needPassword": "Hasło musi mieć co najmniej 8 znaków.",
         "login.passwordHint": "Pierwsze logowanie na dany adres ustawia hasło do konta.",
         "login.invalidCredentials": "Błędny e-mail lub hasło",
 

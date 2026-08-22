@@ -137,21 +137,6 @@ final class SessionStore: ObservableObject {
         _ = try? await ApiClient.shared.refreshCsrfToken(force: true)
     }
 
-    /// Demo login returns `{success, redirect}` — we then call `/me`
-    /// to discover the demo email (`demo@solvio.app`).
-    func loginDemo() async throws {
-        let response: DemoLoginResponse = try await ApiClient.shared.postEmpty("/api/auth/demo")
-        guard response.success else {
-            throw ApiError.unknown
-        }
-        let me: SessionMe = try await ApiClient.shared.get("/api/auth/session/me")
-        let email = me.email ?? "demo@solvio.app"
-        let user = CurrentUser(email: email, userId: nil)
-        currentUser = user
-        saveCachedUser(user)
-        _ = try? await ApiClient.shared.refreshCsrfToken(force: true)
-    }
-
     func logout() async {
         _ = try? await ApiClient.shared.deleteVoid("/api/auth/session")
         currentUser = nil

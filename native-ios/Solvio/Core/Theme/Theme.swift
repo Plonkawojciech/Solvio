@@ -156,21 +156,54 @@ extension Animation {
 
 // MARK: - Przyciski
 
+/// Wspólna otoczka wszystkich stylów przycisków.
+///
+/// `ButtonStyle` nie widzi `isEnabled` — to środowisko czyta dopiero widok,
+/// więc bez tego pośrednika wyłączony przycisk wyglądał DOKŁADNIE tak samo
+/// jak działający. Tapnięcie nic nie robiło i nic tego nie tłumaczyło.
+private struct ButtonSurface<Background: View>: View {
+    @Environment(\.isEnabled) private var isEnabled
+
+    let label: AnyView
+    let pressed: Bool
+    let foreground: Color
+    let fullWidth: Bool
+    let pressedOpacity: Double
+    @ViewBuilder let background: () -> Background
+
+    var body: some View {
+        label
+            .font(AppFont.button)
+            .foregroundColor(foreground)
+            .frame(maxWidth: fullWidth ? .infinity : nil, minHeight: 46)
+            .padding(.horizontal, Theme.Spacing.md)
+            .background(background())
+            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md, style: .continuous))
+            .opacity(opacity)
+            .scaleEffect(pressed && isEnabled ? 0.98 : 1)
+            .animation(.spring(response: 0.2, dampingFraction: 0.8), value: pressed)
+    }
+
+    private var opacity: Double {
+        if !isEnabled { return 0.45 }
+        return pressed ? pressedOpacity : 1
+    }
+}
+
 /// Wypełniony akcentem — główna akcja.
 struct PrimaryButtonStyle: ButtonStyle {
     var fullWidth: Bool = true
 
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(AppFont.button)
-            .foregroundColor(Theme.primaryForeground)
-            .frame(maxWidth: fullWidth ? .infinity : nil, minHeight: 46)
-            .padding(.horizontal, Theme.Spacing.md)
-            .background(Theme.primary)
-            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md, style: .continuous))
-            .opacity(configuration.isPressed ? 0.85 : 1)
-            .scaleEffect(configuration.isPressed ? 0.98 : 1)
-            .animation(.spring(response: 0.2, dampingFraction: 0.8), value: configuration.isPressed)
+        ButtonSurface(
+            label: AnyView(configuration.label),
+            pressed: configuration.isPressed,
+            foreground: Theme.primaryForeground,
+            fullWidth: fullWidth,
+            pressedOpacity: 0.85
+        ) {
+            Theme.primary
+        }
     }
 }
 
@@ -179,34 +212,32 @@ struct SecondaryButtonStyle: ButtonStyle {
     var fullWidth: Bool = true
 
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(AppFont.button)
-            .foregroundColor(Theme.foreground)
-            .frame(maxWidth: fullWidth ? .infinity : nil, minHeight: 46)
-            .padding(.horizontal, Theme.Spacing.md)
-            .background(Theme.card)
-            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md, style: .continuous))
-            .overlay(
+        ButtonSurface(
+            label: AnyView(configuration.label),
+            pressed: configuration.isPressed,
+            foreground: Theme.foreground,
+            fullWidth: fullWidth,
+            pressedOpacity: 0.7
+        ) {
+            Theme.card.overlay(
                 RoundedRectangle(cornerRadius: Theme.Radius.md, style: .continuous)
                     .stroke(Theme.border, lineWidth: Theme.Border.width)
             )
-            .opacity(configuration.isPressed ? 0.7 : 1)
-            .scaleEffect(configuration.isPressed ? 0.98 : 1)
-            .animation(.spring(response: 0.2, dampingFraction: 0.8), value: configuration.isPressed)
+        }
     }
 }
 
 /// Czerwony — usuwanie.
 struct DestructiveButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(AppFont.button)
-            .foregroundColor(.white)
-            .frame(maxWidth: .infinity, minHeight: 46)
-            .padding(.horizontal, Theme.Spacing.md)
-            .background(Theme.destructive)
-            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md, style: .continuous))
-            .opacity(configuration.isPressed ? 0.85 : 1)
-            .animation(.spring(response: 0.2, dampingFraction: 0.8), value: configuration.isPressed)
+        ButtonSurface(
+            label: AnyView(configuration.label),
+            pressed: configuration.isPressed,
+            foreground: .white,
+            fullWidth: true,
+            pressedOpacity: 0.85
+        ) {
+            Theme.destructive
+        }
     }
 }

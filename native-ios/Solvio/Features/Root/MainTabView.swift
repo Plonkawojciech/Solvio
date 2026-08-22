@@ -12,6 +12,7 @@ struct MainTabView: View {
     @EnvironmentObject private var locale: AppLocale
     @EnvironmentObject private var toast: ToastCenter
     @EnvironmentObject private var scanQueue: ScanQueueManager
+    @EnvironmentObject private var crm: CrmStore
 
     @State private var showCamera = false
     @State private var pickedItems: [PhotosPickerItem] = []
@@ -31,6 +32,12 @@ struct MainTabView: View {
                 }
             }
         }
+        // Stan CRM-a musi być znany OD RAZU, a nie dopiero wtedy, gdy ktoś
+        // wejdzie na ekran, który go pokazuje. Przełącznik Moje/Firma/Wszystkie
+        // pojawia się tylko przy wpiętym CRM-ie, a widoki, które go ładowały,
+        // same siedziały za tym przełącznikiem — bez tego wywołania apka nigdy
+        // by się nie dowiedziała, że połączenie istnieje.
+        .task { crm.ensureLoaded() }
         .sheet(isPresented: $router.showingScanSheet, onDismiss: handleScanChoice) {
             ScanSourceSheet()
                 .presentationDetents([.height(280)])
