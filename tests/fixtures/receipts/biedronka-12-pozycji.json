@@ -1,0 +1,84 @@
+{
+  "merchant": "Biedronka",
+  "date": "2026-08-14",
+  "currency": "PLN",
+  "total": 136.93,
+  "itemCount": 12,
+  "items": [
+    {
+      "name": "Chleb zytni krojony 500g",
+      "quantity": 1,
+      "unitPrice": 4.49,
+      "totalPrice": 4.49
+    },
+    {
+      "name": "Mleko Laciate 3,2% 1L",
+      "quantity": 2,
+      "unitPrice": 3.79,
+      "totalPrice": 7.58
+    },
+    {
+      "name": "Maslo Polskie 200g",
+      "quantity": 1,
+      "unitPrice": 8.99,
+      "totalPrice": 8.99
+    },
+    {
+      "name": "Jaja L 10szt",
+      "quantity": 1,
+      "unitPrice": 12.49,
+      "totalPrice": 12.49
+    },
+    {
+      "name": "Piers z kurczaka kg",
+      "quantity": 0.842,
+      "unitPrice": 24.9,
+      "totalPrice": 20.97
+    },
+    {
+      "name": "Pomidory malinowe kg",
+      "quantity": 0.615,
+      "unitPrice": 12.99,
+      "totalPrice": 7.99
+    },
+    {
+      "name": "Banany kg",
+      "quantity": 1.24,
+      "unitPrice": 6.49,
+      "totalPrice": 8.05
+    },
+    {
+      "name": "Jogurt naturalny 400g",
+      "quantity": 3,
+      "unitPrice": 2.99,
+      "totalPrice": 8.97
+    },
+    {
+      "name": "Papier toaletowy 8szt",
+      "quantity": 1,
+      "unitPrice": 14.99,
+      "totalPrice": 14.99
+    },
+    {
+      "name": "Woda niegaz. 1,5L",
+      "quantity": 6,
+      "unitPrice": 1.89,
+      "totalPrice": 11.34
+    },
+    {
+      "name": "Kawa Tchibo Gold 250g",
+      "quantity": 1,
+      "unitPrice": 26.99,
+      "totalPrice": 26.99
+    },
+    {
+      "name": "Czekolada Wedel 100g",
+      "quantity": 2,
+      "unitPrice": 4.29,
+      "totalPrice": 8.58
+    }
+  ],
+  "discountCount": 1,
+  "discountTotal": -4.5,
+  "note": "Duży paragon spożywczy z rabatami — najczęstszy przypadek."
+}

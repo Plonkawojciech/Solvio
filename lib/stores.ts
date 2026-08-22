@@ -34,6 +34,15 @@ export const FASHION_STORES = [
   'Smyk',
 ] as const
 
+export const FUEL_STORES = [
+  'Orlen', 'Shell', 'BP', 'Circle K', 'Lotos', 'Moya', 'Amic Energy', 'Avia',
+] as const
+
+export const FOOD_STORES = [
+  "McDonald's", 'KFC', 'Burger King', 'Subway', 'Pizza Hut', 'Starbucks',
+  'Costa Coffee', 'Green Caffè Nero', 'Telepizza', 'Da Grasso', 'Sphinx',
+] as const
+
 export const ALL_POLISH_STORES = [
   ...GROCERY_STORES,
   ...PHARMACY_STORES,
@@ -41,6 +50,8 @@ export const ALL_POLISH_STORES = [
   ...DIY_STORES,
   ...ELECTRONICS_STORES,
   ...FASHION_STORES,
+  ...FUEL_STORES,
+  ...FOOD_STORES,
 ] as const
 
 // Stores used in price comparison and promotions AI prompts (grocery + pharmacy + discount)
@@ -142,6 +153,27 @@ export const STORE_PATTERNS: Array<[RegExp, string]> = [
   [/\b4f\b/i, '4F'],
   [/martes\s*sport/i, 'Martes Sport'],
   [/\bsmyk\b/i, 'Smyk'],
+  // Stacje paliw — paliwo to jeden z najczęstszych wydatków, a do tej pory
+  // żadna stacja nie miała wzorca i „PKN ORLEN S.A." zostawało jako nazwa.
+  [/\b(pkn\s*)?[o0]\s*r\s*l\s*e\s*n\b/i, 'Orlen'],
+  [/\bshell\b/i, 'Shell'],
+  [/\bcircle\s*k\b/i, 'Circle K'],
+  [/\blot[o0]s\b/i, 'Lotos'],
+  [/\bmoya\b/i, 'Moya'],
+  [/\bamic\b/i, 'Amic Energy'],
+  [/\bavia\b/i, 'Avia'],
+  [/\bbp\s*(europa|stacja|polska)?\b(?=.*paliw|.*stacja|.*paliwo)/i, 'BP'],
+  // Gastronomia
+  [/mc\s*donald|mcdonald/i, "McDonald's"],
+  [/\bk\s*f\s*c\b/i, 'KFC'],
+  [/burger\s*king/i, 'Burger King'],
+  [/\bsubway\b/i, 'Subway'],
+  [/pizza\s*hut/i, 'Pizza Hut'],
+  [/starbucks/i, 'Starbucks'],
+  [/costa\s*coffee/i, 'Costa Coffee'],
+  [/telepizza/i, 'Telepizza'],
+  [/da\s*grasso/i, 'Da Grasso'],
+  [/\bsphinx\b/i, 'Sphinx'],
   // European (for OCR on foreign receipts)
   [/penny/i, 'Penny'],
   [/rewe/i, 'REWE'],
@@ -170,14 +202,32 @@ export function normalizeStoreName(merchant: string | null): string {
 ///
 /// Returns `null` if no known chain is found — caller decides whether to
 /// fall through to AI extraction or accept "Unknown Store".
+/**
+ * Marki, których nazwa jest zwykłym słowem z paragonu. „NETTO" stoi
+ * w tabelce PTU na KAŻDYM polskim paragonie, „ABC" i „EKO" bywają skrótem
+ * w nazwie produktu. Skan całej treści robił z nich sprzedawcę, więc paragon
+ * z nieznanego sklepu potrafił wylądować jako „Netto". Tych szukamy wyłącznie
+ * w nagłówku, gdzie faktycznie stoi nazwa sklepu.
+ */
+const HEADER_ONLY_BRANDS: ReadonlySet<string> = new Set([
+  'Netto', 'ABC', 'Eko', 'Mila', 'Real', 'Natura', 'Groszek', 'Frac', 'Topaz',
+  'Społem', 'Avia', 'BP', 'Subway', 'Moya',
+])
+
+// Nagłówek polskiego paragonu to nazwa sklepu, dwie linie adresu, NIP
+// i „PARAGON FISKALNY" — sześć linii z zapasem. Szersze okno wpuszczało
+// z powrotem tabelkę PTU ze słowem „netto".
+const HEADER_LINES = 6
+
 export function findStoreInText(rawText: string | null | undefined): string | null {
   if (!rawText || typeof rawText !== 'string') return null
-  // Search the entire content — chain names appear in headers (top), in
-  // loyalty footers ("Karta Lidl Plus"), in NIP/REGON banners, and in
-  // payment-terminal ID strings. The regex patterns are already
-  // case-insensitive and OCR-tolerant.
+  // Nazwa sieci pojawia się w nagłówku, w stopce lojalnościowej („Karta Lidl
+  // Plus"), w banerze NIP-u i w identyfikatorze terminala — dlatego skanujemy
+  // całą treść. Wyjątek: marki-zwykłe-słowa, tylko nagłówek.
+  const header = rawText.split('\n').slice(0, HEADER_LINES).join('\n')
   for (const [pattern, storeName] of STORE_PATTERNS) {
-    if (pattern.test(rawText)) return storeName
+    const haystack = HEADER_ONLY_BRANDS.has(storeName) ? header : rawText
+    if (pattern.test(haystack)) return storeName
   }
   return null
 }

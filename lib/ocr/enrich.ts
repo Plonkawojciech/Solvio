@@ -4,6 +4,9 @@
 // bez podnoszenia handlera HTTP.
 
 import { getAIClient } from '@/lib/ai-client'
+import { chatParams, chatWithEffortRetry, readContent } from '@/lib/ai-params'
+
+type Completion = { choices?: Array<{ message?: { content?: string | null }; finish_reason?: string }> }
 import { log } from './shared'
 
 // --- LANGUAGE DETECTION + CATEGORIZATION + TRANSLATION ---
@@ -101,11 +104,12 @@ export async function categorizeAndTranslateItems(
     // "cleaned" field per item (full readable Polish name expanded
     // from the truncated POS abbreviation). Without the bump, the
     // response can be cut off mid-JSON for receipts with 10+ items.
-    const completion = await ai.client.chat.completions.create({
-      model: ai.model,
-      temperature: 0,
-      max_tokens: 1400,
-      response_format: { type: 'json_object' },
+    const completion = await chatWithEffortRetry<Completion>(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (params) => ai.client.chat.completions.create(params as any),
+      {
+      // Zapas na pozycję + rozwiniętą nazwę + tłumaczenie razy 20 pozycji.
+      ...chatParams({ model: ai.model, maxTokens: 2400, json: { type: 'json_object' } }),
       messages: [
         {
           role: 'system',
@@ -189,7 +193,10 @@ ${langNote}`,
       ],
     });
 
-    const result = completion.choices[0]?.message?.content?.trim() ?? null;
+    const { text: result, truncated } = readContent(completion);
+    if (truncated) {
+      console.warn('[GPT] ⚠️ odpowiedź kategoryzacji ucięta na limicie tokenów');
+    }
     if (!result) {
       return {
         items: items.map(item => ({ ...item, nameClean: null, nameTranslated: null, category_id: null })),
@@ -272,11 +279,11 @@ export async function extractMerchantWithAI(rawText: string | null | undefined):
   if (headerText.trim().length < 10) return null;
 
   try {
-    const completion = await ai.client.chat.completions.create({
-      model: ai.model,
-      temperature: 0,
-      max_tokens: 80,
-      response_format: { type: 'json_object' },
+    const completion = await chatWithEffortRetry<Completion>(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (params) => ai.client.chat.completions.create(params as any),
+      {
+      ...chatParams({ model: ai.model, maxTokens: 200, json: { type: 'json_object' } }),
       messages: [
         {
           role: 'system',
@@ -298,7 +305,7 @@ Rules:
       ],
     });
 
-    const result = completion.choices[0]?.message?.content?.trim() ?? '';
+    const { text: result } = readContent(completion);
     if (!result) return null;
     let parsed: { name?: string | null } = {};
     try {

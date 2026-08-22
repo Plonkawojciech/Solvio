@@ -13,6 +13,9 @@
 // translates item names in the same call, so it stays separate by design.
 
 import { getAIClient } from '@/lib/ai-client'
+import { chatParams, chatWithEffortRetry, readContent } from '@/lib/ai-params'
+
+type Completion = { choices?: Array<{ message?: { content?: string | null }; finish_reason?: string }> }
 
 export type CatRef = { id: string; name: string }
 
@@ -43,11 +46,11 @@ export async function aiCategorizeNames(
     const itemsList = chunk.map((name, i) => `${i + 1}. ${name}`).join('\n')
 
     try {
-      const completion = await ai.client.chat.completions.create({
-        model: ai.model,
-        temperature: 0,
-        max_tokens: 1500,
-        response_format: { type: 'json_object' },
+      const completion = await chatWithEffortRetry<Completion>(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (params) => ai.client.chat.completions.create(params as any),
+        {
+        ...chatParams({ model: ai.model, maxTokens: 1500, json: { type: 'json_object' } }),
         messages: [
           {
             role: 'system',
@@ -74,7 +77,7 @@ RULES:
         ],
       })
 
-      const raw = completion.choices[0]?.message?.content?.trim() ?? null
+      const { text: raw } = readContent(completion)
       if (!raw) continue
 
       let parsed: Array<{ catId: string | null }> = []

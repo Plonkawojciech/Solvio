@@ -1,0 +1,132 @@
+{
+  "merchant": "Kaufland",
+  "date": "2026-08-02",
+  "currency": "PLN",
+  "total": 201.82,
+  "itemCount": 20,
+  "items": [
+    {
+      "name": "K-Classic Mleko 2% 1L",
+      "quantity": 4,
+      "unitPrice": 3.29,
+      "totalPrice": 13.16
+    },
+    {
+      "name": "Chleb pszenny 600g",
+      "quantity": 1,
+      "unitPrice": 5.49,
+      "totalPrice": 5.49
+    },
+    {
+      "name": "Bulki kajzerki 6szt",
+      "quantity": 1,
+      "unitPrice": 4.99,
+      "totalPrice": 4.99
+    },
+    {
+      "name": "Ser gouda plastry 150g",
+      "quantity": 2,
+      "unitPrice": 7.49,
+      "totalPrice": 14.98
+    },
+    {
+      "name": "Szynka konserwowa 300g",
+      "quantity": 1,
+      "unitPrice": 11.99,
+      "totalPrice": 11.99
+    },
+    {
+      "name": "Parowki drobiowe 250g",
+      "quantity": 2,
+      "unitPrice": 6.49,
+      "totalPrice": 12.98
+    },
+    {
+      "name": "Makaron swiderki 500g",
+      "quantity": 2,
+      "unitPrice": 3.99,
+      "totalPrice": 7.98
+    },
+    {
+      "name": "Ryz basmati 1kg",
+      "quantity": 1,
+      "unitPrice": 12.99,
+      "totalPrice": 12.99
+    },
+    {
+      "name": "Olej rzepakowy 1L",
+      "quantity": 1,
+      "unitPrice": 9.49,
+      "totalPrice": 9.49
+    },
+    {
+      "name": "Cukier bialy 1kg",
+      "quantity": 2,
+      "unitPrice": 3.79,
+      "totalPrice": 7.58
+    },
+    {
+      "name": "Maka pszenna 1kg",
+      "quantity": 1,
+      "unitPrice": 3.49,
+      "totalPrice": 3.49
+    },
+    {
+      "name": "Ketchup Pudliszki 480g",
+      "quantity": 1,
+      "unitPrice": 8.99,
+      "totalPrice": 8.99
+    },
+    {
+      "name": "Majonez Kielecki 400ml",
+      "quantity": 1,
+      "unitPrice": 9.99,
+      "totalPrice": 9.99
+    },
+    {
+      "name": "Ogorki kiszone 900ml",
+      "quantity": 1,
+      "unitPrice": 8.49,
+      "totalPrice": 8.49
+    },
+    {
+      "name": "Marchew kg",
+      "quantity": 1.48,
+      "unitPrice": 3.49,
+      "totalPrice": 5.17
+    },
+    {
+      "name": "Cebula kg",
+      "quantity": 0.92,
+      "unitPrice": 3.99,
+      "totalPrice": 3.67
+    },
+    {
+      "name": "Ziemniaki 2,5kg",
+      "quantity": 1,
+      "unitPrice": 9.99,
+      "totalPrice": 9.99
+    },
+    {
+      "name": "Jablka Szampion kg",
+      "quantity": 2.14,
+      "unitPrice": 4.99,
+      "totalPrice": 10.68
+    },
+    {
+      "name": "Piwo Tyskie 0,5L",
+      "quantity": 6,
+      "unitPrice": 3.79,
+      "totalPrice": 22.74
+    },
+    {
+      "name": "Chipsy Lays 140g",
+      "quantity": 2,
+      "unitPrice": 8.49,
+      "totalPrice": 16.98
+    }
+  ],
+  "discountCount": 0,
+  "discountTotal": 0.0,
+  "note": "20 pozycji — test na ucinanie odpowiedzi modelu."
+}

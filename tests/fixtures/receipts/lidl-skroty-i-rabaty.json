@@ -1,0 +1,60 @@
+{
+  "merchant": "Lidl",
+  "date": "2026-08-09",
+  "currency": "PLN",
+  "total": 87.53,
+  "itemCount": 8,
+  "items": [
+    {
+      "name": "PILOSJOG NAT 400G",
+      "quantity": 2,
+      "unitPrice": 2.49,
+      "totalPrice": 4.98
+    },
+    {
+      "name": "CHLEZYTN ORKISZ",
+      "quantity": 1,
+      "unitPrice": 5.99,
+      "totalPrice": 5.99
+    },
+    {
+      "name": "MILBONA MASLO EX",
+      "quantity": 1,
+      "unitPrice": 9.49,
+      "totalPrice": 9.49
+    },
+    {
+      "name": "COMBINO MAKARON",
+      "quantity": 3,
+      "unitPrice": 3.29,
+      "totalPrice": 9.87
+    },
+    {
+      "name": "CRWNFLD PLATKI",
+      "quantity": 1,
+      "unitPrice": 7.99,
+      "totalPrice": 7.99
+    },
+    {
+      "name": "KURCZAK FILET KG",
+      "quantity": 1.106,
+      "unitPrice": 23.99,
+      "totalPrice": 26.53
+    },
+    {
+      "name": "FREEWAY COLA 2L",
+      "quantity": 2,
+      "unitPrice": 3.49,
+      "totalPrice": 6.98
+    },
+    {
+      "name": "BELLAROM KAWA 500",
+      "quantity": 1,
+      "unitPrice": 21.99,
+      "totalPrice": 21.99
+    }
+  ],
+  "discountCount": 2,
+  "discountTotal": -6.29,
+  "note": "Skróty POS-owe i rabaty Lidl Plus — test rozwijania nazw."
+}

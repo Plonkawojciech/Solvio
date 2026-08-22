@@ -2,6 +2,7 @@ import { auth, getHubAuth } from '@/lib/auth-compat'
 import { NextResponse } from 'next/server'
 import { db, expenses, categories, userSettings, merchantRules, receipts, receiptItems } from '@/lib/db'
 import { eq, desc, asc, and, inArray, sql, ilike, or, type SQL } from 'drizzle-orm'
+import { removeImage } from '@/lib/receipts/storage'
 import { recordAudit } from '@/lib/audit-log'
 import { z } from 'zod'
 import { dbBatch } from '@/lib/db/batch'
@@ -468,15 +469,9 @@ export async function DELETE(request: Request) {
           // Delete receipt from DB
           await db.delete(receipts).where(and(eq(receipts.id, receiptId), eq(receipts.userId, userId)))
 
-          // Delete blob image if exists
-          if (receipt?.imageUrl) {
-            try {
-              const { del } = await import('@vercel/blob')
-              await del(receipt.imageUrl)
-            } catch {
-              // Blob deletion is best-effort — don't fail the request
-            }
-          }
+          // Zdjęcie idzie za paragonem. `removeImage` zna oba magazyny —
+          // dysk kontenera i historyczne URL-e Vercel Blob.
+          await removeImage(receipt?.imageUrl)
         }
       }))
     }

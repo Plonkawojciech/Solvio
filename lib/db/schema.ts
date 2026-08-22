@@ -58,6 +58,9 @@ export const receipts = pgTable('receipts', {
   index('idx_receipts_user_status').on(t.userId, t.status),
   index('idx_receipts_user_vendor').on(t.userId, t.vendor),
   index('idx_receipts_user_date').on(t.userId, t.date),
+  // Odcisk pliku sprawdzamy PRZED wywołaniem OCR — bez indeksu każdy skan
+  // przeczesywałby całą tabelę paragonów użytkownika.
+  index('idx_receipts_user_hash').on(t.userId, t.hash),
 ])
 
 export const receiptItems = pgTable('receipt_items', {

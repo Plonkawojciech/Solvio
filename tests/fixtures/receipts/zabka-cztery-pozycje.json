@@ -1,0 +1,36 @@
+{
+  "merchant": "Żabka",
+  "date": "2026-08-21",
+  "currency": "PLN",
+  "total": 23.76,
+  "itemCount": 4,
+  "items": [
+    {
+      "name": "Kawa Zabka Cafe duza",
+      "quantity": 1,
+      "unitPrice": 9.99,
+      "totalPrice": 9.99
+    },
+    {
+      "name": "Croissant z czekolada",
+      "quantity": 1,
+      "unitPrice": 5.49,
+      "totalPrice": 5.49
+    },
+    {
+      "name": "Woda Zywiec Zdroj 0,5L",
+      "quantity": 1,
+      "unitPrice": 3.29,
+      "totalPrice": 3.29
+    },
+    {
+      "name": "Guma Orbit",
+      "quantity": 1,
+      "unitPrice": 4.99,
+      "totalPrice": 4.99
+    }
+  ],
+  "discountCount": 0,
+  "discountTotal": 0.0,
+  "note": "Mały paragon convenience — sprawdza krótkie wydruki."
+}

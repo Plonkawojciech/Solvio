@@ -1,0 +1,42 @@
+{
+  "merchant": "REWE",
+  "date": "2026-07-30",
+  "currency": "EUR",
+  "total": 15.88,
+  "itemCount": 5,
+  "items": [
+    {
+      "name": "Vollmilch 3,5% 1L",
+      "quantity": 2,
+      "unitPrice": 1.29,
+      "totalPrice": 2.58
+    },
+    {
+      "name": "Roggenbrot 750g",
+      "quantity": 1,
+      "unitPrice": 2.49,
+      "totalPrice": 2.49
+    },
+    {
+      "name": "Butter Deutsche Markenbutter",
+      "quantity": 1,
+      "unitPrice": 2.79,
+      "totalPrice": 2.79
+    },
+    {
+      "name": "Bananen kg",
+      "quantity": 0.98,
+      "unitPrice": 1.99,
+      "totalPrice": 1.95
+    },
+    {
+      "name": "Hähnchenbrustfilet",
+      "quantity": 0.64,
+      "unitPrice": 9.49,
+      "totalPrice": 6.07
+    }
+  ],
+  "discountCount": 0,
+  "discountTotal": 0.0,
+  "note": "Paragon w EUR — test wykrycia waluty i tłumaczenia pozycji."
+}

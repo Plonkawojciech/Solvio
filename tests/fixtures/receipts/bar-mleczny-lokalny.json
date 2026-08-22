@@ -1,0 +1,30 @@
+{
+  "merchant": "Bar Mleczny Apetyt",
+  "date": "2026-08-19",
+  "currency": "PLN",
+  "total": 31.0,
+  "itemCount": 3,
+  "items": [
+    {
+      "name": "Zupa pomidorowa",
+      "quantity": 1,
+      "unitPrice": 9.0,
+      "totalPrice": 9.0
+    },
+    {
+      "name": "Pierogi ruskie 10szt",
+      "quantity": 1,
+      "unitPrice": 18.0,
+      "totalPrice": 18.0
+    },
+    {
+      "name": "Kompot",
+      "quantity": 1,
+      "unitPrice": 4.0,
+      "totalPrice": 4.0
+    }
+  ],
+  "discountCount": 0,
+  "discountTotal": 0.0,
+  "note": "Sklep spoza sieci — merchant musi wyjść z nagłówka, nie ze słownika."
+}

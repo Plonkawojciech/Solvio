@@ -57,6 +57,11 @@ COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 COPY --chown=nextjs:nodejs docker-entrypoint.sh /docker-entrypoint.sh
 RUN chmod +x /docker-entrypoint.sh
 
+# Zdjęcia paragonów. Katalog MUSI istnieć w obrazie i należeć do `nextjs`:
+# Docker inicjuje świeży wolumen zawartością i uprawnieniami katalogu z obrazu,
+# a bez tego wolumen wstaje jako root i proces nie ma prawa zapisu.
+RUN mkdir -p /app/data/receipts && chown -R nextjs:nodejs /app/data
+
 USER nextjs
 EXPOSE 3000
 CMD ["/docker-entrypoint.sh"]

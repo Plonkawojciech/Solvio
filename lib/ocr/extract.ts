@@ -242,10 +242,14 @@ export async function extractReceiptData(azureResult: any) {
       }
 
       // Clean OCR noise from item name
+      // Uwaga na `\b`: w JS granica słowa liczy się po ASCII, więc po „ł"
+      // jej NIE MA i wzorzec `zł\b` nie łapał niczego. Stąd `(?![\p{L}])`
+      // z flagą `u` — inaczej pozycja „12,99 zł" przechodziła dalej jako
+      // nazwa produktu.
       name = name
-        .replace(/[#|@*_{}[\]~`^\\]/g, '')  // Remove OCR garbage characters
-        .replace(/\d+[.,]\d{2}\s*(zł|PLN|EUR|€|\$|£|USD|GBP|CHF|CZK|SEK|NOK|DKK|HUF|RON)\b/gi, '')  // Remove price+currency from name
-        .replace(/\b(zł|PLN|EUR|€|\$|£)\b/gi, '')  // Remove standalone currency symbols
+        .replace(/[#|@*_{}[\]~`^\\]/gu, '')  // śmieci po OCR
+        .replace(/\d+[.,]\d{2}\s*(zł|PLN|EUR|€|\$|£|USD|GBP|CHF|CZK|SEK|NOK|DKK|HUF|RON)(?![\p{L}])/giu, '')
+        .replace(/(?<![\p{L}])(zł|PLN|EUR|€|\$|£)(?![\p{L}])/giu, '')
         .replace(/\(\s*\)/g, '')  // Remove empty parens
         .replace(/\s+/g, ' ')
         .trim();
@@ -306,6 +310,11 @@ export async function extractReceiptData(azureResult: any) {
   const NON_ITEM_PATTERNS = [
     /^(sub)?total$/i, /^suma$/i, /^razem$/i, /^łącznie$/i,
     /^vat\b/i, /^tax\b/i, /^podatek/i, /^iva\b/i,
+    // PTU to polski odpowiednik VAT-u i stoi na KAŻDYM paragonie fiskalnym —
+    // bez tego wzorca „PTU A 23%" lądowało na liście zakupów.
+    /^ptu\b/i, /^sprzeda[żz]\s*opodatk/i, /^opodatk/i,
+    /^do\s*zap[łl]aty/i, /^zaokr[ąa]glenie/i, /^kaucja/i, /^bon\b/i,
+    /^suma\s*(pln|eur|usd)?$/i, /^razem\s/i, /^wydruk/i, /^nr\s*wydr/i,
     /^discount/i, /^rabat/i, /^zniżka/i, /^upust/i,
     /^change\b/i, /^reszta$/i, /^wydano$/i,
     /^cash\b/i, /^card\b/i, /^karta\b/i, /^gotówka$/i,

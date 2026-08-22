@@ -1,0 +1,42 @@
+[
+  {
+    "slug": "biedronka-12-pozycji",
+    "file": "biedronka-12-pozycji.jpg",
+    "note": "Duży paragon spożywczy z rabatami — najczęstszy przypadek."
+  },
+  {
+    "slug": "lidl-skroty-i-rabaty",
+    "file": "lidl-skroty-i-rabaty.jpg",
+    "note": "Skróty POS-owe i rabaty Lidl Plus — test rozwijania nazw."
+  },
+  {
+    "slug": "zabka-cztery-pozycje",
+    "file": "zabka-cztery-pozycje.jpg",
+    "note": "Mały paragon convenience — sprawdza krótkie wydruki."
+  },
+  {
+    "slug": "orlen-paliwo",
+    "file": "orlen-paliwo.jpg",
+    "note": "Paliwo: jedna pozycja, duża kwota, ilość ułamkowa."
+  },
+  {
+    "slug": "rossmann-drogeria",
+    "file": "rossmann-drogeria.jpg",
+    "note": "Drogeria — kategoryzacja poza spożywką."
+  },
+  {
+    "slug": "bar-mleczny-lokalny",
+    "file": "bar-mleczny-lokalny.jpg",
+    "note": "Sklep spoza sieci — merchant musi wyjść z nagłówka, nie ze słownika."
+  },
+  {
+    "slug": "rewe-eur",
+    "file": "rewe-eur.jpg",
+    "note": "Paragon w EUR — test wykrycia waluty i tłumaczenia pozycji."
+  },
+  {
+    "slug": "kaufland-dlugi",
+    "file": "kaufland-dlugi.jpg",
+    "note": "20 pozycji — test na ucinanie odpowiedzi modelu."
+  }
+]

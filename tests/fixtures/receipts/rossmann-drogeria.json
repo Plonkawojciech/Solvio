@@ -1,0 +1,48 @@
+{
+  "merchant": "Rossmann",
+  "date": "2026-08-11",
+  "currency": "PLN",
+  "total": 90.42,
+  "itemCount": 6,
+  "items": [
+    {
+      "name": "Szampon Isana 400ml",
+      "quantity": 2,
+      "unitPrice": 8.99,
+      "totalPrice": 17.98
+    },
+    {
+      "name": "Pasta do zebow Elmex",
+      "quantity": 1,
+      "unitPrice": 18.99,
+      "totalPrice": 18.99
+    },
+    {
+      "name": "Zel pod prysznic Nivea",
+      "quantity": 1,
+      "unitPrice": 12.49,
+      "totalPrice": 12.49
+    },
+    {
+      "name": "Chusteczki Bella 10x",
+      "quantity": 1,
+      "unitPrice": 6.99,
+      "totalPrice": 6.99
+    },
+    {
+      "name": "Krem Nivea Soft 200ml",
+      "quantity": 1,
+      "unitPrice": 15.99,
+      "totalPrice": 15.99
+    },
+    {
+      "name": "Dezodorant Rexona",
+      "quantity": 2,
+      "unitPrice": 11.49,
+      "totalPrice": 22.98
+    }
+  ],
+  "discountCount": 1,
+  "discountTotal": -5.0,
+  "note": "Drogeria — kategoryzacja poza spożywką."
+}
