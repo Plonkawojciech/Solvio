@@ -6,6 +6,15 @@
 
 ---
 
+## 2026-09-05 — Push do CRM oznacza wydatek jako PRYWATNY
+
+CRM dostał `FinanceEntry.scope` (FIRMA | PRYWATNE) i domyślnie liczy oraz
+pokazuje tylko firmowe. Push z Solvio wysyła `scope: 'PRYWATNE'`, więc zakupy
+są w Finansach widoczne (zakładka „Prywatne" / „Wszystko"), ale nie wchodzą do
+wyniku firmy ani do podatków.
+
+Plik: `lib/crm/finance.ts`.
+
 ## 2026-08-22 (wieczór) — paragony od A do Z
 
 Audyt pokazał trzy rzeczy, których nie widać w kodzie, bo wynikają ze

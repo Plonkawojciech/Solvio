@@ -70,6 +70,10 @@ export function createEntry(userId: string, input: CrmEntryInput) {
         category: input.category ?? conn.defaultCategory,
         paid: input.paid ?? true,
         note: input.note ?? '',
+        // Wydatek z Solvio jest PRYWATNY: ma być w CRM-ie widoczny, ale nigdy
+        // nie może wchodzić do wyniku firmy ani do podatków. CRM domyślnie
+        // filtruje ekrany i API do zakresu FIRMA.
+        scope: 'PRYWATNE',
         clientId: input.clientId ?? null,
       },
     }),
