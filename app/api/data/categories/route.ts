@@ -1,7 +1,7 @@
 import { auth } from '@/lib/auth-compat'
 import { NextResponse } from 'next/server'
 import { db, categories } from '@/lib/db'
-import { eq, and } from 'drizzle-orm'
+import { asc, eq, and } from 'drizzle-orm'
 import { z } from 'zod'
 
 const CreateCategorySchema = z.object({
@@ -18,6 +18,25 @@ const UpdateCategorySchema = z.object({
 const DeleteCategorySchema = z.object({
   id: z.string().uuid('id must be a valid UUID'),
 })
+
+/**
+ * Lista kategorii zalogowanego użytkownika.
+ *
+ * Trasa nie miała GET-a, a ekran ustawień (`app/(protected)/settings/page.tsx`)
+ * i manager kategorii pytały o nią od zawsze — dostawały 405 i renderowały
+ * „brak kategorii" niezależnie od tego, co jest w bazie. Stąd też puste
+ * budżety miesięczne, bo one czytają tę samą listę.
+ */
+export async function GET() {
+  const { userId } = await auth()
+  if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const rows = await db.select().from(categories)
+    .where(eq(categories.userId, userId))
+    .orderBy(asc(categories.name))
+
+  return NextResponse.json({ categories: rows })
+}
 
 export async function POST(request: Request) {
   const { userId } = await auth()

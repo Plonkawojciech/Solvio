@@ -6,6 +6,16 @@
 
 ---
 
+## 2026-09-05 — GET /api/data/categories (ekran ustawień był ślepy)
+
+Trasa `/api/data/categories` miała POST, PUT i DELETE, ale nie miała GET-a.
+Ekran ustawień i manager kategorii pytały o nią od zawsze, dostawały 405
+i renderowały „brak kategorii" niezależnie od zawartości bazy — a razem z tym
+sekcja budżetów miesięcznych mówiła „najpierw dodaj kategorie". Wygląda to
+jak pusta apka, choć nią nie jest.
+
+Plik: `app/api/data/categories/route.ts`.
+
 ## 2026-09-05 — Push do CRM oznacza wydatek jako PRYWATNY
 
 CRM dostał `FinanceEntry.scope` (FIRMA | PRYWATNE) i domyślnie liczy oraz
