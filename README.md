@@ -177,4 +177,4 @@ For the full database schema (11 tables) and complete API route list, see [`CLAU
 
 ## Ownership
 
-Programo s.c. — equal partnership between **Wojciech Płonka** (`Plonkawojciech`) and **Bartosz Kolaj** (`bkolaj`). Both have full admin rights to code, infra, and product decisions.
+Programo s.j. — equal partnership between **Wojciech Płonka** (`Plonkawojciech`) and **Bartosz Kolaj** (`bkolaj`). Both have full admin rights to code, infra, and product decisions.

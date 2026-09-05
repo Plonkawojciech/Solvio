@@ -1,9 +1,9 @@
 # Solvio — Expense Tracking App
 ---
 
-## Ownership — Programo s.c.
+## Ownership — Programo s.j.
 
-> **Programo s.c.** to spółka cywilna dwóch **równych wspólników**:
+> **Programo s.j.** to spółka cywilna dwóch **równych wspólników**:
 >
 > | Wspólnik | GitHub | Rola |
 > |----------|--------|------|

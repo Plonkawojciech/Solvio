@@ -21,7 +21,7 @@ export default function PrivacyPage() {
         <section className="space-y-3">
           <h2 className="text-xl font-semibold text-foreground">1. Administrator danych</h2>
           <p>
-            Administratorem Twoich danych osobowych jest <strong>Programo s.c.</strong> — twórca
+            Administratorem Twoich danych osobowych jest <strong>Programo s.j.</strong> — twórca
             aplikacji Solvio. W sprawach dotyczących prywatności możesz skontaktować się z nami pod
             adresem{' '}
             <a href="mailto:support@solvio.app" className="font-medium underline underline-offset-4">
