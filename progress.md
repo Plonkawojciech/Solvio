@@ -6,6 +6,19 @@
 
 ---
 
+## 2026-09-05 — Budżety kategorii wczytywały się z nieistniejącego pola
+
+Dwa rozjazdy w jednej sekcji, przez które limity miesięczne były martwe:
+
+- ekran czytał `data.categoryBudgets`, a `/api/data/settings` zwraca `budgets`;
+- wiersze limitów renderowały się z zapisanych budżetów, więc kategoria bez
+  limitu nie miała gdzie go dostać — sekcja pisała „najpierw dodaj kategorie",
+  mając dziesięć kategorii tuż obok. Teraz wiersze biorą się z kategorii,
+  a zapisane kwoty tylko je wypełniają (tabela `category_budgets` nie trzyma
+  nazwy ani ikony, więc dokłada je lista kategorii).
+
+Plik: `app/(protected)/settings/page.tsx`.
+
 ## 2026-09-05 — GET /api/data/categories (ekran ustawień był ślepy)
 
 Trasa `/api/data/categories` miała POST, PUT i DELETE, ale nie miała GET-a.

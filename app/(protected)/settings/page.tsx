@@ -47,10 +47,25 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true)
   const [categories, setCategories] = useState<Category[]>([])
   const [settings, setSettings] = useState<{ currency?: string; language?: string } | null>(null)
-  const [budgets, setBudgets] = useState<CategoryBudget[]>([])
+  // Surowe wiersze z bazy: `{categoryId, amount, period}` — bez nazwy i ikony,
+  // bo tabela ich nie trzyma. Nazwę dokłada `budgetRows` z listy kategorii.
+  const [budgets, setBudgets] = useState<{ categoryId: string; amount: string | number }[]>([])
   const [merchantRules, setMerchantRules] = useState<MerchantRule[]>([])
   const [ruleToDelete, setRuleToDelete] = useState<string | null>(null)
   const [deletingRule, setDeletingRule] = useState<string | null>(null)
+
+  // Wiersze limitów budujemy z KATEGORII, nie z zapisanych budżetów: inaczej
+  // kategoria bez limitu nie miała gdzie go dostać i sekcja mówiła „najpierw
+  // dodaj kategorie", mając je tuż obok na ekranie.
+  const budgetRows: CategoryBudget[] = categories.map((category) => ({
+    categoryId: category.id,
+    categoryName: category.name,
+    icon: category.icon ?? null,
+    amount: Number(
+      budgets.find((b) => b.categoryId === category.id)?.amount ?? 0
+    ),
+    currency: settings?.currency ?? 'PLN',
+  }))
 
   useEffect(() => {
     let cancelled = false
@@ -66,7 +81,9 @@ export default function SettingsPage() {
         if (setRes.ok) {
           const data = await setRes.json()
           setSettings(data.settings ?? null)
-          setBudgets(data.categoryBudgets ?? [])
+          // Endpoint zwraca `budgets`, nie `categoryBudgets` — przez tę
+          // literówkę limity nigdy się nie wczytywały.
+          setBudgets(data.budgets ?? [])
         }
         if (ruleRes.ok) setMerchantRules((await ruleRes.json()).rules ?? [])
       } finally {
@@ -110,7 +127,7 @@ export default function SettingsPage() {
             <SettingsForm
               initialCurrency={settings?.currency ?? 'PLN'}
               initialLanguage={settings?.language ?? 'pl'}
-              categoryBudgets={budgets}
+              categoryBudgets={budgetRows}
             />
 
             <CategoriesManager initialCategories={categories} />
