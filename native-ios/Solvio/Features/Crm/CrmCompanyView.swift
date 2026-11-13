@@ -3,7 +3,7 @@ import SwiftUI
 /// Sekcje Finansów CRM-a widoczne w apce. Odpowiadają temu, czym da się
 /// sterować na `/finanse`: wpisami miesiąca, seriami cyklicznymi i klientami.
 enum CrmSection: String, CaseIterable, Identifiable {
-    case all, income, expense, commitments, clients
+    case all, income, expense, commitments, clients, bank
     var id: String { rawValue }
 
     var labelKey: String {
@@ -13,12 +13,13 @@ enum CrmSection: String, CaseIterable, Identifiable {
         case .expense:     return "crm.costs"
         case .commitments: return "crm.commitments"
         case .clients:     return "crm.clientsSection"
+        case .bank:        return "crm.bank"
         }
     }
 
     /// Wpisy są miesięczne, rejestry nie — pasek miesiąca dotyczy tylko tych
     /// pierwszych i pokazywanie go nad listą klientów byłoby myleniem tropu.
-    var isMonthly: Bool { self == .all || self == .income || self == .expense }
+    var isMonthly: Bool { self == .all || self == .income || self == .expense || self == .bank }
 
     /// Filtr typu dla list wpisów. `nil` = pokaż wszystko.
     var entryType: String? {
@@ -60,10 +61,15 @@ struct CrmCompanyView: View {
 
     // MARK: - Paski
 
+    /// „Bank" pokazuje się tylko, gdy CRM oddał przynajmniej jeden rachunek.
+    private var sections: [CrmSection] {
+        CrmSection.allCases.filter { $0 != .bank || crm.hasBank }
+    }
+
     private var sectionBar: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
-                ForEach(CrmSection.allCases) { item in
+                ForEach(sections) { item in
                     PickChip(label: locale.t(item.labelKey), active: section == item) {
                         section = item
                     }
@@ -114,6 +120,12 @@ struct CrmCompanyView: View {
             CrmCommitmentsList(editing: $editingCommitment, creating: $creating)
         case .clients:
             CrmClientsList(editing: $editingClient, creating: $creating)
+        case .bank:
+            if crm.hasBank {
+                CrmBankList()
+            } else {
+                CrmEntriesList(type: nil, editing: $editingEntry, creating: $creating)
+            }
         }
     }
 

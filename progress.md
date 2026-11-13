@@ -6,6 +6,23 @@
 
 ---
 
+## 2026-11-13 — Dane z banku CRM-a w karcie Firma i zakładce Firma
+
+CRM wystawił `/api/v1/bank/{accounts,transactions}`. Solvio tylko czyta —
+nie zmienia sald ani dopasowań (rozliczenie zatwierdza człowiek w CRM-ie).
+
+- **Backend:** `lib/crm/bank.ts` + trasy `/api/crm/bank/accounts` i
+  `/api/crm/bank/transactions` (sesja, wzorzec `balances`). Zakres FIRMA,
+  transakcje stronami po `nextCursor` do 500 sztuk (`truncated`). **403 z CRM-a
+  = pusta lista**, nie błąd i nie wpis w `last_error`. Testy:
+  `lib/__tests__/crm-bank.test.ts`. Kontrakt w `docs/API.md`.
+- **iOS:** karta Firma na Panelu dostaje linię „Na koncie" (suma sald
+  aktywnych rachunków po walutach, przy kilku rachunkach też wiersz na każdy);
+  Wydatki → Firma dostaje sekcję „Bank" z transakcjami miesiąca (data,
+  kontrahent, opis, kwota ze znakiem, „rozliczona" / „do rozliczenia" /
+  „oczekuje"). Wszystko widać TYLKO przy wpiętym CRM-ie i co najmniej jednym
+  aktywnym rachunku — inaczej apka wygląda jak wcześniej.
+
 ## 2026-09-05 — Budżety kategorii wczytywały się z nieistniejącego pola
 
 Dwa rozjazdy w jednej sekcji, przez które limity miesięczne były martwe:
