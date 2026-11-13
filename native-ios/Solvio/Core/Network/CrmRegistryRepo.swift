@@ -78,4 +78,21 @@ enum CrmRegistryRepo {
     static func deleteBalance(id: String) async throws {
         try await ApiClient.shared.deleteVoid("/api/crm/balances/\(id)")
     }
+
+    // MARK: - Bank (tylko odczyt)
+
+    /// Firmowe rachunki z saldem. Pusta lista = CRM nie ma (albo nie
+    /// udostępnia temu kluczowi) rachunków — apka wygląda wtedy jak bez banku.
+    static func bankAccounts() async throws -> [CrmBankAccount] {
+        let res: CrmBankAccountsResponse = try await ApiClient.shared.get("/api/crm/bank/accounts")
+        return res.accounts
+    }
+
+    static func bankTransactions(from: String, to: String) async throws -> [CrmBankTransaction] {
+        let res: CrmBankTransactionsResponse = try await ApiClient.shared.get(
+            "/api/crm/bank/transactions",
+            query: [URLQueryItem(name: "from", value: from), URLQueryItem(name: "to", value: to)]
+        )
+        return res.transactions
+    }
 }

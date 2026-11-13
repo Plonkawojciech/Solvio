@@ -14,6 +14,10 @@ struct CrmSummaryCard: View {
             PaperCard(title: locale.t("crm.company"), label: locale.t("crm.section")) {
                 VStack(alignment: .leading, spacing: Theme.Spacing.md) {
                     figures
+                    if crm.hasBank {
+                        Divider().overlay(Theme.border)
+                        bankSection
+                    }
                     if let balance = crm.latestBalance {
                         Divider().overlay(Theme.border)
                         balanceRow(balance)
@@ -64,6 +68,43 @@ struct CrmSummaryCard: View {
             Text(Fmt.dayMonth(balance.at))
                 .font(AppFont.caption)
                 .foregroundColor(Theme.mutedForeground)
+        }
+    }
+
+    /// Saldo firmowych rachunków z banku. Przy kilku rachunkach pokazujemy
+    /// też każdy z osobna — sama suma nie mówi, gdzie leżą pieniądze.
+    private var bankSection: some View {
+        let accounts = crm.activeBankAccounts
+        let totals = crm.bankTotals
+        return VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+            HStack(spacing: Theme.Spacing.sm) {
+                SectionLabel(text: locale.t("crm.bankOnAccount"))
+                Spacer(minLength: Theme.Spacing.sm)
+                Text(totals.isEmpty ? "—" : totals.map { Fmt.amount($0.amount, currency: $0.currency) }.joined(separator: " · "))
+                    .font(AppFont.amount)
+                    .foregroundColor(Theme.foreground)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+                if let at = accounts.compactMap(\.balanceAt).min() {
+                    Text(Fmt.dayMonth(at))
+                        .font(AppFont.caption)
+                        .foregroundColor(Theme.mutedForeground)
+                }
+            }
+            if accounts.count > 1 {
+                ForEach(accounts) { account in
+                    HStack(spacing: Theme.Spacing.sm) {
+                        Text(account.name)
+                            .font(AppFont.captionMedium)
+                            .foregroundColor(Theme.foreground)
+                            .lineLimit(1)
+                        Spacer(minLength: Theme.Spacing.sm)
+                        Text(account.balance.map { Fmt.amount($0, currency: account.currency) } ?? "—")
+                            .font(AppFont.mono(11))
+                            .foregroundColor(Theme.foreground)
+                    }
+                }
+            }
         }
     }
 

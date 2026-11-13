@@ -206,6 +206,7 @@ struct ExpensesListView: View {
             switch companySection {
             case .commitments: return locale.pluralized("crm.commitmentsCount", count: crm.commitments.count)
             case .clients:     return locale.pluralized("crm.clientsCount", count: crm.clients.count)
+            case .bank:        return locale.pluralized("dashboard.transactions", count: crm.monthBankTransactions.count)
             default:           return locale.pluralized("crm.entriesCount", count: crm.entries.count)
             }
         }

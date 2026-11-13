@@ -289,6 +289,28 @@ stronie nie istnieje żadna kopia tych danych.
 | `POST` | `/api/crm/balances` | `{ at, amount, note? }` — nowy ręczny odczyt |
 | `DELETE` | `/api/crm/balances/{id}` | usuwa odczyt |
 
+### Bank (tylko odczyt)
+
+Rachunki i transakcje, które CRM pobiera z banku. Solvio **niczego tu nie
+zmienia** — ani sald, ani dopasowań; rozliczenie transakcji z wpisem
+zatwierdza człowiek w CRM-ie.
+
+| Metoda | Ścieżka | Co robi |
+|---|---|---|
+| `GET` | `/api/crm/bank/accounts` | firmowe rachunki: `{ accounts: [{ id, name, providerName, iban, currency, scope, balance, balanceAt, lastSyncAt, active }] }` |
+| `GET` | `/api/crm/bank/transactions` | transakcje firmowych rachunków (`from`, `to` jako `RRRR-MM-DD`, `accountId?`): `{ transactions: [{ id, accountId, bookingDate, amount, currency, status: BOOK\|PDNG, counterpartyName, description, matchStatus }], truncated }` |
+
+`amount` to **liczba ze znakiem** — ujemna to wydatek z rachunku. `balance`
+bywa `null`, gdy bank nie oddał salda; wtedy nie wolno go liczyć jako zera.
+`matchStatus`: `CONFIRMED` = rozliczona, `SUGGESTED` = CRM ma propozycję
+dopasowania, `NONE`/`IGNORED` = nic.
+
+Transakcje zbieramy z CRM-a stronami (`nextCursor`) do **500 sztuk**;
+`truncated: true` znaczy, że w zakresie było więcej. **403 z CRM-a oddajemy
+jako pustą listę**, nie błąd: klucz bez dostępu do rachunków ma dać apkę
+wyglądającą jak przed integracją banku. Inne awarie CRM-a — `502`, jak
+w pozostałych trasach.
+
 `intervalMonths` to liczba miesięcy między uderzeniami serii: `1` = co miesiąc,
 `3` = co kwartał, `12` = rocznie. Apka pokazuje gotowe wybory zamiast pola
 liczbowego.
