@@ -17,6 +17,10 @@ final class CrmStore: ObservableObject {
     @Published private(set) var clients: [CrmClient] = []
     @Published private(set) var commitments: [CrmCommitment] = []
     @Published private(set) var balances: [CrmBalance] = []
+    /// Rachunki i transakcje z banku — tylko odczyt. Puste, gdy CRM nie ma
+    /// rachunków; wtedy żaden ekran nie pokazuje niczego bankowego.
+    @Published private(set) var bankAccounts: [CrmBankAccount] = []
+    @Published private(set) var bankTransactions: [CrmBankTransaction] = []
     @Published private(set) var loading = false
     @Published private(set) var error: String?
 
@@ -32,6 +36,30 @@ final class CrmStore: ObservableObject {
     var monthBalance: Double { summary?.month?.balance ?? 0 }
 
     var activeCommitments: [CrmCommitment] { commitments.filter(\.active) }
+
+    var activeBankAccounts: [CrmBankAccount] { bankAccounts.filter(\.active) }
+    var hasBank: Bool { !activeBankAccounts.isEmpty }
+
+    /// Transakcje oglądanego miesiąca. Odfiltrowujemy lokalnie, żeby po
+    /// przełączeniu strzałek nigdy nie mignęła lista z poprzedniego miesiąca.
+    var monthBankTransactions: [CrmBankTransaction] {
+        let bounds = Self.monthBounds(month)
+        return bankTransactions
+            .filter { $0.bookingDate >= bounds.from && $0.bookingDate <= bounds.to }
+            .sorted { $0.bookingDate > $1.bookingDate }
+    }
+
+    /// Suma sald po walutach — złotówek z euro nie dodajemy.
+    var bankTotals: [(currency: String, amount: Double)] {
+        var sums: [String: Double] = [:]
+        var order: [String] = []
+        for account in activeBankAccounts {
+            guard let balance = account.balance else { continue }
+            if sums[account.currency] == nil { order.append(account.currency) }
+            sums[account.currency, default: 0] += balance
+        }
+        return order.map { ($0, sums[$0] ?? 0) }
+    }
 
     func client(named id: String?) -> CrmClient? {
         guard let id else { return nil }
@@ -100,6 +128,24 @@ final class CrmStore: ObservableObject {
         }
 
         await refreshContext()
+        await refreshBankTransactions(bounds)
+    }
+
+    /// Transakcje miesiąca — tylko gdy są rachunki. Awaria nie zostawia
+    /// starej listy: lepiej pusto niż transakcje z innego miesiąca.
+    private func refreshBankTransactions(_ bounds: (from: String, to: String)) async {
+        guard hasBank else {
+            bankTransactions = []
+            return
+        }
+        do {
+            bankTransactions = try await CrmRegistryRepo.bankTransactions(from: bounds.from, to: bounds.to)
+        } catch ApiError.cancelled {
+            return
+        } catch {
+            bankTransactions = []
+            Log.error(.crm, "nie udało się wczytać transakcji z banku", error)
+        }
     }
 
     /// Klienci, zobowiązania i stan konta. Konteksty są DODATKIEM: padnięta
@@ -113,6 +159,11 @@ final class CrmStore: ObservableObject {
         }
         if let rows = try? await CrmRegistryRepo.balances() {
             balances = rows
+        }
+        // Bank jest dodatkiem do dodatku: brak rachunków albo awaria
+        // = apka wygląda dokładnie tak jak przed integracją banku.
+        if let rows = try? await CrmRegistryRepo.bankAccounts() {
+            bankAccounts = rows
         }
     }
 
@@ -172,6 +223,8 @@ final class CrmStore: ObservableObject {
         clients = []
         commitments = []
         balances = []
+        bankAccounts = []
+        bankTransactions = []
         connected = nil
         loadedAt = nil
         error = nil
