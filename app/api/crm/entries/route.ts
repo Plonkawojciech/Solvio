@@ -73,7 +73,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: parsed.error.issues[0]?.message ?? 'Nieprawidłowe dane' }, { status: 400 })
   }
 
-  const res = await createEntry(userId, parsed.data)
+  // Ta trasa to edytor wpisu w zakładce Firma — wpis jest firmowy. Prywatne
+  // wydatki idą do CRM-a inną drogą (`maybePushToCrm`).
+  const res = await createEntry(userId, parsed.data, 'FIRMA')
   if (!res.ok) return NextResponse.json({ error: res.error ?? 'CRM odrzucił wpis' }, { status: 502 })
   return NextResponse.json({ entry: res.data?.entry ?? null }, { status: 201 })
 }

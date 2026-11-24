@@ -270,6 +270,10 @@ enum CrmRepo {
         try await ApiClient.shared.get("/api/crm/entries", query: [
             URLQueryItem(name: "from", value: from),
             URLQueryItem(name: "to", value: to),
+            // Bez roku i miesiąca trasa liczy sumy BIEŻĄCEGO miesiąca, a lista
+            // dotyczy oglądanego — kafelki rozjeżdżały się z wierszami.
+            URLQueryItem(name: "year", value: String(from.prefix(4))),
+            URLQueryItem(name: "month", value: String(Int(from.dropFirst(5).prefix(2)) ?? 0)),
             URLQueryItem(name: "limit", value: "200"),
         ])
     }

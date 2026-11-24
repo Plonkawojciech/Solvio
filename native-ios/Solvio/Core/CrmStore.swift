@@ -25,15 +25,24 @@ final class CrmStore: ObservableObject {
     @Published private(set) var error: String?
 
     /// Miesiąc, którego dotyczą `entries`. Zmiana miesiąca unieważnia cache.
-    @Published private(set) var month: Date = Date()
+    @Published private(set) var month: Date
+    /// Oglądany jest bieżący miesiąc, więc ma iść za kalendarzem. Ręcznie
+    /// wybrany inny miesiąc zostaje tam, gdzie użytkownik go zostawił.
+    private var followsToday = true
+    private let now: () -> Date
+
+    init(now: @escaping () -> Date = Date.init) {
+        self.now = now
+        month = now()
+    }
 
     private var loadedAt: Date?
     private var task: Task<Void, Never>?
+    /// Podbijane przy każdym nowym wczytaniu i przy czyszczeniu. Odpowiedź
+    /// starszego żądania jest odrzucana: inaczej dane poprzedniego konta albo
+    /// poprzedniego miesiąca wróciłyby po tym, jak zniknęły z ekranu.
+    private var generation = 0
     private let ttl: TimeInterval = 120
-
-    var monthIncome: Double { summary?.month?.income ?? 0 }
-    var monthExpense: Double { summary?.month?.expense ?? 0 }
-    var monthBalance: Double { summary?.month?.balance ?? 0 }
 
     var activeCommitments: [CrmCommitment] { commitments.filter(\.active) }
 
@@ -78,10 +87,20 @@ final class CrmStore: ObservableObject {
     }
 
     func ensureLoaded(force: Bool = false) {
+        rollMonth()
         if !force, let loadedAt, Date().timeIntervalSince(loadedAt) < ttl { return }
         if !force, task != nil { return }
+        _ = startLoad()
+    }
+
+    @discardableResult
+    private func startLoad() -> Task<Void, Never> {
         task?.cancel()
-        task = Task { [weak self] in await self?.load() }
+        generation += 1
+        let mine = generation
+        let work = Task { await load(mine) }
+        task = work
+        return work
     }
 
     /// Miesiąc w przód / w tył — tak jak strzałki nad tabelą w `/finanse`.
@@ -91,20 +110,49 @@ final class CrmStore: ObservableObject {
     }
 
     func setMonth(_ date: Date) {
-        month = date
-        loadedAt = nil
-        ensureLoaded(force: true)
+        followsToday = isThisMonth(date)
+        show(date)
+        startLoad()
     }
 
-    private func load() async {
-        defer { task = nil }
-        let hadData = !entries.isEmpty
-        if !hadData { loading = true }
-        defer { if !hadData { loading = false } }
+    /// Apka wznowiona z tła w nowym miesiącu nie może dalej pokazywać
+    /// poprzedniego jako bieżącego.
+    func rollMonth() {
+        guard followsToday, !isThisMonth(month) else { return }
+        show(now())
+        // Żądanie w locie dotyczy poprzedniego miesiąca.
+        task?.cancel()
+        task = nil
+        generation += 1
+        loading = false
+    }
+
+    private func show(_ date: Date) {
+        month = date
+        loadedAt = nil
+        // Wpisy i sumy innego miesiąca pod nowym nagłówkiem byłyby nieprawdą.
+        entries = []
+        summary = nil
+    }
+
+    private func isThisMonth(_ date: Date) -> Bool {
+        Calendar.current.isDate(date, equalTo: now(), toGranularity: .month)
+    }
+
+    private func load(_ mine: Int) async {
+        guard mine == generation else { return }
+        if entries.isEmpty { loading = true }
+        defer {
+            if mine == generation {
+                loading = false
+                task = nil
+            }
+        }
 
         let bounds = Self.monthBounds(month)
         do {
             let result = try await CrmRepo.entries(from: bounds.from, to: bounds.to)
+            guard mine == generation else { return }
             entries = result.entries
             summary = result.summary
             connected = true
@@ -114,36 +162,45 @@ final class CrmStore: ObservableObject {
         } catch ApiError.cancelled {
             return
         } catch {
-            // 502 z naszej trasy znaczy „CRM nie odpowiada", a nie „brak
-            // połączenia". Rozróżnienie ma znaczenie: pierwsze warto ponowić,
-            // drugie wymaga wklejenia klucza w ustawieniach.
-            if case ApiError.unauthorized = error {
-                connected = false
+            guard mine == generation else { return }
+            Log.error(.crm, "nie udało się wczytać finansów CRM", error)
+            // Wygasła sesja kończy się wylogowaniem, a ono czyści wszystko samo.
+            if case ApiError.unauthorized = error { return }
+            // 502 z naszej trasy znaczy zarówno „CRM nie odpowiada", jak i
+            // „konto nie ma wpiętego CRM-a". Od tego zależy, czy zakładka
+            // Firma w ogóle istnieje, więc pytamy wprost o połączenie.
+            let state = try? await CrmRepo.connection()
+            guard mine == generation else { return }
+            if state?.connected == false {
+                markDisconnected()
             } else {
-                connected = connected ?? false
+                // Bez sieci nie wiemy — i „nie wiemy" nie może znaczyć
+                // „odpięty", bo to czyści Firmę i odwołuje przypomnienia.
+                connected = state?.connected ?? connected
                 self.error = error.localizedDescription
             }
-            Log.error(.crm, "nie udało się wczytać finansów CRM", error)
             return
         }
 
-        await refreshContext()
-        await refreshBankTransactions(bounds)
+        await refreshContext(mine)
+        await refreshBankTransactions(bounds, mine)
     }
 
-    /// Transakcje miesiąca — tylko gdy są rachunki. Awaria nie zostawia
-    /// starej listy: lepiej pusto niż transakcje z innego miesiąca.
-    private func refreshBankTransactions(_ bounds: (from: String, to: String)) async {
+    /// Transakcje miesiąca — tylko gdy są rachunki. Awaria zostawia ostatnią
+    /// listę: `monthBankTransactions` i tak filtruje ją po oglądanym miesiącu.
+    private func refreshBankTransactions(_ bounds: (from: String, to: String), _ mine: Int) async {
+        guard mine == generation else { return }
         guard hasBank else {
             bankTransactions = []
             return
         }
         do {
-            bankTransactions = try await CrmRegistryRepo.bankTransactions(from: bounds.from, to: bounds.to)
+            let rows = try await CrmRegistryRepo.bankTransactions(from: bounds.from, to: bounds.to)
+            guard mine == generation else { return }
+            bankTransactions = rows
         } catch ApiError.cancelled {
             return
         } catch {
-            bankTransactions = []
             Log.error(.crm, "nie udało się wczytać transakcji z banku", error)
         }
     }
@@ -152,17 +209,19 @@ final class CrmStore: ObservableObject {
     /// lista klientów nie ma prawa schować wpisów, które już mamy.
     /// Wywoływane też po każdej zmianie w rejestrach — to jedyne miejsce,
     /// w którym te trzy kolekcje powstają.
-    func refreshContext() async {
-        if let context = try? await CrmRepo.context() {
+    func refreshContext() async { await refreshContext(generation) }
+
+    private func refreshContext(_ mine: Int) async {
+        if let context = try? await CrmRepo.context(), mine == generation {
             clients = context.clients
             commitments = context.commitments
         }
-        if let rows = try? await CrmRegistryRepo.balances() {
+        if let rows = try? await CrmRegistryRepo.balances(), mine == generation {
             balances = rows
         }
         // Bank jest dodatkiem do dodatku: brak rachunków albo awaria
         // = apka wygląda dokładnie tak jak przed integracją banku.
-        if let rows = try? await CrmRegistryRepo.bankAccounts() {
+        if let rows = try? await CrmRegistryRepo.bankAccounts(), mine == generation {
             bankAccounts = rows
         }
     }
@@ -211,13 +270,24 @@ final class CrmStore: ObservableObject {
     func setError(_ message: String?) { error = message }
 
     func reload() async {
+        rollMonth()
         loadedAt = nil
-        task?.cancel()
-        await load()
+        await startLoad().value
+    }
+
+    /// Konto nie ma wpiętego CRM-a — wszystko, co firmowe, znika z apki.
+    func markDisconnected() {
+        reset()
+        connected = false
     }
 
     func reset() {
         task?.cancel()
+        task = nil
+        generation += 1
+        loading = false
+        month = now()
+        followsToday = true
         entries = []
         summary = nil
         clients = []

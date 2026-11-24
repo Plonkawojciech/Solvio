@@ -91,19 +91,23 @@ struct AllMoneyList: View {
 
     private var totals: some View {
         let mineTotal = store.expenses.reduce(0.0) { $0 + $1.amount.double }
-        return HStack(spacing: Theme.Spacing.sm) {
-            tile(locale.t("expenses.scopeMine"), mineTotal, Theme.foreground)
-            tile(locale.t("crm.income"), crm.monthIncome, Theme.success)
-            tile(locale.t("crm.costs"), crm.monthExpense, Theme.destructive)
+        let company = crm.summary?.month
+        return VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+            HStack(spacing: Theme.Spacing.sm) {
+                tile(locale.t("expenses.scopeMine"), mineTotal, Theme.foreground)
+                tile(locale.t("crm.income"), company?.income, Theme.success)
+                tile(locale.t("crm.costs"), company?.expense, Theme.destructive)
+            }
+            SectionLabel(text: locale.t("crm.company") + " · " + crm.summaryPeriod)
         }
         .padding(.horizontal, Theme.Spacing.md)
         .padding(.bottom, Theme.Spacing.sm)
     }
 
-    private func tile(_ label: String, _ value: Double, _ color: Color) -> some View {
+    private func tile(_ label: String, _ value: Double?, _ color: Color) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             SectionLabel(text: label)
-            Text(Fmt.amount(value, currency: "PLN"))
+            Text(value.map { Fmt.amount($0, currency: "PLN") } ?? "—")
                 .font(AppFont.semibold(14))
                 .foregroundColor(color)
                 .lineLimit(1)

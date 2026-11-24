@@ -46,6 +46,7 @@ next-env.d.ts
 
 # Xcode build artifacts + per-user IDE state (no source)
 native-ios/build/
+native-ios/build-device/
 **/xcuserdata/
 *.xcuserstate
 

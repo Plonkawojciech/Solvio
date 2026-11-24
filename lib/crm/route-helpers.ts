@@ -37,6 +37,25 @@ export async function readBody<S extends z.ZodTypeAny>(
   return parsed.data
 }
 
+/** Czyta parametry zapytania. Do schematu trafiają wyłącznie klucze, które on
+ *  zna; pusty parametr (`?q=`) znaczy tyle co jego brak. */
+export function readQuery<S extends z.ZodObject>(req: Request, schema: S): z.infer<S> | NextResponse {
+  const q = new URL(req.url).searchParams
+  const raw: Record<string, string> = {}
+  for (const key of Object.keys(schema.shape)) {
+    const value = q.get(key)?.trim()
+    if (value) raw[key] = value
+  }
+  const parsed = schema.safeParse(raw)
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: parsed.error.issues[0]?.message ?? 'Nieprawidłowe parametry' },
+      { status: 400 },
+    )
+  }
+  return parsed.data
+}
+
 /**
  * Tłumaczy wynik z mostu na odpowiedź HTTP. 404 z CRM-a przepuszczamy jako
  * 404 — inaczej „nie ma takiego wpisu" wyglądałoby w apce jak awaria

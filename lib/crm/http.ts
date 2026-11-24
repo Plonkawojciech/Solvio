@@ -50,15 +50,17 @@ export async function call<T>(
 /**
  * Wspólny nagłówek każdej operacji na CRM-ie: bez połączenia nie ma o czym
  * rozmawiać, a po każdej próbie odnotowujemy jej wynik na połączeniu, żeby
- * ustawienia pokazywały prawdę o ostatnim kontakcie.
+ * ustawienia pokazywały prawdę o ostatnim kontakcie. `tracked` wyłącza ten
+ * zapis dla wyniku, który o połączeniu nic nie mówi.
  */
 export async function withConnection<T>(
   userId: string,
   work: (conn: CrmConnection) => Promise<CrmResult<T>>,
+  tracked: (res: CrmResult<T>) => boolean = () => true,
 ): Promise<CrmResult<T>> {
   const conn = await getCrmConnection(userId)
   if (!conn) return { ok: false, status: 0, data: null, error: 'Brak połączenia z CRM' }
   const res = await work(conn)
-  await markSync(userId, res.error)
+  if (tracked(res)) await markSync(userId, res.error)
   return res
 }

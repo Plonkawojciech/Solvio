@@ -48,13 +48,13 @@ type Raw = Record<string, unknown>
 
 /** Kwoty z banku przychodzą jako liczby, ale nie ufamy temu na ślepo —
  *  string z Prismy `Decimal` też ma się dać odczytać. */
-function toNumber(value: unknown): number | null {
+export function toNumber(value: unknown): number | null {
   if (value === null || value === undefined || value === '') return null
   const n = typeof value === 'number' ? value : Number(value)
   return Number.isFinite(n) ? n : null
 }
 
-function toText(value: unknown): string | null {
+export function toText(value: unknown): string | null {
   return typeof value === 'string' && value.trim() !== '' ? value : null
 }
 

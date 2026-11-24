@@ -257,7 +257,7 @@ Odwzorowanie ekranu `/finanse` w CRM-ie. Wpis to `FinanceEntry`:
 | Metoda | Ścieżka | Co robi |
 |---|---|---|
 | `GET` | `/api/crm/entries` | wpisy (`from`, `to`, `type`, `limit`) plus podsumowanie miesiąca/roku/MRR |
-| `POST` | `/api/crm/entries` | nowy wpis — `{ type, date, amount, title, category?, paid?, note?, clientId? }` |
+| `POST` | `/api/crm/entries` | nowy wpis firmowy (zakres `FIRMA`) — `{ type, date, amount, title, category?, paid?, note?, clientId? }` |
 | `PATCH` | `/api/crm/entries/{id}` | dowolny podzbiór pól. **`{"paid": true}` to najczęstsza operacja** na tym ekranie |
 | `DELETE` | `/api/crm/entries/{id}` | usuwa wpis |
 | `GET` | `/api/crm/context` | klienci (do przypisania wpisu) + zobowiązania cykliczne |
@@ -310,6 +310,44 @@ Transakcje zbieramy z CRM-a stronami (`nextCursor`) do **500 sztuk**;
 jako pustą listę**, nie błąd: klucz bez dostępu do rachunków ma dać apkę
 wyglądającą jak przed integracją banku. Inne awarie CRM-a — `502`, jak
 w pozostałych trasach.
+
+### Księgowość (tylko odczyt)
+
+Rozliczenia podmiotów, terminy, faktury, koszty i JPK z modułu Księgowość
+w CRM-ie (`/api/v1/accounting/*`). Solvio **niczego tu nie zmienia**:
+odhaczanie podatków, potwierdzanie przelewów i wysyłka zostają na webie.
+
+| Metoda | Ścieżka | Parametry | Odpowiedź |
+|---|---|---|---|
+| `GET` | `/api/crm/accounting/overview` | `period?` | `{ period\|null, periodLabel, entities: [{ key, name, taxFormLabel, vatLabel, revenue, zus, incomeTax, incomeTaxLabel, vat, totalToPay, openObligations, overdue, warnings: string[], receivables: { count, gross }, payables: { count, gross } }] }` |
+| `GET` | `/api/crm/accounting/obligations` | `status=open\|all`, `entity`, `limit`, `cursor` | `{ obligations: [{ id, entityKey, entityName, kind, kindLabel, period, dueDate, amount, paidAmount, status: PENDING\|UNCLEAR\|DONE\|SKIPPED, note, daysLeft\|null, webPath\|null }], nextCursor\|null }` |
+| `GET` | `/api/crm/accounting/documents` | `direction=SALE\|PURCHASE`, `entity`, `status=unpaid\|overdue\|paid`, `period`, `q`, `since`, `limit`, `cursor` | `{ documents: [{ id, entityKey, entityName, direction, docType, number, partyName, partyNip, issueDate, dueDate\|null, paid, paidAt\|null, daysOverdue, net, vat, gross, currency, vatPeriod, ksefNumber, financeEntryId\|null, webPath\|null }], nextCursor\|null }` |
+| `GET` | `/api/crm/accounting/jpk` | `period?` | `{ submissions: [{ id, entityKey, entityName, period, env: TEST\|PROD, status, statusLabel, accepted, hasUpo, createdAt\|null }] }` |
+
+Wszystkie parametry są opcjonalne. `period` ma format `RRRR-MM`; bez niego
+`overview` pokazuje miesiąc wybrany przez CRM (poprzedni). `limit` to 1–100,
+domyślnie 50, `q` do 100 znaków, `entity` to klucz podmiotu (`spolka`,
+`wojtek`, `bartek`), `since` to data ISO 8601. Zła wartość = `400 { error }`
+bez pytania CRM-a, nieznany parametr jest pomijany, pusty liczy się jak brak.
+Następna strona: ten sam zestaw filtrów plus `cursor` równy `nextCursor`.
+
+Każda kwota (`revenue`, `zus`, `incomeTax`, `vat`, `totalToPay`, `amount`,
+`paidAmount`, `net`, `gross`) to **liczba (złote, nie grosze) albo `null`**;
+`null` znaczy „CRM jej nie podał" i nie wolno go pokazać jako zera. Walutę
+dokumentu podaje `currency`. Daty `dueDate`, `issueDate`, `paidAt` to
+`RRRR-MM-DD`, `createdAt` to ISO 8601. Teksty bez `|null` w tabeli nigdy nie są
+nullem; brak wartości to `""`. `webPath` jest względny (zawsze od `/`) i klient
+skleja go z `https://solvio.programo.pl`.
+
+**403 i 404 z CRM-a oddajemy jako `404 { error }`** i nie ruszamy `last_error`:
+klucz bez dostępu albo starszy CRM bez tego API ma dać apkę bez sekcji
+księgowości. Pustą listą być nie mogą, bo pusta lista terminów znaczy „nic do
+zapłaty" i odwołuje przypomnienia. `200` z CRM-a bez oczekiwanej listy (nie-JSON,
+komunikat błędu), pozostałe awarie CRM-a i brak połączenia: `502`. Apka chowa
+sekcje tylko wtedy, gdy `404` przyjdzie z `overview`, zanim cokolwiek wczytała;
+później traktuje je jak awarię i zostawia to, co widać.
+
+### Uwagi do rejestrów
 
 `intervalMonths` to liczba miesięcy między uderzeniami serii: `1` = co miesiąc,
 `3` = co kwartał, `12` = rocznie. Apka pokazuje gotowe wybory zamiast pola

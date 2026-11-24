@@ -34,6 +34,10 @@ export interface CrmEntryInput {
   clientId?: string | null
 }
 
+/** Czyje to pieniądze. Zawsze podane wprost przez wywołującego: domyślna
+ *  wartość już raz wrzuciła firmowe wpisy do prywatnych. */
+export type CrmEntryScope = 'FIRMA' | 'PRYWATNE'
+
 // ─── Wpisy ────────────────────────────────────────────────────────────────────
 
 export interface ListEntriesParams {
@@ -58,7 +62,7 @@ export function listEntries(userId: string, params: ListEntriesParams = {}) {
   )
 }
 
-export function createEntry(userId: string, input: CrmEntryInput) {
+export function createEntry(userId: string, input: CrmEntryInput, scope: CrmEntryScope) {
   return withConnection<{ entry: CrmFinanceEntry }>(userId, (conn) =>
     call(conn, '/api/v1/finance', {
       method: 'POST',
@@ -70,10 +74,7 @@ export function createEntry(userId: string, input: CrmEntryInput) {
         category: input.category ?? conn.defaultCategory,
         paid: input.paid ?? true,
         note: input.note ?? '',
-        // Wydatek z Solvio jest PRYWATNY: ma być w CRM-ie widoczny, ale nigdy
-        // nie może wchodzić do wyniku firmy ani do podatków. CRM domyślnie
-        // filtruje ekrany i API do zakresu FIRMA.
-        scope: 'PRYWATNE',
+        scope,
         clientId: input.clientId ?? null,
       },
     }),
