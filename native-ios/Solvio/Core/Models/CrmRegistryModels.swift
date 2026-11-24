@@ -211,4 +211,16 @@ enum CrmDecode {
         if let s = try? c.decode(String.self, forKey: key), let n = Double(s) { return n }
         return 0
     }
+
+    /// Kwota, której CRM mógł nie podać. Brak klucza, `null` i śmieć znaczą to
+    /// samo: nie wiemy, więc nie pokazujemy zera.
+    static func optionalAmount<K: CodingKey>(_ c: KeyedDecodingContainer<K>, _ key: K) -> Double? {
+        if let n = try? c.decode(Double.self, forKey: key) { return n }
+        if let s = try? c.decode(String.self, forKey: key) { return Double(s) }
+        return nil
+    }
+
+    static func text<K: CodingKey>(_ c: KeyedDecodingContainer<K>, _ key: K) -> String {
+        (try? c.decode(String.self, forKey: key)) ?? ""
+    }
 }
