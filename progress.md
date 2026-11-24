@@ -28,6 +28,15 @@
   poprzedniego; odhaczony na webie termin pokazuje nowy status; odświeżenie po
   zapłacie nie dołącza do starszego żądania; „Brak terminów" dopiero po
   wczytaniu; data JPK w strefie telefonu, nie UTC.
+- **Druga recenzja:** potwierdzenie paragonu czeka, aż zamknie się web albo
+  wybór podmiotu (SwiftUI zdejmował web razem z niezapisanym formularzem),
+  a zmiana konta je kasuje. Szczegół dokumentu po powrocie z weba czyta dokument
+  wprost; do tego czasu przycisk zapłaty jest wyłączony, a nieudany odczyt
+  pokazuje baner z ponowieniem.
+- **Do zrobienia:** terminy czekają na odpowiedź `todo`; 404 z samego `todo`
+  na otwartej liście wygląda jak „nic nie wymaga uwagi"; sesja weba przeżywa
+  odpięcie i zmianę klucza CRM; wynik skanu zdejmuje też inne otwarte arkusze
+  (edytor wydatku, Ustawienia).
 - `CFBundleVersion` bierze się z `CURRENT_PROJECT_VERSION` (teraz 2).
 
 ## 2026-11-24 — Zakładka Firma na iPhonie
