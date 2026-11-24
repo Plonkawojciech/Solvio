@@ -256,6 +256,9 @@ final class ApiClient {
 
     func clearAuthState() {
         clearCookies()
+        // Odpowiedzi zalogowanego konta nie mają prawa leżeć na dysku, gdy
+        // zaloguje się następne.
+        session.configuration.urlCache?.removeAllCachedResponses()
         clearCsrfToken()
     }
 
