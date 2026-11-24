@@ -50,6 +50,8 @@ const createSchema = z.object({
   receiptId: z.string().uuid().nullable().optional(),
   /** Pominięte = zdecyduj wg ustawienia autoPush połączenia z CRM. */
   pushToCrm: z.boolean().optional(),
+  /** Ten sam klucz przy ponowieniu zwraca ten sam wydatek. */
+  idempotencyKey: z.string().regex(/^[A-Za-z0-9:_-]{8,100}$/, 'Nieprawidłowy idempotencyKey').optional(),
 })
 
 export async function POST(req: Request) {

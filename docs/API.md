@@ -110,6 +110,7 @@ Tworzy wydatek. Wymaga klucza WRITE.
 | `tags` | string[] \| null | maks. 5 |
 | `receiptId` | uuid \| null | powiązanie ze zeskanowanym paragonem |
 | `pushToCrm` | bool | `true` = wypchnij do Finansów CRM-a; `false` = nie; pominięte = wg ustawienia `autoPush` połączenia |
+| `idempotencyKey` | string, 8–100 znaków `A-Za-z0-9:_-` | Ponowienie z tym samym kluczem zwraca istniejący wydatek zamiast tworzyć drugi. Klucz jest per użytkownik; treści żądania nie porównujemy, a push do CRM-a idzie tylko przy pierwszym zapisie |
 
 ```bash
 curl -X POST -H "X-Api-Key: $SOLVIO_KEY" -H "content-type: application/json" \
