@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { and, asc, desc, eq, gte, ilike, inArray, lte, or, sql, type SQL } from 'drizzle-orm'
 import { db } from './db'
 import { categories, expenses, merchantRules } from './db/schema'
@@ -187,15 +188,35 @@ export interface CreateExpenseInput {
   receiptId?: string | null
   /** `undefined` = zdecyduj wg ustawienia `autoPush` w połączeniu z CRM. */
   pushToCrm?: boolean
+  /** Powtórzone żądanie z tym samym kluczem zwraca istniejący wydatek. */
+  idempotencyKey?: string
+}
+
+/**
+ * Klucz idempotencji zamieniony na id wydatku: o „najwyżej raz" decyduje klucz
+ * główny bazy, więc nie trzeba nowej kolumny ani sprawdzania przed zapisem.
+ * Użytkownik jest częścią skrótu — cudzy klucz nigdy nie wskaże cudzego wiersza.
+ */
+export function expenseIdForKey(userId: string, key: string): string {
+  const hex = createHash('sha256').update(`solvio-expense:${userId}:${key}`).digest('hex')
+  const variant = ((parseInt(hex[16], 16) & 0x3) | 0x8).toString(16)
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-5${hex.slice(13, 16)}-${variant}${hex.slice(17, 20)}-${hex.slice(20, 32)}`
 }
 
 export async function createExpense(userId: string, input: CreateExpenseInput): Promise<ExpenseView> {
+  const id = input.idempotencyKey ? expenseIdForKey(userId, input.idempotencyKey) : undefined
+  if (id) {
+    // Zanim zapytamy model o kategorię: powtórka nie ma kosztować drugiego wywołania.
+    const existing = await findExpense(userId, id)
+    if (existing) return existing
+  }
   // Zasada produktu: „po ręcznym dodaniu AI ma kategoryzować". Gdy klient nie
   // wskazał kategorii, rozwiązujemy ją PRZED insertem, żeby wydatek nie wylądował
   // bez kategorii i nie czekał na ręczną poprawkę.
   const categoryId = input.categoryId ?? await resolveCategory(userId, input.title, input.vendor ?? null)
 
-  const [row] = await db.insert(expenses).values({
+  const insert = db.insert(expenses).values({
+    ...(id ? { id } : {}),
     userId,
     title: input.title,
     amount: input.amount.toFixed(2),
@@ -206,10 +227,22 @@ export async function createExpense(userId: string, input: CreateExpenseInput): 
     currency: input.currency ?? 'PLN',
     tags: input.tags ?? null,
     receiptId: input.receiptId ?? null,
-  }).returning()
+  })
+  const [row] = id ? await insert.onConflictDoNothing({ target: expenses.id }).returning() : await insert.returning()
+  if (!row) {
+    // Równoległe żądanie z tym samym kluczem było pierwsze.
+    const winner = id ? await findExpense(userId, id) : null
+    if (!winner) throw new Error('Nie udało się zapisać wydatku')
+    return winner
+  }
 
   const pushed = await maybePushToCrm(userId, row, input.pushToCrm)
   return serializeExpense(pushed, await categoryNameFor(categoryId))
+}
+
+async function findExpense(userId: string, id: string): Promise<ExpenseView | null> {
+  const [row] = await db.select().from(expenses).where(and(eq(expenses.id, id), eq(expenses.userId, userId))).limit(1)
+  return row ? serializeExpense(row, await categoryNameFor(row.categoryId)) : null
 }
 
 export interface UpdateExpenseInput {

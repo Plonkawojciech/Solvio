@@ -6,6 +6,16 @@
 
 ---
 
+## 2026-11-24 — Klucz idempotencji przy dodawaniu wydatku
+
+`POST /api/v1/expenses` przyjmuje `idempotencyKey`. Z klucza i użytkownika powstaje
+stałe `expenses.id`, więc „najwyżej raz" pilnuje klucz główny bazy (bez migracji).
+Powód: CRM dodaje wydatek z prywatnego przelewu i po przerwanym połączeniu nie
+wiedział, czy wydatek już powstał. `GET /api/v1/health` zgłasza
+`features: ["expense-idempotency"]`.
+
+---
+
 ## 2026-11-24 — Zakładka Firma na iPhonie
 
 Trzecia zakładka (Panel, Wydatki, FAB, Firma), tylko przy wpiętym CRM-ie. Bez
