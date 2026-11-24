@@ -33,6 +33,9 @@ struct DashboardView: View {
             LazyVStack(alignment: .leading, spacing: Theme.Spacing.md) {
                 greeting
                 scopePicker
+                if separatesMoney {
+                    PanelSectionHeader(title: locale.t("dashboard.private"), caption: locale.t("dashboard.privateHint"))
+                }
 
                 if store.dashboardLoading && store.dashboard == nil {
                     skeleton
@@ -45,12 +48,20 @@ struct DashboardView: View {
                     }
                     heroCard(m)
                     tiles(m)
-                    // Karta firmowa stoi obok moich pieniędzy, a nie w ich
-                    // sumie: to dwa różne budżety, nie jeden wspólny.
-                    if scope == .all { CrmSummaryCard() }
                     if !m.split.isEmpty { splitCard(m) }
                     if !m.topCategories.isEmpty { categoriesCard(m) }
                     recentCard(m)
+                }
+
+                // Firma stoi pod moimi pieniędzmi, a nie w ich sumie: to dwa
+                // różne budżety, nie jeden wspólny.
+                if separatesMoney, scope == .all {
+                    Rectangle()
+                        .fill(Theme.border)
+                        .frame(height: 1)
+                        .padding(.top, Theme.Spacing.sm)
+                    PanelSectionHeader(title: locale.t("crm.company"), caption: locale.t("dashboard.companyHint"))
+                    CrmSummaryCard()
                 }
             }
             .padding(Theme.Spacing.md)
@@ -59,6 +70,9 @@ struct DashboardView: View {
         .refreshable { await store.awaitDashboard(force: true) }
         .task { store.ensureDashboard() }
     }
+
+    /// Bez wpiętego CRM-a jest tylko jeden budżet i nie ma czego rozdzielać.
+    private var separatesMoney: Bool { crm.connected == true }
 
     /// Ten sam przełącznik co na Wydatkach i ten sam stan. Bez wpiętego
     /// CRM-a nie ma czego przełączać, więc się nie pokazuje.
@@ -349,5 +363,25 @@ struct ExpenseRow: View {
         }
         .padding(.vertical, 10)
         .contentShape(Rectangle())
+    }
+}
+
+/// Nagłówek części Panelu: czyje to pieniądze.
+private struct PanelSectionHeader: View {
+    let title: String
+    let caption: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(AppFont.amountLarge)
+                .foregroundColor(Theme.foreground)
+            Text(caption)
+                .font(AppFont.caption)
+                .foregroundColor(Theme.mutedForeground)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
     }
 }

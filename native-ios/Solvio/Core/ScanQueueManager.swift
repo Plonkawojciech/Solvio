@@ -80,6 +80,12 @@ final class ScanQueueManager: ObservableObject {
     /// dziesięć arkuszy pod rząd to nie potwierdzanie, to udręka.
     @Published var pendingReview: PendingReview?
 
+    /// Czy ekran potwierdzenia wolno teraz podnieść. Ustawiane w `SolvioApp`:
+    /// SwiftUI nie kolejkuje arkuszy, tylko zdejmuje to, co otwarte, a w webie
+    /// może być niezapisany formularz.
+    var canPresentReview: () -> Bool = { true }
+    private var heldReview: PendingReview?
+
     struct PendingReview: Identifiable, Equatable {
         let id = UUID()
         let receiptId: String
@@ -164,6 +170,24 @@ final class ScanQueueManager: ObservableObject {
     /// Clear every saved + failed item, leaving in-flight work alone.
     func clearCompleted() {
         items.removeAll { $0.status.isTerminal }
+    }
+
+    /// Podnosi potwierdzenie albo odkłada je do `presentHeldReview`.
+    func offer(_ review: PendingReview) {
+        if canPresentReview() { pendingReview = review } else { heldReview = review }
+    }
+
+    /// Wołane po zamknięciu tego, co wstrzymywało potwierdzenie.
+    func presentHeldReview() {
+        guard let review = heldReview, canPresentReview() else { return }
+        heldReview = nil
+        pendingReview = review
+    }
+
+    /// Zmiana konta: potwierdzenie należy do poprzedniego.
+    func dropReview() {
+        heldReview = nil
+        pendingReview = nil
     }
 
     // MARK: - Derived state for the UI
@@ -347,7 +371,7 @@ final class ScanQueueManager: ObservableObject {
     /// Podnosi ekran potwierdzenia po skanie pojedynczego paragonu.
     private func offerReview(_ result: OcrResult, receiptId: String, batchSize: Int) {
         guard batchSize == 1, let data = result.data else { return }
-        pendingReview = PendingReview(
+        offer(PendingReview(
             receiptId: receiptId,
             expenseId: result.expenseId,
             merchant: data.merchant,
@@ -358,7 +382,7 @@ final class ScanQueueManager: ObservableObject {
             items: data.items ?? [],
             promotions: data.promotions ?? [],
             totalSaved: data.totalSaved
-        )
+        ))
         Self.log("review", "paragon \(receiptId): pozycji=\(data.items?.count ?? 0), promocji=\(data.promotions?.count ?? 0)")
     }
 

@@ -44,7 +44,7 @@ struct ObligationsView: View {
                 .padding(.horizontal, Theme.Spacing.md)
                 EntityChips(selection: $entity)
                 if showAll {
-                    AllObligationsList(list: accounting.allObligations(entity: entity)).id(entity)
+                    AllObligationsList(list: accounting.allObligations(entity: entity), visit: accounting.webVisits).id(entity)
                 } else {
                     openList
                 }
@@ -78,7 +78,10 @@ struct ObligationsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: Theme.Spacing.md) {
                 if accounting.failed { StaleNotice { Task { await accounting.refresh() } } }
-                if groups.isEmpty {
+                if accounting.available == nil {
+                    // Nic jeszcze nie przyszło: „brak terminów" byłby zmyślony.
+                    if !accounting.failed { ForEach(0..<6, id: \.self) { _ in SkeletonBlock(height: 56) } }
+                } else if groups.isEmpty {
                     EmptyStateView(icon: "calendar", title: locale.t("company.noDeadlines"))
                 }
                 ForEach(groups) { group in
@@ -119,6 +122,7 @@ private struct ObligationRows: View {
 
 private struct AllObligationsList: View {
     @ObservedObject var list: PagedList<AccountingObligation>
+    let visit: Int
     @EnvironmentObject private var locale: AppLocale
 
     var body: some View {
@@ -139,7 +143,7 @@ private struct AllObligationsList: View {
             .padding(.bottom, 96)
         }
         .refreshable { await list.refresh() }
-        .task { await list.ensureFresh() }
+        .task(id: visit) { await list.ensureFresh() }
     }
 }
 
@@ -150,9 +154,7 @@ struct ObligationDetailView: View {
     @EnvironmentObject private var accounting: AccountingStore
     @EnvironmentObject private var locale: AppLocale
 
-    private var item: AccountingObligation {
-        accounting.openObligations.first { $0.id == obligation.id } ?? obligation
-    }
+    private var item: AccountingObligation { accounting.current(obligation) }
 
     var body: some View {
         let days = ObligationSchedule.daysLeft(item)
@@ -203,5 +205,6 @@ struct ObligationDetailView: View {
         }
         .navigationTitle(locale.t("company.deadline"))
         .navigationBarTitleDisplayMode(.inline)
+        .task(id: accounting.loadedAt) { await accounting.settleObligation(obligation) }
     }
 }

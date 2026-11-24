@@ -42,6 +42,9 @@ struct AccountingEntity: Decodable, Identifiable, Hashable {
 
     var id: String { key }
 
+    /// Forma podatku i VAT w jednym podpisie.
+    var forms: String { [taxFormLabel, vatLabel].filter { !$0.isEmpty }.joined(separator: " · ") }
+
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         key = try c.decode(String.self, forKey: .key)
@@ -159,11 +162,13 @@ struct AccountingObligation: Decodable, Identifiable, Hashable {
 
 // MARK: - Dokumenty
 
-enum DocumentDirection: String, Hashable {
+enum DocumentDirection: String, Hashable, Identifiable {
     case sale = "SALE"
     case purchase = "PURCHASE"
 
+    var id: String { rawValue }
     var titleKey: String { self == .sale ? "company.invoices" : "company.costs" }
+    var newKey: String { self == .sale ? "company.newInvoice" : "company.newCost" }
 }
 
 enum DocumentStatusFilter: String, CaseIterable, Identifiable {
@@ -285,6 +290,60 @@ struct AccountingJpk: Decodable, Identifiable, Hashable {
     }
 }
 
+// MARK: - Wymaga uwagi
+
+/// Waga wyjątku; kolejność przypadków to kolejność na ekranie.
+enum TodoSeverity: String, CaseIterable, Identifiable {
+    case urgent = "pilne"
+    case important = "wazne"
+    case info = "informacja"
+
+    var id: String { rawValue }
+    var labelKey: String { "company.todo.\(rawValue)" }
+}
+
+/// Wyjątek, który znalazł CRM, a rozstrzyga człowiek na webie.
+struct AccountingTodoItem: Decodable, Identifiable, Hashable {
+    let key: String
+    let severity: TodoSeverity
+    let entityName: String
+    let title: String
+    let cause: String
+    let action: String
+    let webPath: String?
+
+    var id: String { key }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        key = try c.decode(String.self, forKey: .key)
+        // Nieznana waga nie może zejść do zwykłej informacji.
+        severity = TodoSeverity(rawValue: CrmDecode.text(c, .severity)) ?? .important
+        entityName = CrmDecode.text(c, .entityName)
+        title = CrmDecode.text(c, .title)
+        cause = CrmDecode.text(c, .cause)
+        action = CrmDecode.text(c, .action)
+        webPath = try? c.decode(String.self, forKey: .webPath)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case key, severity, entityName, title, cause, action, webPath
+    }
+}
+
+/// Wyjątki jednej wagi, w kolejności CRM-a. Puste grupy odpadają.
+struct TodoGroup: Identifiable, Equatable {
+    let severity: TodoSeverity
+    let items: [AccountingTodoItem]
+    var id: String { severity.id }
+
+    static func build(_ items: [AccountingTodoItem]) -> [TodoGroup] {
+        TodoSeverity.allCases
+            .map { severity in TodoGroup(severity: severity, items: items.filter { $0.severity == severity }) }
+            .filter { !$0.items.isEmpty }
+    }
+}
+
 // MARK: - Strony
 
 /// Jedna strona listy z kursorem następnej. `nil` = koniec.
@@ -304,3 +363,5 @@ struct AccountingDocumentsResponse: Decodable {
 }
 
 struct AccountingJpkResponse: Decodable { let submissions: [AccountingJpk] }
+
+struct AccountingTodoResponse: Decodable { let items: [AccountingTodoItem] }

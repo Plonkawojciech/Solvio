@@ -314,7 +314,7 @@ w pozostałych trasach.
 
 ### Księgowość (tylko odczyt)
 
-Rozliczenia podmiotów, terminy, faktury, koszty i JPK z modułu Księgowość
+Rozliczenia podmiotów, terminy, faktury, koszty, JPK i „Wymaga uwagi" z modułu Księgowość
 w CRM-ie (`/api/v1/accounting/*`). Solvio **niczego tu nie zmienia**:
 odhaczanie podatków, potwierdzanie przelewów i wysyłka zostają na webie.
 
@@ -324,6 +324,7 @@ odhaczanie podatków, potwierdzanie przelewów i wysyłka zostają na webie.
 | `GET` | `/api/crm/accounting/obligations` | `status=open\|all`, `entity`, `limit`, `cursor` | `{ obligations: [{ id, entityKey, entityName, kind, kindLabel, period, dueDate, amount, paidAmount, status: PENDING\|UNCLEAR\|DONE\|SKIPPED, note, daysLeft\|null, webPath\|null }], nextCursor\|null }` |
 | `GET` | `/api/crm/accounting/documents` | `direction=SALE\|PURCHASE`, `entity`, `status=unpaid\|overdue\|paid`, `period`, `q`, `since`, `limit`, `cursor` | `{ documents: [{ id, entityKey, entityName, direction, docType, number, partyName, partyNip, issueDate, dueDate\|null, paid, paidAt\|null, daysOverdue, net, vat, gross, currency, vatPeriod, ksefNumber, financeEntryId\|null, webPath\|null }], nextCursor\|null }` |
 | `GET` | `/api/crm/accounting/jpk` | `period?` | `{ submissions: [{ id, entityKey, entityName, period, env: TEST\|PROD, status, statusLabel, accepted, hasUpo, createdAt\|null }] }` |
+| `GET` | `/api/crm/accounting/todo` | brak | `{ items: [{ key, severity: pilne\|wazne\|informacja, area: faktury\|koszty\|jpk\|bank\|finanse\|ustawienia\|null, entityKey\|null, entityName\|null, title, cause, action, webPath\|null }] }` |
 
 Wszystkie parametry są opcjonalne. `period` ma format `RRRR-MM`; bez niego
 `overview` pokazuje miesiąc wybrany przez CRM (poprzedni). `limit` to 1–100,
@@ -346,7 +347,12 @@ księgowości. Pustą listą być nie mogą, bo pusta lista terminów znaczy „
 zapłaty" i odwołuje przypomnienia. `200` z CRM-a bez oczekiwanej listy (nie-JSON,
 komunikat błędu), pozostałe awarie CRM-a i brak połączenia: `502`. Apka chowa
 sekcje tylko wtedy, gdy `404` przyjdzie z `overview`, zanim cokolwiek wczytała;
-później traktuje je jak awarię i zostawia to, co widać.
+później traktuje je jak awarię i zostawia to, co widać. `404` z samego `todo`
+(CRM bez tej trasy) chowa kartę „Wymaga uwagi" i nic więcej.
+
+`todo` to wyjątki z ekranu Start w kolejności CRM-a (najpilniejsze pierwsze),
+wyłącznie firma, bez terminów podatkowych. Nieznana waga wychodzi jako `wazne`,
+nieznany obszar jako `null`, pozycja bez `key` albo tytułu odpada.
 
 ### Uwagi do rejestrów
 

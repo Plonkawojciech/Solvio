@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Karta „Firma" na Panelu — przychody, koszty i wynik miesiąca z CRM-a
+/// Wynik firmy na Panelu — przychody, koszty i wynik miesiąca z CRM-a
 /// plus MRR i zobowiązania cykliczne. Pełny obraz jest w zakładce Firma.
 ///
 /// Pojawia się WYŁĄCZNIE, gdy konto ma wpięty CRM. Bez tego byłaby pustą
@@ -12,7 +12,7 @@ struct CrmSummaryCard: View {
 
     var body: some View {
         if crm.connected == true {
-            PaperCard(title: locale.t("crm.company"), label: crm.summaryPeriod) {
+            PaperCard(title: locale.t("company.monthResult"), label: crm.summaryPeriod) {
                 VStack(alignment: .leading, spacing: Theme.Spacing.md) {
                     CrmResultFigures()
                     if crm.hasBank {

@@ -36,13 +36,24 @@ struct DocumentsView: View {
                     }
                 }
                 EntityChips(selection: $entity)
-                DocumentsList(list: accounting.documents(query), filtered: status != nil || entity != nil || !phrase.isEmpty)
+                DocumentsList(
+                    list: accounting.documents(query),
+                    filtered: status != nil || entity != nil || !phrase.isEmpty,
+                    visit: accounting.webVisits
+                )
                     .id(query)
             }
             .padding(.top, Theme.Spacing.sm)
         }
         .navigationTitle(locale.t(direction.titleKey))
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                NewDocumentButton(direction: direction, entity: entity) { Image(systemName: "plus") }
+                    .foregroundColor(Theme.primary)
+                    .accessibilityLabel(locale.t(direction.newKey))
+            }
+        }
         .task(id: text) {
             let next = text.trimmingCharacters(in: .whitespacesAndNewlines)
             guard next != phrase else { return }
@@ -80,6 +91,7 @@ struct DocumentsView: View {
 private struct DocumentsList: View {
     @ObservedObject var list: PagedList<AccountingDocument>
     let filtered: Bool
+    let visit: Int
 
     @EnvironmentObject private var locale: AppLocale
     @EnvironmentObject private var router: AppRouter
@@ -114,7 +126,7 @@ private struct DocumentsList: View {
         }
         .scrollDismissesKeyboard(.immediately)
         .refreshable { await list.refresh() }
-        .task { await list.ensureFresh() }
+        .task(id: visit) { await list.ensureFresh() }
     }
 }
 
@@ -156,6 +168,10 @@ struct DocumentDetailView: View {
     @EnvironmentObject private var toast: ToastCenter
 
     @State private var saving = false
+    /// Stan po powrocie z weba jest jeszcze sprawdzany.
+    @State private var checking = false
+    @State private var checks = 0
+    @State private var stale = false
 
     private var item: AccountingDocument { accounting.current(initial) }
 
@@ -164,6 +180,7 @@ struct DocumentDetailView: View {
             PaperBackground()
             ScrollView {
                 VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+                    if stale { StaleNotice { Task { await refresh() } } }
                     headerCard
                     amountsCard
                     actions
@@ -175,6 +192,17 @@ struct DocumentDetailView: View {
         }
         .navigationTitle(locale.t(item.direction == .sale ? "company.invoice" : "company.cost"))
         .navigationBarTitleDisplayMode(.inline)
+        .onChange(of: accounting.webVisits) { _ in Task { await refresh() } }
+    }
+
+    private func refresh() async {
+        checks += 1
+        let mine = checks
+        checking = true
+        let read = await accounting.refreshDocument(item)
+        guard mine == checks else { return }
+        checking = false
+        stale = !read
     }
 
     private var headerCard: some View {
@@ -242,7 +270,7 @@ struct DocumentDetailView: View {
             togglePaid()
         } label: {
             HStack(spacing: 6) {
-                if saving {
+                if saving || checking {
                     ProgressView().controlSize(.small)
                 } else {
                     Image(systemName: item.paid ? "circle" : "checkmark.circle")
@@ -250,7 +278,8 @@ struct DocumentDetailView: View {
                 Text(locale.t(item.paid ? "crm.markUnpaid" : "crm.markPaid"))
             }
         }
-        .disabled(saving)
+        // Cel zapłaty liczy się z tego, co widać, więc najpierw świeży stan.
+        .disabled(saving || checking)
     }
 
     private func togglePaid() {
@@ -259,12 +288,13 @@ struct DocumentDetailView: View {
         Task {
             defer { saving = false }
             do {
-                try await accounting.setPaid(item, paid: target)
+                let fresh = try await accounting.setPaid(item, paid: target)
+                if fresh != nil { stale = false }
                 // CRM zapisał wpis; czy dokument poszedł za nim, mówi jego odpowiedź.
-                if item.paid == target {
+                if fresh?.paid == target {
                     toast.success(locale.t("crm.saved"))
                 } else {
-                    toast.info(locale.t("company.paidPending"))
+                    toast.info(locale.t(fresh == nil ? "company.paidUnknown" : "company.paidPending"))
                 }
                 await crm.reload()
             } catch {

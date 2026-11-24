@@ -101,6 +101,50 @@ final class AccountingModelsTests: XCTestCase {
         XCTAssertNil(SolvioWeb.entityPath("../x"))
     }
 
+    func testPagesOpenedInTheAppStayOnTheApiHost() {
+        let page = WebPage(path: "/finanse/bank?widok=konta")
+        XCTAssertEqual(page?.url.host, AppConfig.apiBaseURL.host)
+        XCTAssertEqual(page?.url.scheme, AppConfig.apiBaseURL.scheme)
+        XCTAssertEqual(page?.url.path, "/finanse/bank")
+        for bad in ["//evil.pl", "/\\evil.pl", "https://evil.pl", "@evil.pl", ".evil.pl", "", "/a b", "javascript:alert(1)"] {
+            XCTAssertNil(WebPage(path: bad), bad)
+        }
+        XCTAssertNil(WebPage(path: nil))
+    }
+
+    func testNewDocumentPaths() {
+        XCTAssertEqual(SolvioWeb.newDocumentPath("spolka", .sale), "/ksiegowosc/spolka?tab=faktury&nowa=1")
+        XCTAssertEqual(SolvioWeb.newDocumentPath("wojtek", .purchase), "/ksiegowosc/wojtek?tab=koszty&nowa=1")
+        for bad in ["", "../x", "a/b", "a?b", "a&b", "a b", String(repeating: "a", count: 41)] {
+            XCTAssertNil(SolvioWeb.newDocumentPath(bad, .sale), bad)
+        }
+    }
+
+    func testTodoDecoding() throws {
+        let response: AccountingTodoResponse = try Fixture.decode("""
+        {"items":[
+          {"key":"to-issue","severity":"pilne","area":"faktury","entityKey":null,"entityName":null,
+           "title":"Przychody bez faktury: 2","cause":"Brak dokumentu","action":"Wystaw","webPath":"/finanse"},
+          {"key":"x","severity":"krytyczne","area":null,"entityKey":"spolka","entityName":"Programo","title":"Nowe",
+           "cause":"","action":"","webPath":null}]}
+        """)
+        let first = try XCTUnwrap(response.items.first)
+        XCTAssertEqual(first.severity, .urgent)
+        XCTAssertEqual(first.entityName, "", "bez podmiotu")
+        XCTAssertEqual(first.webPath, "/finanse")
+        XCTAssertEqual(response.items[1].severity, .important, "nieznana waga to nie informacja")
+        XCTAssertNil(WebPage(path: response.items[1].webPath))
+    }
+
+    func testTodoGroupsFollowSeverityAndKeepCrmOrder() {
+        let groups = TodoGroup.build([
+            Fixture.todo("i", "informacja"), Fixture.todo("b"), Fixture.todo("p", "pilne"), Fixture.todo("a"),
+        ])
+        XCTAssertEqual(groups.map(\.severity), [.urgent, .important, .info])
+        XCTAssertEqual(groups.map { $0.items.map(\.key) }, [["p"], ["b", "a"], ["i"]])
+        XCTAssertEqual(TodoGroup.build([Fixture.todo("i", "informacja")]).map(\.severity), [.info], "puste grupy odpadają")
+    }
+
     @MainActor
     func testCompanyTextsExistInBothLanguages() {
         let plural = [".one", ".few", ".many"]

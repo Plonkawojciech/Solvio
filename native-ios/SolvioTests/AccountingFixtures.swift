@@ -27,6 +27,13 @@ enum Fixture {
         """)
     }
 
+    static func todo(_ key: String, _ severity: String = "wazne") -> AccountingTodoItem {
+        try! decode("""
+        {"key":"\(key)","severity":"\(severity)","area":"faktury","entityKey":"spolka","entityName":"Spółka",
+         "title":"T \(key)","cause":"C","action":"A","webPath":"/ksiegowosc/spolka?tab=faktury"}
+        """)
+    }
+
     static func overview(entities: Int = 1) -> AccountingOverview {
         let rows = (0..<entities).map { #"{"key":"e\#($0)","name":"E\#($0)","overdue":0}"# }.joined(separator: ",")
         return try! decode(#"{"period":"2026-10","periodLabel":"październik 2026","entities":[\#(rows)]}"#)
@@ -40,25 +47,35 @@ enum Fixture {
 final class FakeAccountingAPI: AccountingAPI, @unchecked Sendable {
     var overviewResult: Result<AccountingOverview, Error> = .success(Fixture.overview())
     var obligationPages: [String: Result<AccountingPage<AccountingObligation>, Error>] = [:]
+    /// Pełna lista terminów; bez niej odpowiada `obligationPages`.
+    var allObligationPages: [String: Result<AccountingPage<AccountingObligation>, Error>]?
+    var todoResult: Result<[AccountingTodoItem], Error> = .success([])
+    var overviewCalls = 0
     var documentPages: [String: Result<AccountingPage<AccountingDocument>, Error>] = [:]
     var paidCalls: [(id: String, paid: Bool)] = []
     var gate: (() async -> Void)?
 
     func overview() async throws -> AccountingOverview {
+        overviewCalls += 1
+        // Odpowiedź z chwili zapytania, jak na serwerze.
+        let result = overviewResult
         await gate?()
-        return try overviewResult.get()
+        return try result.get()
     }
 
     func obligations(open: Bool, entity: String?, cursor: String?) async throws -> AccountingPage<AccountingObligation> {
-        try (obligationPages[cursor ?? ""] ?? .success(AccountingPage(items: [], nextCursor: nil))).get()
+        try ((open ? obligationPages : allObligationPages ?? obligationPages)[cursor ?? ""] ?? .success(AccountingPage(items: [], nextCursor: nil))).get()
     }
 
     func documents(_ query: DocumentQuery, cursor: String?) async throws -> AccountingPage<AccountingDocument> {
+        let result = documentPages[cursor ?? ""]
         await gate?()
-        return try (documentPages[cursor ?? ""] ?? .success(AccountingPage(items: [], nextCursor: nil))).get()
+        return try (result ?? .success(AccountingPage(items: [], nextCursor: nil))).get()
     }
 
     func jpk() async throws -> [AccountingJpk] { [] }
+
+    func todo() async throws -> [AccountingTodoItem] { try todoResult.get() }
 
     func setEntryPaid(id: String, paid: Bool) async throws { paidCalls.append((id, paid)) }
 }

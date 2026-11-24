@@ -127,6 +127,12 @@ enum Fmt {
         return dayMonthFmt.string(from: date)
     }
 
+    /// Dzień chwili zapisanej w UTC, w strefie telefonu. Samo obcięcie tekstu
+    /// cofało o dzień wszystko, co powstało tuż po północy.
+    static func dayMonth(instant iso: String) -> String {
+        parseISO(iso).map { dayMonthFmt.string(from: $0) } ?? iso
+    }
+
     static func dayMonthShort(_ date: Date) -> String {
         dayMonthShortFmt.string(from: date)
     }

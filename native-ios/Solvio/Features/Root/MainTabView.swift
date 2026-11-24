@@ -16,6 +16,7 @@ struct MainTabView: View {
     @EnvironmentObject private var toast: ToastCenter
     @EnvironmentObject private var scanQueue: ScanQueueManager
     @EnvironmentObject private var crm: CrmStore
+    @EnvironmentObject private var accounting: AccountingStore
 
     @State private var showCamera = false
     @State private var pickedItems: [PhotosPickerItem] = []
@@ -63,6 +64,14 @@ struct MainTabView: View {
                 scanQueue.enqueue([image])
             }
             .ignoresSafeArea()
+        }
+        .sheet(item: $router.newDocument, onDismiss: openPendingWeb) { direction in
+            EntityPickerSheet(direction: direction)
+        }
+        // Na cały ekran, nie arkuszem: przypadkowe ściągnięcie palcem zabrałoby
+        // niezapisany formularz.
+        .fullScreenCover(item: $router.web, onDismiss: refreshAfterWeb) { page in
+            WebPageView(page: page).ignoresSafeArea()
         }
         .photosPicker(isPresented: photoPickerBinding, selection: $pickedItems, maxSelectionCount: 10, matching: .images)
         .onChange(of: pickedItems) { items in
@@ -134,12 +143,36 @@ struct MainTabView: View {
     private func destination(_ route: AppRoute) -> some View {
         switch route {
         case .expenseDetail(let id): ExpenseDetailView(expenseId: id)
+        case .todo: TodoView()
         case .obligations: ObligationsView()
         case .obligation(let item): ObligationDetailView(obligation: item)
         case .documents(let direction, let status): DocumentsView(direction: direction, status: status)
         case .document(let item): DocumentDetailView(initial: item)
         case .jpk: JpkView()
         case .crm(let registry): CrmSectionScreen(registry: registry)
+        }
+    }
+
+    // MARK: - Web w apce
+
+    /// Jak przy skanie: cover nie może wejść, zanim arkusz naprawdę zejdzie.
+    private func openPendingWeb() {
+        guard router.pendingWeb != nil else { return scanQueue.presentHeldReview() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            // Do tej chwili `pendingWeb` wstrzymuje potwierdzenie paragonu.
+            router.web = router.pendingWeb
+            router.pendingWeb = nil
+            scanQueue.presentHeldReview()
+        }
+    }
+
+    private func refreshAfterWeb() {
+        scanQueue.presentHeldReview()
+        guard crm.connected == true else { return }
+        Task {
+            async let books: Void = accounting.webClosed()
+            async let finance: Void = crm.reload()
+            _ = await (books, finance)
         }
     }
 

@@ -6,7 +6,7 @@ import { call, withConnection, type CrmResult } from './http'
 
 /**
  * Księgowość z crm.programo.pl — TYLKO odczyt: rozliczenia podmiotów,
- * terminy, faktury i koszty, pliki JPK.
+ * terminy, faktury i koszty, pliki JPK, „Wymaga uwagi".
  *
  * Odhaczanie podatków, potwierdzanie przelewów i wysyłka zostają na webie
  * w sesji człowieka; apka dostaje `webPath` i odsyła tam.
@@ -170,6 +170,21 @@ export interface AccountingJpk {
   createdAt: string | null
 }
 
+export type TodoSeverity = 'pilne' | 'wazne' | 'informacja'
+export type TodoArea = 'faktury' | 'koszty' | 'jpk' | 'bank' | 'finanse' | 'ustawienia'
+
+export interface AccountingTodo {
+  key: string
+  severity: TodoSeverity
+  area: TodoArea | null
+  entityKey: string | null
+  entityName: string | null
+  title: string
+  cause: string
+  action: string
+  webPath: string | null
+}
+
 // ── mapowanie ──────────────────────────────────────────────────────────
 
 type Raw = Record<string, unknown>
@@ -289,6 +304,24 @@ export function toAccountingJpk(raw: Raw): AccountingJpk {
   }
 }
 
+const TODO_SEVERITIES: readonly TodoSeverity[] = ['pilne', 'wazne', 'informacja']
+const TODO_AREAS: readonly TodoArea[] = ['faktury', 'koszty', 'jpk', 'bank', 'finanse', 'ustawienia']
+
+export function toAccountingTodo(raw: Raw): AccountingTodo {
+  return {
+    key: str(raw.key),
+    // Nieznana waga nie może zejść do zwykłej informacji.
+    severity: TODO_SEVERITIES.find((s) => s === raw.severity) ?? 'wazne',
+    area: TODO_AREAS.find((a) => a === raw.area) ?? null,
+    entityKey: toText(raw.entityKey),
+    entityName: toText(raw.entityName),
+    title: str(raw.title),
+    cause: str(raw.cause),
+    action: str(raw.action),
+    webPath: webPath(raw.webPath),
+  }
+}
+
 // ── odczyty ────────────────────────────────────────────────────────────
 
 /** Jeden GET do CRM-a. Niedostępnej księgowości (404) nie odnotowujemy na
@@ -345,5 +378,13 @@ export function listDocuments(userId: string, params: z.infer<typeof documentsQu
 export function listJpk(userId: string, params: z.infer<typeof jpkQuery>) {
   return read(userId, 'jpk', 'submissions', params, (raw) => ({
     submissions: rows(raw.submissions).map(toAccountingJpk),
+  }))
+}
+
+/** „Wymaga uwagi": wyjątki znalezione przez CRM, najpilniejsze pierwsze.
+ *  Pozycja bez tytułu odpada, bo nie ma czego pokazać. */
+export function listTodo(userId: string) {
+  return read(userId, 'todo', 'items', {}, (raw) => ({
+    items: rows(raw.items, 'key').map(toAccountingTodo).filter((item) => item.title !== ''),
   }))
 }

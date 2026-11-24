@@ -178,22 +178,22 @@ struct DetailLines: View {
     }
 }
 
-/// „Otwórz w Solvio" — tylko dla sprawdzonej ścieżki; inaczej nic.
+/// „Otwórz w Solvio" w apce — tylko dla sprawdzonej ścieżki; inaczej nic.
 struct SolvioWebLink: View {
     let path: String?
     var compact = false
 
     @EnvironmentObject private var locale: AppLocale
-    @Environment(\.openURL) private var openURL
+    @EnvironmentObject private var router: AppRouter
 
     var body: some View {
-        if let url = SolvioWeb.url(path: path) {
+        if let page = WebPage(path: path) {
             if compact {
-                Button { openURL(url) } label: { Image(systemName: "arrow.up.right.square") }
+                Button { router.web = page } label: { Image(systemName: "arrow.up.right.square") }
                     .foregroundColor(Theme.primary)
                     .accessibilityLabel(locale.t("company.openInSolvio"))
             } else {
-                Button { openURL(url) } label: {
+                Button { router.web = page } label: {
                     HStack(spacing: 6) {
                         Image(systemName: "arrow.up.right.square")
                         Text(locale.t("company.openInSolvio"))

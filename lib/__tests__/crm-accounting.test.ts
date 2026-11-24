@@ -10,11 +10,13 @@ import { GET as getDocuments } from '@/app/api/crm/accounting/documents/route'
 import { GET as getJpk } from '@/app/api/crm/accounting/jpk/route'
 import { GET as getObligations } from '@/app/api/crm/accounting/obligations/route'
 import { GET as getOverview } from '@/app/api/crm/accounting/overview/route'
+import { GET as getTodo } from '@/app/api/crm/accounting/todo/route'
 import {
   toAccountingDocument,
   toAccountingEntity,
   toAccountingJpk,
   toAccountingObligation,
+  toAccountingTodo,
 } from '@/lib/crm/accounting'
 import { getCrmConnection, markSync } from '@/lib/crm/connection'
 import { getSession } from '@/lib/session'
@@ -30,6 +32,7 @@ const ROUTES = {
   obligations: getObligations,
   documents: getDocuments,
   jpk: getJpk,
+  todo: getTodo,
 }
 type Resource = keyof typeof ROUTES
 
@@ -85,6 +88,12 @@ const submission = {
   createdAt: '2026-11-20T10:00:00.000Z',
 }
 
+const todo = {
+  key: 'ksef-rejected:spolka', severity: 'pilne', area: 'faktury', entityKey: 'spolka', entityName: 'Programo s.j.',
+  title: 'KSeF odrzucił: 1 faktura', cause: 'Faktura bez numeru KSeF nie jest doręczona nabywcy.',
+  action: 'Popraw i wyślij ponownie', webPath: '/ksiegowosc/spolka?tab=faktury&okres=2026-10&dok=d1',
+}
+
 describe('mapowanie księgowości', () => {
   it('przepuszcza pełny wiersz bez zmian i gubi pola spoza kontraktu', () => {
     const extra = { ksefReference: '{"xml":"…"}', notes: 'x' }
@@ -92,6 +101,7 @@ describe('mapowanie księgowości', () => {
     expect(toAccountingObligation({ ...obligation, ...extra })).toEqual(obligation)
     expect(toAccountingEntity({ ...entity, nip: '7792604466' })).toEqual(entity)
     expect(toAccountingJpk({ ...submission, xml: '<JPK/>' })).toEqual(submission)
+    expect(toAccountingTodo({ ...todo, href: '/x' })).toEqual(todo)
   })
 
   it('czyta kwoty ze stringów, a brakujące zostawia nullem zamiast zera', () => {
@@ -121,12 +131,16 @@ describe('mapowanie księgowości', () => {
     expect(toAccountingJpk({ ...submission, env: 'DEMO', accepted: 1, hasUpo: undefined, statusLabel: '' })).toMatchObject({
       env: 'TEST', accepted: false, hasUpo: false, statusLabel: 'ACCEPTED',
     })
+    expect(toAccountingTodo({ key: 'x', title: 'Coś', severity: 'krytyczne', area: 'nowe', entityKey: 7 })).toEqual({
+      key: 'x', severity: 'wazne', area: null, entityKey: null, entityName: null, title: 'Coś', cause: '', action: '', webPath: null,
+    })
   })
 
   it.each(['//evil.test/x', '/\\evil.test', '.evil.test', 'https://evil.test', '@evil.test', '', null, 7])(
     'webPath %j nie wyprowadzi apki poza domenę',
     (path) => {
       expect(toAccountingDocument({ ...document, webPath: path }).webPath).toBeNull()
+      expect(toAccountingTodo({ ...todo, webPath: path }).webPath).toBeNull()
     },
   )
 })
@@ -143,10 +157,11 @@ describe('trasy /api/crm/accounting', () => {
     obligations: { obligations: [], nextCursor: null },
     documents: { documents: [], nextCursor: null },
     jpk: { submissions: [] },
+    todo: { items: [] },
   }
 
   const LIST: Record<Resource, string> = {
-    overview: 'entities', obligations: 'obligations', documents: 'documents', jpk: 'submissions',
+    overview: 'entities', obligations: 'obligations', documents: 'documents', jpk: 'submissions', todo: 'items',
   }
 
   for (const resource of Object.keys(ROUTES) as Resource[]) {
@@ -162,7 +177,7 @@ describe('trasy /api/crm/accounting', () => {
       ['HTML', '<html>Zaloguj się</html>'],
       ['puste ciało', ''],
       ['obiekt bez listy', { error: 'boom' }],
-      ['lista w złym kształcie', { entities: 'x', obligations: {}, documents: null, submissions: 1 }],
+      ['lista w złym kształcie', { entities: 'x', obligations: {}, documents: null, submissions: 1, items: {} }],
     ])(`${resource}: 200 z CRM-a, ale %s, to 502 z wpisem w last_error`, async (_, body) => {
       fetchMock.mockResolvedValueOnce(reply(200, body))
       const res = await get(resource)
@@ -253,6 +268,14 @@ describe('trasy /api/crm/accounting', () => {
     fetchMock.mockResolvedValueOnce(reply(200, { submissions: [submission] }))
     expect(await (await get('jpk', '?period=2026-10&limit=5')).json()).toEqual({ submissions: [submission] })
     expect(sent()).toEqual({ period: '2026-10' })
+  })
+
+  it('todo oddaje wyjątki w kolejności CRM-a, bez pozycji bez tytułu, i nie przepuszcza parametrów', async () => {
+    const info = { ...todo, key: 'bank-suggested', severity: 'informacja', area: 'bank', entityKey: null, entityName: null, webPath: '/finanse/bank' }
+    fetchMock.mockResolvedValueOnce(reply(200, { items: [todo, { ...todo, key: 'pusty', title: '  ' }, info] }))
+    const res = await get('todo', '?scope=ALL&userId=x')
+    expect(await res.json()).toEqual({ items: [todo, info] })
+    expect(fetchMock.mock.calls[0][0]).toBe('https://crm.test/api/v1/accounting/todo')
   })
 
   it.each<[Resource, string]>([

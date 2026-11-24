@@ -19,6 +19,8 @@ final class PagedList<Item: Identifiable & Equatable>: ObservableObject where It
     private let onItems: ([Item]) -> Void
     private let ttl: TimeInterval = 60
     private var token = 0
+    /// Dane mogły się zmienić na webie, więc TTL już nie obowiązuje.
+    private var stale = false
 
     var hasMore: Bool { nextCursor != nil }
 
@@ -31,30 +33,46 @@ final class PagedList<Item: Identifiable & Equatable>: ObservableObject where It
     }
 
     func ensureFresh() async {
+        if stale { return await refresh(keepingDepth: true) }
         if let loadedAt, Date().timeIntervalSince(loadedAt) < ttl { return }
         if isLoading { return }
         await refresh()
     }
 
-    func refresh() async {
+    func markStale() { stale = true }
+
+    /// `keepingDepth` odświeża tyle, ile już było widać. Powrót z zapłaty albo
+    /// z weba nie ma prawa zwinąć listy do pierwszej strony.
+    func refresh(keepingDepth: Bool = false) async {
         token += 1
         let mine = token
+        let depth = keepingDepth ? items.count : 0
+        let wasStale = stale
+        stale = false
         isLoading = true
         isLoadingMore = false
         // Osobne zadanie: zniknięcie widoku anuluje jego `.task`, a nie ma
         // powodu, żeby anulowało też pobranie, które i tak zaraz się przyda.
         await Task {
             do {
-                let page = try await fetch(nil)
+                var page = try await fetch(nil)
+                var fresh = Self.merge([], page.items)
+                var cursor = page.nextCursor
+                while mine == token, fresh.count < depth, let next = cursor {
+                    page = try await fetch(next)
+                    fresh = Self.merge(fresh, page.items)
+                    cursor = page.nextCursor == next ? nil : page.nextCursor
+                }
                 guard mine == token else { return }
-                onItems(page.items)
-                items = Self.merge([], page.items)
-                nextCursor = page.nextCursor
+                onItems(fresh)
+                items = fresh
+                nextCursor = cursor
                 loadedAt = Date()
                 failed = false
                 loadMoreFailed = false
             } catch {
                 guard mine == token else { return }
+                if wasStale { stale = true }
                 // 404 też jest awarią: do list wchodzi się dopiero, gdy księgowość
                 // odpowiedziała, a pusto bez błędu znaczyłoby „nic tu nie ma".
                 if case ApiError.cancelled = error {
@@ -97,6 +115,7 @@ final class PagedList<Item: Identifiable & Equatable>: ObservableObject where It
     /// Wynik żądania w locie nie ma już dokąd wrócić.
     func invalidate() {
         token += 1
+        stale = false
         items = []
         nextCursor = nil
         loadedAt = nil
