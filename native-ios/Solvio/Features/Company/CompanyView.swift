@@ -164,7 +164,7 @@ struct CompanyView: View {
     }
 
     private var resultCard: some View {
-        PaperCard(title: locale.t("company.monthResult"), label: resultPeriod) {
+        PaperCard(title: locale.t("company.monthResult"), label: crm.summaryPeriod) {
             VStack(alignment: .leading, spacing: Theme.Spacing.md) {
                 CrmResultFigures()
                 if let balance = crm.latestBalance, !crm.hasBank {
@@ -179,14 +179,6 @@ struct CompanyView: View {
         } trailing: {
             CardLink(label: locale.t("company.entries"), route: .crm(.entries))
         }
-    }
-
-    /// Miesiąc, którego dotyczą sumy — z odpowiedzi CRM-a, nie z paska.
-    private var resultPeriod: String {
-        if let month = crm.summary?.month {
-            return CompanyFormat.period(String(format: "%04d-%02d", month.year, month.month))
-        }
-        return Fmt.monthYear(crm.month)
     }
 
     private var entitiesSection: some View {

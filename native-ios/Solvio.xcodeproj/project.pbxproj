@@ -46,6 +46,7 @@
 		654EFF20E49094338B12AF73 /* CrmCommitmentsList.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CD60021FCA4483FE9466005 /* CrmCommitmentsList.swift */; };
 		66A068713DECFF06B3A713FF /* AllMoneyList.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AF58490B6A2A1F46B45460A /* AllMoneyList.swift */; };
 		6C89849BA942BBC0F89FEEF7 /* ObligationReminders.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97349ADC9CE849C006426F92 /* ObligationReminders.swift */; };
+		79B489FC857A862489B5775A /* CrmStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A670B8F8F085320EB70C49D /* CrmStoreTests.swift */; };
 		79CFE120CF26BFD497F202C4 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 027850E12E3403B5AFDB95B4 /* RootView.swift */; };
 		7A2C515B2E4669D2C802BD8B /* ToastCenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EAC82DB72FC502D7F96FAAE /* ToastCenter.swift */; };
 		7B3ED58AFDC6928AB8F72E72 /* CrmModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBA4FAA0DB438737C72D8317 /* CrmModels.swift */; };
@@ -144,6 +145,7 @@
 		82A7C9360DCFB8E30780DF94 /* PagedList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PagedList.swift; sourceTree = "<group>"; };
 		87CD3E7643B3FEDAFB89E949 /* CrmSummaryCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CrmSummaryCard.swift; sourceTree = "<group>"; };
 		8A05E58B94F312BA721C737F /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
+		8A670B8F8F085320EB70C49D /* CrmStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CrmStoreTests.swift; sourceTree = "<group>"; };
 		8ED6EC478BCBD240EAA0050F /* ScanQueueWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanQueueWidget.swift; sourceTree = "<group>"; };
 		914A13E95A57C5B2214E445E /* FontLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FontLoader.swift; sourceTree = "<group>"; };
 		942D50E6D12D96BB506456DB /* AppRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppRouter.swift; sourceTree = "<group>"; };
@@ -379,6 +381,7 @@
 				06CD4E5E4FDEF0C3DCD217B9 /* AccountingModelsTests.swift */,
 				3CFDBF024B26A7FCCA6A16C5 /* AccountingStoreTests.swift */,
 				A9CA1344A468B5F4E85C770E /* ApiErrorTests.swift */,
+				8A670B8F8F085320EB70C49D /* CrmStoreTests.swift */,
 				2EC1C0E07371022FBCD08A3F /* FmtTests.swift */,
 				A04F16831ED2984BDFFAE63B /* FXRatesTests.swift */,
 				2999640B213E6BD7C92E0B5A /* MoneyStringTests.swift */,
@@ -583,6 +586,7 @@
 				5E8D31F6D6B5FBB19BA0A8B3 /* AccountingModelsTests.swift in Sources */,
 				4B12943760C51264B3BB84D8 /* AccountingStoreTests.swift in Sources */,
 				1F2B56393D967AEA2697DAD5 /* ApiErrorTests.swift in Sources */,
+				79B489FC857A862489B5775A /* CrmStoreTests.swift in Sources */,
 				BB97BCB60279142B0E34B137 /* FXRatesTests.swift in Sources */,
 				C310FE286F798C01254CF2BA /* FmtTests.swift in Sources */,
 				3E2F8961E28399A577EBEE15 /* MoneyStringTests.swift in Sources */,

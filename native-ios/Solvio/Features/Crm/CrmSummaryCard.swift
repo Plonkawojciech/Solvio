@@ -12,7 +12,7 @@ struct CrmSummaryCard: View {
 
     var body: some View {
         if crm.connected == true {
-            PaperCard(title: locale.t("crm.company"), label: locale.t("crm.section")) {
+            PaperCard(title: locale.t("crm.company"), label: crm.summaryPeriod) {
                 VStack(alignment: .leading, spacing: Theme.Spacing.md) {
                     CrmResultFigures()
                     if crm.hasBank {
@@ -74,6 +74,17 @@ struct CrmSummaryCard: View {
 }
 
 // MARK: - Klocki wspólne dla Panelu i Firmy
+
+extension CrmStore {
+    /// Miesiąc, którego dotyczą sumy — z odpowiedzi CRM-a, nie z paska. Musi
+    /// stać przy każdych sumach: oglądany miesiąc jest wspólny dla całej apki.
+    var summaryPeriod: String {
+        if let month = summary?.month {
+            return CompanyFormat.period(String(format: "%04d-%02d", month.year, month.month))
+        }
+        return Fmt.monthYear(month)
+    }
+}
 
 /// Przychody, koszty i wynik miesiąca. Bez sum z CRM-a są kreski, nie zera.
 struct CrmResultFigures: View {

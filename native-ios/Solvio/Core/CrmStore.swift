@@ -25,7 +25,16 @@ final class CrmStore: ObservableObject {
     @Published private(set) var error: String?
 
     /// Miesiąc, którego dotyczą `entries`. Zmiana miesiąca unieważnia cache.
-    @Published private(set) var month: Date = Date()
+    @Published private(set) var month: Date
+    /// Oglądany jest bieżący miesiąc, więc ma iść za kalendarzem. Ręcznie
+    /// wybrany inny miesiąc zostaje tam, gdzie użytkownik go zostawił.
+    private var followsToday = true
+    private let now: () -> Date
+
+    init(now: @escaping () -> Date = Date.init) {
+        self.now = now
+        month = now()
+    }
 
     private var loadedAt: Date?
     private var task: Task<Void, Never>?
@@ -34,10 +43,6 @@ final class CrmStore: ObservableObject {
     /// poprzedniego miesiąca wróciłyby po tym, jak zniknęły z ekranu.
     private var generation = 0
     private let ttl: TimeInterval = 120
-
-    var monthIncome: Double { summary?.month?.income ?? 0 }
-    var monthExpense: Double { summary?.month?.expense ?? 0 }
-    var monthBalance: Double { summary?.month?.balance ?? 0 }
 
     var activeCommitments: [CrmCommitment] { commitments.filter(\.active) }
 
@@ -82,6 +87,7 @@ final class CrmStore: ObservableObject {
     }
 
     func ensureLoaded(force: Bool = false) {
+        rollMonth()
         if !force, let loadedAt, Date().timeIntervalSince(loadedAt) < ttl { return }
         if !force, task != nil { return }
         _ = startLoad()
@@ -104,12 +110,33 @@ final class CrmStore: ObservableObject {
     }
 
     func setMonth(_ date: Date) {
+        followsToday = isThisMonth(date)
+        show(date)
+        startLoad()
+    }
+
+    /// Apka wznowiona z tła w nowym miesiącu nie może dalej pokazywać
+    /// poprzedniego jako bieżącego.
+    func rollMonth() {
+        guard followsToday, !isThisMonth(month) else { return }
+        show(now())
+        // Żądanie w locie dotyczy poprzedniego miesiąca.
+        task?.cancel()
+        task = nil
+        generation += 1
+        loading = false
+    }
+
+    private func show(_ date: Date) {
         month = date
         loadedAt = nil
         // Wpisy i sumy innego miesiąca pod nowym nagłówkiem byłyby nieprawdą.
         entries = []
         summary = nil
-        startLoad()
+    }
+
+    private func isThisMonth(_ date: Date) -> Bool {
+        Calendar.current.isDate(date, equalTo: now(), toGranularity: .month)
     }
 
     private func load(_ mine: Int) async {
@@ -243,6 +270,7 @@ final class CrmStore: ObservableObject {
     func setError(_ message: String?) { error = message }
 
     func reload() async {
+        rollMonth()
         loadedAt = nil
         await startLoad().value
     }
@@ -258,7 +286,8 @@ final class CrmStore: ObservableObject {
         task = nil
         generation += 1
         loading = false
-        month = Date()
+        month = now()
+        followsToday = true
         entries = []
         summary = nil
         clients = []
