@@ -1,13 +1,13 @@
 import SwiftUI
 
-/// Ustawienia — arkusz, nie zakładka. Solvio ma dwa ekrany, a to jest
-/// narzędzie: waluta, budżet, kategorie, wpięcie w CRM Programo, wylogowanie.
+/// Ustawienia — arkusz, nie zakładka. To jest narzędzie: waluta, budżet, kategorie, wpięcie w CRM Programo, wylogowanie.
 struct SettingsView: View {
     @EnvironmentObject private var store: AppDataStore
     @EnvironmentObject private var session: SessionStore
     @EnvironmentObject private var locale: AppLocale
     @EnvironmentObject private var theme: AppTheme
     @EnvironmentObject private var toast: ToastCenter
+    @EnvironmentObject private var crm: CrmStore
     @Environment(\.dismiss) private var dismiss
 
     @State private var monthlyBudget = ""
@@ -25,6 +25,7 @@ struct SettingsView: View {
                         categoriesCard
                         PasswordCard()
                         CrmConnectionCard()
+                        if crm.connected == true { RemindersCard() }
                         appearanceCard
                         signOutButton
                     }
@@ -187,7 +188,6 @@ struct SettingsView: View {
         Button(locale.t("common.signOut")) {
             Task {
                 await session.logout()
-                store.resetAll()
                 dismiss()
             }
         }
@@ -251,6 +251,47 @@ private struct PasswordCard: View {
     }
 }
 
+// MARK: - Przypomnienia
+
+/// Przypomnienia o terminach firmowych. O zgodę iOS pytamy dopiero, gdy ktoś
+/// włączy przełącznik.
+private struct RemindersCard: View {
+    @EnvironmentObject private var reminders: ObligationReminders
+    @EnvironmentObject private var locale: AppLocale
+    @Environment(\.openURL) private var openURL
+
+    var body: some View {
+        PaperCard(title: locale.t("company.reminders"), label: locale.t("nav.company")) {
+            VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                Toggle(isOn: Binding(
+                    get: { reminders.enabled },
+                    set: { on in Task { await reminders.setEnabled(on) } }
+                )) {
+                    Text(locale.t("company.remindersToggle"))
+                        .font(AppFont.body)
+                        .foregroundColor(Theme.foreground)
+                }
+                .tint(Theme.primary)
+                Text(locale.t("company.remindersHint"))
+                    .font(AppFont.caption)
+                    .foregroundColor(Theme.mutedForeground)
+                    .fixedSize(horizontal: false, vertical: true)
+                if reminders.blocked {
+                    Text(locale.t("company.remindersBlocked"))
+                        .font(AppFont.caption)
+                        .foregroundColor(Theme.destructive)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Button(locale.t("company.openIosSettings")) {
+                        if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
+                    }
+                    .buttonStyle(SecondaryButtonStyle(fullWidth: false))
+                }
+            }
+        }
+        .task { await reminders.checkAuthorization() }
+    }
+}
+
 // MARK: - CRM
 
 /// Wpięcie zakładki Finanse w crm.programo.pl. Klucz wkleja Wojtek i po
@@ -259,6 +300,7 @@ private struct PasswordCard: View {
 private struct CrmConnectionCard: View {
     @EnvironmentObject private var locale: AppLocale
     @EnvironmentObject private var toast: ToastCenter
+    @EnvironmentObject private var crm: CrmStore
 
     @State private var connection: CrmRepo.Connection?
     @State private var apiKey = ""
@@ -331,6 +373,9 @@ private struct CrmConnectionCard: View {
                 ))
                 apiKey = ""
                 toast.success(locale.t("crm.connected"))
+                // Nowy klucz może prowadzić do innej firmy — stare dane odpadają.
+                crm.reset()
+                crm.ensureLoaded(force: true)
             } catch {
                 toast.error(locale.t("crm.connectFailed"))
             }
@@ -341,8 +386,14 @@ private struct CrmConnectionCard: View {
         busy = true
         Task {
             defer { busy = false }
-            try? await CrmRepo.disconnect()
+            do {
+                try await CrmRepo.disconnect()
+            } catch {
+                toast.error(locale.t("common.error"))
+                return
+            }
             await load()
+            crm.markDisconnected()
             toast.success(locale.t("crm.disconnected"))
         }
     }

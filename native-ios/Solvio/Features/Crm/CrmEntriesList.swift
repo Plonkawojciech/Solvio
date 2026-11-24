@@ -92,27 +92,11 @@ struct CrmEntriesList: View {
     }
 
     private var totals: some View {
-        HStack(spacing: Theme.Spacing.sm) {
-            total(locale.t("crm.income"), crm.monthIncome, Theme.success)
-            total(locale.t("crm.costs"), crm.monthExpense, Theme.destructive)
-            total(locale.t("crm.result"), crm.monthBalance, crm.monthBalance >= 0 ? Theme.foreground : Theme.destructive)
-        }
-        .padding(.horizontal, Theme.Spacing.md)
-        .padding(.bottom, Theme.Spacing.sm)
-    }
-
-    private func total(_ label: String, _ value: Double, _ color: Color) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            SectionLabel(text: label)
-            Text(Fmt.amount(value, currency: "PLN"))
-                .font(AppFont.semibold(14))
-                .foregroundColor(color)
-                .lineLimit(1)
-                .minimumScaleFactor(0.6)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(Theme.Spacing.sm + 2)
-        .paperCard(radius: Theme.Radius.md, shadow: 0)
+        CrmResultFigures()
+            .padding(Theme.Spacing.sm + 2)
+            .paperCard(radius: Theme.Radius.md, shadow: 0)
+            .padding(.horizontal, Theme.Spacing.md)
+            .padding(.bottom, Theme.Spacing.sm)
     }
 
     private func row(_ entry: CrmEntry) -> some View {

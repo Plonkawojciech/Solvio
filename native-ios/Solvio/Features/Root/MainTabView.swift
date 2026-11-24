@@ -2,11 +2,14 @@ import SwiftUI
 import PhotosUI
 
 /// Powłoka zalogowanej apki — nagłówek, treść zakładki i dolny pasek
-/// z FAB-em skanowania pośrodku. Dwa ekrany, nic więcej:
+/// z FAB-em skanowania:
 ///
-///     ┌─ Nagłówek: logo · ustawienia ─┐
-///     │           Treść                │
-///     └─ Panel · (FAB) · Wydatki ─────┘
+///     ┌─ Nagłówek: logo · ustawienia ───────┐
+///     │              Treść                   │
+///     └─ Panel · Wydatki · (FAB) · Firma ───┘
+///
+/// Firma pojawia się wyłącznie przy wpiętym CRM-ie; bez niego pasek to
+/// Panel · (FAB) · Wydatki.
 struct MainTabView: View {
     @EnvironmentObject private var router: AppRouter
     @EnvironmentObject private var locale: AppLocale
@@ -120,6 +123,10 @@ struct MainTabView: View {
             NavigationStack(path: $router.expensesStack) {
                 ExpensesListView().navigationDestination(for: AppRoute.self, destination: destination)
             }
+        case .company:
+            NavigationStack(path: $router.companyStack) {
+                CompanyView().navigationDestination(for: AppRoute.self, destination: destination)
+            }
         }
     }
 
@@ -127,6 +134,12 @@ struct MainTabView: View {
     private func destination(_ route: AppRoute) -> some View {
         switch route {
         case .expenseDetail(let id): ExpenseDetailView(expenseId: id)
+        case .obligations: ObligationsView()
+        case .obligation(let item): ObligationDetailView(obligation: item)
+        case .documents(let direction, let status): DocumentsView(direction: direction, status: status)
+        case .document(let item): DocumentDetailView(initial: item)
+        case .jpk: JpkView()
+        case .crm(let registry): CrmSectionScreen(registry: registry)
         }
     }
 
@@ -171,37 +184,49 @@ struct MainTabView: View {
 private struct TabBar: View {
     @EnvironmentObject private var router: AppRouter
     @EnvironmentObject private var locale: AppLocale
+    @EnvironmentObject private var crm: CrmStore
 
     var body: some View {
         HStack(spacing: 0) {
             tab(.dashboard, icon: "square.grid.2x2", activeIcon: "square.grid.2x2.fill", label: locale.t("nav.dashboard"))
-
-            Button {
-                Haptics.impact(.medium)
-                router.showingScanSheet = true
-            } label: {
-                Circle()
-                    .fill(Theme.primary)
-                    .frame(width: 52, height: 52)
-                    .overlay(
-                        Image(systemName: "camera.fill")
-                            .font(.system(size: 19, weight: .semibold))
-                            .foregroundColor(.white)
-                    )
-                    .softShadow(2)
-            }
-            .frame(maxWidth: .infinity)
-            .offset(y: -14)
-            .accessibilityLabel(locale.t("receipts.scan"))
-
             // `list.bullet` nie ma wariantu `.fill` — stan aktywny niesie
             // kolor, nie wypełnienie. Bez tego ikona po prostu znikała.
-            tab(.expenses, icon: "list.bullet", activeIcon: "list.bullet", label: locale.t("nav.expenses"))
+            if crm.connected == true {
+                tab(.expenses, icon: "list.bullet", activeIcon: "list.bullet", label: locale.t("nav.expenses"))
+                scanButton
+                tab(.company, icon: "building.2", activeIcon: "building.2.fill", label: locale.t("nav.company"))
+            } else {
+                scanButton
+                tab(.expenses, icon: "list.bullet", activeIcon: "list.bullet", label: locale.t("nav.expenses"))
+            }
         }
         .padding(.horizontal, Theme.Spacing.md)
+        // Pasek ma stałą wysokość, więc jego podpisy nie rosną bez końca —
+        // tak samo zachowuje się systemowy pasek zakładek.
+        .dynamicTypeSize(...DynamicTypeSize.xxLarge)
         .frame(height: 58)
         .background(Theme.card)
         .overlay(alignment: .top) { Rectangle().fill(Theme.border).frame(height: 1) }
+    }
+
+    private var scanButton: some View {
+        Button {
+            Haptics.impact(.medium)
+            router.showingScanSheet = true
+        } label: {
+            Circle()
+                .fill(Theme.primary)
+                .frame(width: 52, height: 52)
+                .overlay(
+                    Image(systemName: "camera.fill")
+                        .font(.system(size: 19, weight: .semibold))
+                        .foregroundColor(.white)
+                )
+                .softShadow(2)
+        }
+        .frame(maxWidth: .infinity)
+        .offset(y: -14)
+        .accessibilityLabel(locale.t("receipts.scan"))
     }
 
     private func tab(_ target: AppTab, icon: String, activeIcon: String, label: String) -> some View {
@@ -213,9 +238,12 @@ private struct TabBar: View {
             VStack(spacing: 4) {
                 Image(systemName: active ? activeIcon : icon)
                     .font(.system(size: 17, weight: .medium))
+                    .frame(height: 20)
                 Text(label.uppercased())
                     .font(AppFont.chip)
                     .tracking(1.2)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
             }
             .foregroundColor(active ? Theme.primary : Theme.mutedForeground)
             .frame(maxWidth: .infinity)

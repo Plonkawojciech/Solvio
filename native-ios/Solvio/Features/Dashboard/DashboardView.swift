@@ -40,21 +40,17 @@ struct DashboardView: View {
                     ErrorBanner(message: error) { store.ensureDashboard(force: true) }
                 } else {
                     let m = model
-                    // Zakładka Firma chowa moje pieniądze, a nie miesza ich
-                    // z firmowymi: to dwa różne budżety, nie jeden wspólny.
-                    if scope != .company {
-                        ForEach(m.alerts) { alert in
-                            AlertRow(title: alert.title, detail: alert.detail, level: alert.level)
-                        }
-                        heroCard(m)
-                        tiles(m)
+                    ForEach(m.alerts) { alert in
+                        AlertRow(title: alert.title, detail: alert.detail, level: alert.level)
                     }
-                    if scope != .mine { CrmSummaryCard() }
-                    if scope != .company {
-                        if !m.split.isEmpty { splitCard(m) }
-                        if !m.topCategories.isEmpty { categoriesCard(m) }
-                        recentCard(m)
-                    }
+                    heroCard(m)
+                    tiles(m)
+                    // Karta firmowa stoi obok moich pieniędzy, a nie w ich
+                    // sumie: to dwa różne budżety, nie jeden wspólny.
+                    if scope == .all { CrmSummaryCard() }
+                    if !m.split.isEmpty { splitCard(m) }
+                    if !m.topCategories.isEmpty { categoriesCard(m) }
+                    recentCard(m)
                 }
             }
             .padding(Theme.Spacing.md)

@@ -16,6 +16,9 @@ struct SolvioApp: App {
     /// Dane z crm.programo.pl — osobno od `AppDataStore`, bo to nie są nasze
     /// dane: źródłem prawdy zostaje CRM, a apka jest pilotem.
     @StateObject private var crm = CrmStore()
+    /// Księgowość firmy — tylko odczyt, przez ten sam most.
+    @StateObject private var accounting: AccountingStore
+    @StateObject private var reminders: ObligationReminders
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
@@ -23,6 +26,12 @@ struct SolvioApp: App {
         let store = AppDataStore()
         _dataStore = StateObject(wrappedValue: store)
         _scanQueue = StateObject(wrappedValue: ScanQueueManager(store: store))
+
+        let reminders = ObligationReminders()
+        let accounting = AccountingStore()
+        accounting.onObligations = { [weak reminders] in reminders?.update($0) }
+        _reminders = StateObject(wrappedValue: reminders)
+        _accounting = StateObject(wrappedValue: accounting)
     }
 
     var body: some Scene {
@@ -36,32 +45,58 @@ struct SolvioApp: App {
                 .environmentObject(dataStore)
                 .environmentObject(scanQueue)
                 .environmentObject(crm)
-                .task { await session.restore() }
+                .environmentObject(accounting)
+                .environmentObject(reminders)
+                .task {
+                    await session.restore()
+                    // Wylogowanie mogło przerwać zamknięcie apki.
+                    if session.currentUser == nil { reminders.setAccount(nil) }
+                }
                 .onAppear {
                     // Komunikaty błędów kolejki mają być zlokalizowane,
                     // a nie wyciekać surowym opisem z URLSession.
                     scanQueue.locale = appLocale
+                    reminders.locale = appLocale
                 }
                 .onChange(of: session.currentUser?.email) { email in
-                    guard email != nil else {
-                        dataStore.resetAll()
-                        crm.reset()
-                        return
-                    }
+                    // Czyścimy przy KAŻDEJ zmianie konta, nie tylko przy
+                    // wylogowaniu: dane jednego nie mają prawa mignąć drugiemu.
+                    dataStore.resetAll()
+                    crm.reset()
+                    accounting.reset()
+                    router.reset()
+                    reminders.setAccount(email)
+                    guard email != nil else { return }
                     // Rozgrzewamy cache w chwili logowania, żeby pierwszy
                     // ekran nie miał spinnera.
                     dataStore.refreshAll(force: true)
+                    crm.ensureLoaded(force: true)
                     // Konta założone przed wdrożeniem seeda nadal mają zero
                     // kategorii. Wywołanie jest idempotentne i ograniczone
                     // po stronie serwera, więc puszczamy je w tle.
                     Task { try? await MaintenanceRepo.seedCategories() }
                 }
+                .onChange(of: crm.connected) { connected in
+                    switch connected {
+                    case true?:
+                        accounting.ensureLoaded()
+                    case false?:
+                        accounting.reset()
+                        reminders.clear()
+                        router.leaveCompany()
+                    case nil:
+                        // Nowy klucz albo inne konto: nie wiadomo, czyje to dane.
+                        accounting.reset()
+                    }
+                }
+                .onChange(of: appLocale.language) { _ in reminders.reschedule() }
                 .onChange(of: scenePhase) { phase in
                     // Powrót z tła — po cichu odświeżamy, żeby liczby na
                     // ekranie były aktualne. Bez spinnera, jeśli cache żyje.
                     if phase == .active, session.currentUser != nil {
                         dataStore.refreshAll(force: false)
                         crm.ensureLoaded()
+                        if crm.connected == true { accounting.ensureLoaded() }
                     }
                 }
                 .preferredColorScheme(appTheme.mode.colorScheme)

@@ -58,3 +58,23 @@ targets:
         TARGETED_DEVICE_FAMILY: "1"
         GENERATE_INFOPLIST_FILE: NO
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+  SolvioTests:
+    type: bundle.unit-test
+    platform: iOS
+    deploymentTarget: "16.0"
+    sources:
+      - path: SolvioTests
+    dependencies:
+      - target: Solvio
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.programo.solvio.tests
+        GENERATE_INFOPLIST_FILE: YES
+schemes:
+  Solvio:
+    build:
+      targets:
+        Solvio: all
+    test:
+      targets:
+        - SolvioTests

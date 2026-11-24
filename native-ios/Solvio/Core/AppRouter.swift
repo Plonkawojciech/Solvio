@@ -1,25 +1,29 @@
 import SwiftUI
 
-/// Solvio ma dwa ekrany. Pasek na dole: Panel | **FAB(skan)** | Wydatki.
-/// FAB nie jest zakładką — otwiera skanowanie paragonu. Zasada produktu:
-/// to jedyny przycisk skanowania w apce, żaden ekran nie dokłada własnego.
+/// Pasek na dole: Panel | Wydatki | **FAB(skan)** | Firma. Zakładka Firma
+/// istnieje tylko przy wpiętym CRM-ie; bez niego zostają dwa ekrany z FAB-em
+/// pośrodku. FAB nie jest zakładką — otwiera skanowanie paragonu. Zasada
+/// produktu: to jedyny przycisk skanowania w apce, żaden ekran nie dokłada
+/// własnego.
 enum AppTab: Hashable {
     case dashboard
     case expenses
+    case company
 }
 
 /// Który zbiór pieniędzy oglądamy. Jeden stan na całą apkę: przełączenie
 /// na Panelu przestawia też Wydatki, bo to ta sama decyzja („czyje to
 /// pieniądze"), a nie dwa niezależne filtry na dwóch ekranach.
+///
+/// Pieniądze firmowe mają własną zakładkę; tu zostają moje i wspólna oś czasu.
 enum MoneyScope: String, CaseIterable, Identifiable {
-    case mine, company, all
+    case mine, all
     var id: String { rawValue }
 
     var labelKey: String {
         switch self {
-        case .mine:    return "expenses.scopeMine"
-        case .company: return "expenses.scopeCompany"
-        case .all:     return "expenses.scopeAll"
+        case .mine: return "expenses.scopeMine"
+        case .all:  return "expenses.scopeAll"
         }
     }
 }
@@ -27,6 +31,13 @@ enum MoneyScope: String, CaseIterable, Identifiable {
 /// Cele wchodzące na stos nawigacji bieżącej zakładki.
 enum AppRoute: Hashable {
     case expenseDetail(id: String)
+    // Firma
+    case obligations
+    case obligation(AccountingObligation)
+    case documents(DocumentDirection, status: DocumentStatusFilter?)
+    case document(AccountingDocument)
+    case jpk
+    case crm(CrmRegistry)
 }
 
 /// Dwa sposoby na rozpoczęcie skanu z FAB-a. Wybór zamyka arkusz, a widok
@@ -47,6 +58,7 @@ final class AppRouter: ObservableObject {
 
     @Published var dashboardStack = NavigationPath()
     @Published var expensesStack = NavigationPath()
+    @Published var companyStack = NavigationPath()
 
     /// Arkusz wyboru źródła paragonu (aparat / galeria).
     @Published var showingScanSheet = false
@@ -61,6 +73,7 @@ final class AppRouter: ObservableObject {
         switch selectedTab {
         case .dashboard: dashboardStack.append(route)
         case .expenses: expensesStack.append(route)
+        case .company: companyStack.append(route)
         }
     }
 
@@ -68,6 +81,28 @@ final class AppRouter: ObservableObject {
         switch selectedTab {
         case .dashboard: dashboardStack = NavigationPath()
         case .expenses: expensesStack = NavigationPath()
+        case .company: companyStack = NavigationPath()
         }
+    }
+
+    /// CRM odpięty: zakładki Firma nie ma, więc nie wolno na niej zostać.
+    func leaveCompany() {
+        companyStack = NavigationPath()
+        moneyScope = .mine
+        if selectedTab == .company { selectedTab = .dashboard }
+    }
+
+    /// Wylogowanie. Stosy trzymają dane poprzedniego konta, więc czyścimy
+    /// wszystko, a nie tylko bieżącą zakładkę.
+    func reset() {
+        selectedTab = .dashboard
+        moneyScope = .mine
+        dashboardStack = NavigationPath()
+        expensesStack = NavigationPath()
+        companyStack = NavigationPath()
+        showingScanSheet = false
+        pendingScanMode = nil
+        showingSettings = false
+        showingExpenseEditor = false
     }
 }

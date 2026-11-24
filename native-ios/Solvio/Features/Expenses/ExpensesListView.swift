@@ -16,17 +16,10 @@ struct ExpensesListView: View {
     @State private var categoryFilter: String? = nil
     @State private var sort: Sort = .newest
     @State private var pendingDelete: Expense?
-    /// Sekcja wewnątrz zakładki Firma. Trzymana tutaj, nie w `CrmCompanyView`,
-    /// bo od niej zależy, co robi „+" w nagłówku ekranu.
-    @State private var companySection: CrmSection = .all
     @State private var editingCrmEntry: CrmEntry?
-    @State private var editingCommitment: CrmCommitment?
-    @State private var editingClient: CrmClient?
-    @State private var creatingCrm = false
 
     /// Który zbiór pieniędzy oglądamy — stan wspólny z Panelem, patrz
-    /// `MoneyScope`. Świadomie zakładka wewnątrz ekranu, a nie trzeci ekran:
-    /// apka ma dwa.
+    /// `MoneyScope`.
     private var scope: MoneyScope { router.moneyScope }
 
     enum Sort: String, CaseIterable, Identifiable {
@@ -72,22 +65,11 @@ struct ExpensesListView: View {
             switch scope {
             case .mine:
                 mineContent
-            case .company:
-                CrmCompanyView(
-                    section: $companySection,
-                    editingEntry: $editingCrmEntry,
-                    editingCommitment: $editingCommitment,
-                    editingClient: $editingClient,
-                    creating: $creatingCrm
-                )
             case .all:
                 AllMoneyList(editingCrmEntry: $editingCrmEntry)
             }
         }
         .sheet(item: $editingCrmEntry) { CrmEntryEditorSheet(entry: $0) }
-        .sheet(item: $editingCommitment) { CrmCommitmentEditorSheet(commitment: $0) }
-        .sheet(item: $editingClient) { CrmClientEditorSheet(client: $0) }
-        .sheet(isPresented: $creatingCrm) { newCrmSheet }
         .refreshable { await store.awaitDashboard(force: true) }
         .task { store.ensureDashboard() }
         .confirmationDialog(
@@ -100,16 +82,6 @@ struct ExpensesListView: View {
                 pendingDelete = nil
             }
             Button(locale.t("common.cancel"), role: .cancel) { pendingDelete = nil }
-        }
-    }
-
-    /// Co otwiera „+" w zakładce Firma — zależy od oglądanej sekcji.
-    @ViewBuilder
-    private var newCrmSheet: some View {
-        switch companySection {
-        case .commitments: CrmCommitmentEditorSheet(commitment: nil)
-        case .clients:     CrmClientEditorSheet(client: nil)
-        default:           CrmEntryEditorSheet(entry: nil)
         }
     }
 
@@ -169,7 +141,7 @@ struct ExpensesListView: View {
             Spacer()
             Button {
                 Haptics.impact(.light)
-                if scope == .mine { router.showingExpenseEditor = true } else { creatingCrm = true }
+                router.showingExpenseEditor = true
             } label: {
                 Image(systemName: "plus")
                     .font(.system(size: 15, weight: .semibold))
@@ -178,21 +150,10 @@ struct ExpensesListView: View {
                     .background(Theme.primary)
                     .clipShape(Circle())
             }
-            .accessibilityLabel(locale.t(addLabelKey))
+            .accessibilityLabel(locale.t("expenses.add"))
         }
         .padding(.horizontal, Theme.Spacing.md)
         .padding(.top, Theme.Spacing.md)
-    }
-
-    /// Co doda „+" — zależy od zakładki i sekcji. Bez tego VoiceOver mówiłby
-    /// „dodaj wydatek" nad listą klientów.
-    private var addLabelKey: String {
-        guard scope != .mine else { return "expenses.add" }
-        switch companySection {
-        case .commitments: return "crm.newCommitment"
-        case .clients:     return "crm.newClient"
-        default:           return "crm.newEntry"
-        }
     }
 
     /// Podpis pod tytułem: liczba rzeczy, które faktycznie widać.
@@ -202,13 +163,6 @@ struct ExpensesListView: View {
             return locale.pluralized("dashboard.transactions", count: filtered.count)
         case .all:
             return locale.pluralized("dashboard.transactions", count: store.expenses.count + crm.entries.count)
-        case .company:
-            switch companySection {
-            case .commitments: return locale.pluralized("crm.commitmentsCount", count: crm.commitments.count)
-            case .clients:     return locale.pluralized("crm.clientsCount", count: crm.clients.count)
-            case .bank:        return locale.pluralized("dashboard.transactions", count: crm.monthBankTransactions.count)
-            default:           return locale.pluralized("crm.entriesCount", count: crm.entries.count)
-            }
         }
     }
 
