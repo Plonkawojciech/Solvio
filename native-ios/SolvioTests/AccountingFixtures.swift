@@ -68,8 +68,9 @@ final class FakeAccountingAPI: AccountingAPI, @unchecked Sendable {
     }
 
     func documents(_ query: DocumentQuery, cursor: String?) async throws -> AccountingPage<AccountingDocument> {
+        let result = documentPages[cursor ?? ""]
         await gate?()
-        return try (documentPages[cursor ?? ""] ?? .success(AccountingPage(items: [], nextCursor: nil))).get()
+        return try (result ?? .success(AccountingPage(items: [], nextCursor: nil))).get()
     }
 
     func jpk() async throws -> [AccountingJpk] { [] }

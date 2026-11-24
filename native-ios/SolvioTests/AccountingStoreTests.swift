@@ -307,6 +307,44 @@ final class AccountingStoreTests: XCTestCase {
         XCTAssertEqual(store.current(open).status, .pending, "status nie przechodzi na następne konto")
     }
 
+    func testDocumentChangedOnTheWebIsReadDirectly() async {
+        let before = Fixture.document(id: "x")
+        api.documentPages = ["": page([before])]
+        let store = AccountingStore(api: api)
+        let unpaid = store.documents(DocumentQuery(direction: .sale, status: .unpaid))
+        await unpaid.refresh()
+
+        api.documentPages = ["": page([Fixture.document(id: "x", paid: true)])]
+        await store.webClosed()
+        XCTAssertFalse(store.current(before).paid, "sama lista pod szczegółem się nie odświeża")
+        let read = await store.refreshDocument(before)
+        XCTAssertTrue(read)
+        XCTAssertTrue(store.current(before).paid)
+
+        api.documentPages = ["": .failure(offline)]
+        let failed = await store.refreshDocument(before)
+        XCTAssertFalse(failed)
+        XCTAssertTrue(store.current(before).paid, "awaria zostawia ostatni znany stan")
+    }
+
+    func testDocumentReadBeforeAPaymentDoesNotOverwriteIt() async throws {
+        let before = Fixture.document(id: "x")
+        let gate = Gate()
+        api.documentPages = ["": page([before])]
+        api.gate = { await gate.wait() }
+        let store = AccountingStore(api: api)
+        let read = Task { await store.refreshDocument(before) }
+        while await gate.arrived == 0 { await Task.yield() }
+
+        api.gate = nil
+        api.documentPages = ["": page([Fixture.document(id: "x", paid: true)])]
+        _ = try await store.setPaid(before, paid: true)
+        XCTAssertTrue(store.current(before).paid)
+        await gate.release()
+        _ = await read.value
+        XCTAssertTrue(store.current(before).paid)
+    }
+
     // MARK: - Zapłata poza pierwszą stroną
 
     func testPaidDocumentIsFoundOnALaterPage() async throws {

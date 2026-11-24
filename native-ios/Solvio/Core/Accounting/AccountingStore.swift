@@ -34,6 +34,8 @@ final class AccountingStore: ObservableObject {
     private var generation = 0
     /// Które to wczytanie: wynik starszego jest odrzucany.
     private var loadId = 0
+    /// Które to czytanie dokumentu ze szczegółu; zapis zapłaty też je unieważnia.
+    private var documentRead = 0
     private var task: Task<Void, Never>?
     private var documentLists: [DocumentQuery: PagedList<AccountingDocument>] = [:]
     private var obligationLists: [String: PagedList<AccountingObligation>] = [:]
@@ -255,14 +257,11 @@ final class AccountingStore: ObservableObject {
         let mine = generation
         try await api.setEntryPaid(id: entryId, paid: paid)
         guard mine == generation else { return nil }
+        documentRead += 1
 
-        let lookup = DocumentQuery(direction: document.direction, entity: document.entityKey.isEmpty ? nil : document.entityKey, status: nil, text: document.number)
-        let fresh = await find(document.id, in: lookup)
+        let fresh = await find(document)
         guard mine == generation else { return nil }
-        if let fresh {
-            remember([fresh])
-            documentLists.values.forEach { $0.replace(fresh) }
-        }
+        if let fresh { show(fresh) }
         for (query, list) in documentLists where query.direction == document.direction && list.loadedAt != nil {
             Task { await list.refresh(keepingDepth: true) }
         }
@@ -270,9 +269,33 @@ final class AccountingStore: ObservableObject {
         return fresh
     }
 
+    /// Po powrocie z weba. Lista pod szczegółem się nie odświeża, a zapłacony
+    /// dokument wypada z filtra „nieopłacone", więc pytamy o niego wprost.
+    /// `false` znaczy, że nie udało się go odczytać.
+    func refreshDocument(_ document: AccountingDocument) async -> Bool {
+        documentRead += 1
+        let mine = documentRead
+        let account = generation
+        let fresh = await find(document)
+        // Nowszy odczyt albo zapis zapłaty pokaże własny wynik.
+        guard mine == documentRead, account == generation else { return true }
+        if let fresh { show(fresh) }
+        return fresh != nil
+    }
+
+    private func show(_ document: AccountingDocument) {
+        remember([document])
+        documentLists.values.forEach { $0.replace(document) }
+    }
+
     /// Fraza to tylko zawężenie (numer bywa pusty albo wspólny dla wielu),
     /// więc dokument może leżeć na dalszej stronie.
-    private func find(_ id: String, in query: DocumentQuery) async -> AccountingDocument? {
+    private func find(_ document: AccountingDocument) async -> AccountingDocument? {
+        let id = document.id
+        let query = DocumentQuery(
+            direction: document.direction, entity: document.entityKey.isEmpty ? nil : document.entityKey,
+            status: nil, text: document.number
+        )
         var cursor: String?
         for _ in 0..<Self.lookupPages {
             guard let page = try? await api.documents(query, cursor: cursor) else { return nil }
