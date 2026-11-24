@@ -157,6 +157,25 @@ final class ObligationRemindersTests: XCTestCase {
         XCTAssertEqual(ours.count, 4, "start bez sieci nie kasuje przypomnień")
     }
 
+    func testLanguageChangeBeforeFirstLoadKeepsPlannedReminders() async {
+        var reminders = make()
+        reminders.setAccount("a@x.pl")
+        await reminders.setEnabled(true)
+        reminders.update(obligations)
+        await reminders.settle()
+        reminders = make()
+        reminders.setAccount("a@x.pl")
+        reminders.reschedule()
+        await reminders.settle()
+        var ours = await center.ours
+        XCTAssertEqual(ours.count, 4, "nie wiadomo, co planować, więc zostaje to, co jest")
+
+        reminders.update([])
+        await reminders.settle()
+        ours = await center.ours
+        XCTAssertTrue(ours.isEmpty, "prawdziwy brak terminów odwołuje")
+    }
+
     func testDeniedPermissionTurnsTheSwitchBack() async {
         let reminders = make()
         await center.set(granted: false)

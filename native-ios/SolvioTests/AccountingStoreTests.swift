@@ -35,6 +35,57 @@ final class AccountingStoreTests: XCTestCase {
         XCTAssertFalse(reported, "404 nie odwołuje przypomnień")
     }
 
+    func testMissingOverviewAfterLoadKeepsTheScreenAndReminders() async {
+        api.obligationPages = ["": page([Fixture.obligation(id: "a", due: "2026-12-10")])]
+        let store = AccountingStore(api: api)
+        var reports = 0
+        store.onObligations = { _ in reports += 1 }
+        await store.refresh()
+        api.overviewResult = .failure(ApiError.notFound)
+        await store.refresh()
+        XCTAssertTrue(store.failed)
+        XCTAssertEqual(store.available, true)
+        XCTAssertEqual(store.openObligations.map(\.id), ["a"])
+        XCTAssertEqual(reports, 1, "chwilowe 404 nie odwołuje przypomnień")
+    }
+
+    func testMissingObligationsAreAFailureNotAnEmptyList() async {
+        api.obligationPages = ["": .failure(ApiError.notFound)]
+        let store = AccountingStore(api: api)
+        var reported = false
+        store.onObligations = { _ in reported = true }
+        await store.refresh()
+        XCTAssertTrue(store.failed)
+        XCTAssertNil(store.available)
+        XCTAssertFalse(reported)
+
+        api.obligationPages = ["": page([Fixture.obligation(id: "a", due: "2026-12-10")])]
+        await store.refresh()
+        api.obligationPages = ["": .failure(ApiError.notFound)]
+        await store.refresh()
+        XCTAssertTrue(store.failed)
+        XCTAssertEqual(store.openObligations.map(\.id), ["a"])
+    }
+
+    func testReallyEmptyObligationsCancelReminders() async {
+        let store = AccountingStore(api: api)
+        var reported: [AccountingObligation]?
+        store.onObligations = { reported = $0 }
+        await store.refresh()
+        XCTAssertEqual(store.available, true)
+        XCTAssertEqual(reported, [])
+    }
+
+    func testMissingListRouteIsAFailureAndKeepsRows() async {
+        api.documentPages = ["": page([Fixture.document(id: "1")])]
+        let list = AccountingStore(api: api).documents(DocumentQuery(direction: .sale))
+        await list.refresh()
+        api.documentPages = ["": .failure(ApiError.notFound)]
+        await list.refresh()
+        XCTAssertTrue(list.failed)
+        XCTAssertEqual(list.items.map(\.id), ["1"])
+    }
+
     func testNoEntitiesHideSectionsAndCancelReminders() async {
         api.overviewResult = .success(Fixture.overview(entities: 0))
         let store = AccountingStore(api: api)

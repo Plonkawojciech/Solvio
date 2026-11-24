@@ -55,12 +55,9 @@ final class PagedList<Item: Identifiable & Equatable>: ObservableObject where It
                 loadMoreFailed = false
             } catch {
                 guard mine == token else { return }
-                if case ApiError.notFound = error {
-                    // Backend bez tej trasy: pusto, ale bez błędu.
-                    items = []
-                    nextCursor = nil
-                    failed = false
-                } else if case ApiError.cancelled = error {
+                // 404 też jest awarią: do list wchodzi się dopiero, gdy księgowość
+                // odpowiedziała, a pusto bez błędu znaczyłoby „nic tu nie ma".
+                if case ApiError.cancelled = error {
                     // Anulowanie to nie awaria.
                 } else {
                     failed = true

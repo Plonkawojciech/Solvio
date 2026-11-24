@@ -4,8 +4,8 @@ import SwiftUI
 /// Księgowość firmy z CRM-a: terminy, przegląd podmiotów, dokumenty, JPK.
 /// Stale-while-revalidate jak `CrmStore`; dane żyją tylko w pamięci procesu.
 ///
-/// `available == false` znaczy „nie ma czego pokazać" (backend bez tych tras
-/// albo klucz bez dostępu) — wtedy sekcje znikają bez komunikatu o błędzie.
+/// `available == false` znaczy „nie ma czego pokazać" (backend albo CRM bez
+/// tych tras, klucz bez dostępu) — wtedy sekcje znikają bez komunikatu o błędzie.
 @MainActor
 final class AccountingStore: ObservableObject {
     @Published private(set) var available: Bool?
@@ -65,10 +65,14 @@ final class AccountingStore: ObservableObject {
                 task = nil
             }
         }
+        // 404 znaczy „tu nie ma księgowości" tylko na wejściu. Gdy już raz
+        // odpowiedziała, to awaria: np. CRM w trakcie wdrożenia.
+        var known = available == true
         do {
             let fresh = try await api.overview()
             guard mine == generation else { return }
             guard !fresh.entities.isEmpty else { return hide(cancelReminders: true) }
+            known = true
             let open = try await allOpenObligations()
             guard mine == generation else { return }
             overview = fresh
@@ -80,7 +84,7 @@ final class AccountingStore: ObservableObject {
         } catch {
             guard mine == generation else { return }
             if case ApiError.cancelled = error { return }
-            if case ApiError.notFound = error { return hide(cancelReminders: false) }
+            if case ApiError.notFound = error, !known { return hide(cancelReminders: false) }
             failed = true
             Log.error(.crm, "nie udało się wczytać księgowości", error)
         }
@@ -100,7 +104,7 @@ final class AccountingStore: ObservableObject {
         return items.filter(\.isOpen)
     }
 
-    /// Trasa, której nie ma, nie odwołuje przypomnień: terminy nadal biegną.
+    /// Niedostępna księgowość (404) nie odwołuje przypomnień: terminy nadal biegną.
     /// Pusta lista podmiotów odwołuje, bo konto nie ma już do nich dostępu.
     private func hide(cancelReminders: Bool) {
         available = false

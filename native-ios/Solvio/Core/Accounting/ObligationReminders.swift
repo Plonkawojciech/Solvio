@@ -64,7 +64,9 @@ final class ObligationReminders: ObservableObject {
     private let defaults: UserDefaults
     private let now: () -> Date
     private var account: String?
-    private var obligations: [AccountingObligation] = []
+    /// `nil` = w tym procesie terminy jeszcze nie przyszły. Planowanie z niczego
+    /// skasowałoby przypomnienia zaplanowane przed restartem.
+    private var obligations: [AccountingObligation]?
     private var generation = 0
     private var work: Task<Void, Never>?
 
@@ -88,7 +90,7 @@ final class ObligationReminders: ObservableObject {
     func setAccount(_ email: String?) {
         guard email != account || email == nil else { return }
         account = email
-        obligations = []
+        obligations = nil
         blocked = false
         enabled = email.map { defaults.bool(forKey: key($0)) } ?? false
         if !enabled || defaults.string(forKey: ownerKey) != email { clear() }
@@ -127,7 +129,7 @@ final class ObligationReminders: ObservableObject {
     func reschedule() { schedule() }
 
     func clear() {
-        obligations = []
+        obligations = nil
         cancelAll()
     }
 
@@ -140,7 +142,7 @@ final class ObligationReminders: ObservableObject {
     func settle() async { await work?.value }
 
     private func schedule() {
-        guard enabled, let account else { return }
+        guard enabled, let account, let obligations else { return }
         defaults.set(account, forKey: ownerKey)
         replace(with: ReminderPlan.build(obligations, now: now()), removeDelivered: false)
     }
