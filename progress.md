@@ -20,9 +20,12 @@ niego apka wygląda jak wcześniej.
   `SolvioWeb` przepuszcza wyłącznie ścieżkę od pojedynczego `/`.
 - **Przypomnienia o terminach:** Ustawienia, domyślnie wyłączone, osobno dla
   konta. 3 dni przed i w dniu terminu o 9:00, najwyżej 40, bez kwot.
-- **404 z `/api/crm/accounting/*`** (backend sprzed mostu) chowa sekcje
-  księgowe bez błędu. Błąd sieci nie czyści ekranu. Zmiana konta czyści stan
-  Firmy, stosy nawigacji, przypomnienia i dyskowy cache odpowiedzi.
+- **404 z `/api/crm/accounting/overview`** na wejściu (backend albo CRM bez
+  mostu) chowa sekcje księgowe bez błędu. Późniejsze 404 to awaria: ekran
+  i przypomnienia zostają, odwołuje je tylko prawdziwa pusta odpowiedź 200.
+  Sumy na Panelu i we Wszystkich mają podpis miesiąca, a bieżący miesiąc
+  przesuwa się po wznowieniu apki. Błąd sieci nie czyści ekranu. Zmiana konta
+  czyści stan Firmy, stosy nawigacji, przypomnienia i dyskowy cache odpowiedzi.
 - **Naprawione przy okazji:** wpis dodany w Firmie trafiał do CRM-a jako
   PRYWATNY i znikał z listy (`createEntry` bierze teraz zakres od wywołującego,
   wypchnięte wydatki zostają prywatne); sumy nad Wpisami zawsze dotyczyły
@@ -37,8 +40,8 @@ Pierwszy krok do Firmy na iPhonie zgodnej z nowym webem finansów. Trasy sesyjne
 
 - `lib/crm/accounting.ts` + `readQuery` w `route-helpers.ts`: do CRM-a idą
   wyłącznie znane i sprawdzone parametry, zła wartość to 400. 403 i 404
-  z CRM-a = pusty wynik bez wpisu w `last_error`, więc można to wdrożyć przed
-  CRM-em.
+  z CRM-a = 404 bez ruszania `last_error`, więc można to wdrożyć przed CRM-em;
+  200 bez oczekiwanej listy = 502.
 - Kwota, której CRM nie podał, zostaje `null`. `webPath` przechodzi tylko jako
   ścieżka od `/`, bo apka skleja go z domeną.
 - Testy: `lib/__tests__/crm-accounting.test.ts`. Kontrakt: `docs/API.md`.
