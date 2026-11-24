@@ -19,6 +19,8 @@ struct CompanyView: View {
                 header
                 notices
                 if showsAccounting {
+                    quickActions
+                    TodoCard()
                     DueCard()
                 } else if accounting.available == nil, accounting.loading {
                     SkeletonBlock(height: 180)
@@ -59,8 +61,33 @@ struct CompanyView: View {
 
     @ViewBuilder
     private var notices: some View {
-        if accounting.failed || crm.error != nil {
+        if accounting.failed || accounting.todoFailed || crm.error != nil {
             ErrorBanner(message: locale.t("company.refreshFailed")) { Task { await refresh() } }
+        }
+    }
+
+    // MARK: - Szybkie działania
+
+    @Environment(\.dynamicTypeSize) private var typeSize
+
+    private var quickActions: some View {
+        let layout = typeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(spacing: Theme.Spacing.sm))
+            : AnyLayout(HStackLayout(spacing: Theme.Spacing.sm))
+        return layout {
+            NewDocumentButton(direction: .sale) { quickLabel("doc.badge.plus", .sale) }
+                .buttonStyle(PrimaryButtonStyle())
+            NewDocumentButton(direction: .purchase) { quickLabel("cart.badge.plus", .purchase) }
+                .buttonStyle(SecondaryButtonStyle())
+        }
+    }
+
+    private func quickLabel(_ icon: String, _ direction: DocumentDirection) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon)
+            Text(locale.t(direction.newKey))
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
         }
     }
 
@@ -299,7 +326,7 @@ private struct EntityCard: View {
     @EnvironmentObject private var locale: AppLocale
 
     var body: some View {
-        PaperCard(title: entity.name, label: forms) {
+        PaperCard(title: entity.name, label: entity.forms.isEmpty ? nil : entity.forms) {
             VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
                 DetailLines(entries: [
                     .init(label: locale.t("company.revenue"), value: CompanyFormat.amount(entity.revenue)),
@@ -329,10 +356,5 @@ private struct EntityCard: View {
         } trailing: {
             SolvioWebLink(path: SolvioWeb.entityPath(entity.key), compact: true)
         }
-    }
-
-    private var forms: String? {
-        let text = [entity.taxFormLabel, entity.vatLabel].filter { !$0.isEmpty }.joined(separator: " · ")
-        return text.isEmpty ? nil : text
     }
 }

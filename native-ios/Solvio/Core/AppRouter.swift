@@ -32,6 +32,7 @@ enum MoneyScope: String, CaseIterable, Identifiable {
 enum AppRoute: Hashable {
     case expenseDetail(id: String)
     // Firma
+    case todo
     case obligations
     case obligation(AccountingObligation)
     case documents(DocumentDirection, status: DocumentStatusFilter?)
@@ -69,6 +70,13 @@ final class AppRouter: ObservableObject {
     /// Ustawiane po dodaniu wydatku ręcznie z panelu.
     @Published var showingExpenseEditor = false
 
+    /// Web Solvio otwarty w apce.
+    @Published var web: WebPage?
+    /// Arkusz wyboru podmiotu dla nowej faktury albo kosztu.
+    @Published var newDocument: DocumentDirection?
+    /// Ustawiane w arkuszu wyboru, konsumowane po jego zamknięciu.
+    var pendingWeb: WebPage?
+
     func push(_ route: AppRoute) {
         switch selectedTab {
         case .dashboard: dashboardStack.append(route)
@@ -88,6 +96,8 @@ final class AppRouter: ObservableObject {
     /// CRM odpięty: zakładki Firma nie ma, więc nie wolno na niej zostać.
     func leaveCompany() {
         companyStack = NavigationPath()
+        newDocument = nil
+        pendingWeb = nil
         moneyScope = .mine
         if selectedTab == .company { selectedTab = .dashboard }
     }
@@ -104,5 +114,8 @@ final class AppRouter: ObservableObject {
         pendingScanMode = nil
         showingSettings = false
         showingExpenseEditor = false
+        web = nil
+        newDocument = nil
+        pendingWeb = nil
     }
 }

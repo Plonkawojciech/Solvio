@@ -24,6 +24,7 @@
 		26C8F9BA9D9AFF91F5C8B609 /* MainTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66AF7168704B96615E13CBCB /* MainTabView.swift */; };
 		28D3674A8D2D5957DE5D74B7 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C3CE025F942AE589751DD5B /* SettingsView.swift */; };
 		2A7FA13C0AFFAC070CFD1C67 /* ObligationRemindersTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17A4F49BB292C8C28F382C82 /* ObligationRemindersTests.swift */; };
+		2CD52E2F037B53639830E494 /* TodoView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07814345784E7DCA9DC29FCB /* TodoView.swift */; };
 		2F7420A790B1D6D5B607CB8B /* Repositories.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F08CDAEE362B1BF05C9F22A /* Repositories.swift */; };
 		3178FC9F710A29C499D4DB9D /* AppTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3307232C0092760A40D85C77 /* AppTheme.swift */; };
 		36EC25A025F12F9A4B032B75 /* FontLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 914A13E95A57C5B2214E445E /* FontLoader.swift */; };
@@ -40,11 +41,13 @@
 		4EAC3793CB09BB192C88A4E7 /* CrmStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A46FEDE41DE354180E43AF7 /* CrmStore.swift */; };
 		555E395256DCA86F2C6AC4E3 /* AccountingModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7452E495A79E2C2AAEFC345 /* AccountingModels.swift */; };
 		58F83302451948336CE59AEA /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 654282E8C172B560969E4549 /* PrivacyInfo.xcprivacy */; };
+		5A02069BDD4655D36C1A02B7 /* EntityChoice.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14C62632DA6BBC33FDEAF9D7 /* EntityChoice.swift */; };
 		5ADAD8B24F5D7A9055C6A106 /* ObligationSchedule.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA9FE0B507B48CF2C50C3BCE /* ObligationSchedule.swift */; };
 		5E8D31F6D6B5FBB19BA0A8B3 /* AccountingModelsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06CD4E5E4FDEF0C3DCD217B9 /* AccountingModelsTests.swift */; };
 		61C41E7A97C4FC7113BEEC4C /* DashboardModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA60ACD41B5585902505B25F /* DashboardModel.swift */; };
 		654EFF20E49094338B12AF73 /* CrmCommitmentsList.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CD60021FCA4483FE9466005 /* CrmCommitmentsList.swift */; };
 		66A068713DECFF06B3A713FF /* AllMoneyList.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AF58490B6A2A1F46B45460A /* AllMoneyList.swift */; };
+		69E88A372590BCAE3409D438 /* NewDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8B0350D82C7B5374833A71E /* NewDocument.swift */; };
 		6C89849BA942BBC0F89FEEF7 /* ObligationReminders.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97349ADC9CE849C006426F92 /* ObligationReminders.swift */; };
 		79B489FC857A862489B5775A /* CrmStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A670B8F8F085320EB70C49D /* CrmStoreTests.swift */; };
 		79CFE120CF26BFD497F202C4 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 027850E12E3403B5AFDB95B4 /* RootView.swift */; };
@@ -53,6 +56,7 @@
 		83C7218FA1E5C1B91C36451F /* CameraPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24BD0456BC165D29B0F48B38 /* CameraPicker.swift */; };
 		8F249B7DA4009BDD381A56EE /* ReceiptReviewSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0091C5D72BBD694D62E59ED3 /* ReceiptReviewSheet.swift */; };
 		930CEE120531336867388533 /* CompanyComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D842AED24BD03304A759061 /* CompanyComponents.swift */; };
+		94E089687405B6C4F12E96BF /* EntityChoiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4266CB477F7419144A794211 /* EntityChoiceTests.swift */; };
 		95C41312710F9E3C86946915 /* Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7067708AD65AA9D19404060F /* Components.swift */; };
 		97C48631BBD6BAD77B57DB95 /* CrmClientEditorSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1742A6614EA92186A6F8CD79 /* CrmClientEditorSheet.swift */; };
 		997DCE46100A7D082ED4B8A9 /* CrmEntriesList.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A369D38E658BB9CAE76CF9E /* CrmEntriesList.swift */; };
@@ -80,6 +84,7 @@
 		E407080350525E2B13E789DE /* CrmSummaryCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87CD3E7643B3FEDAFB89E949 /* CrmSummaryCard.swift */; };
 		E42161C793ABA1780DDFE2AF /* ExpensesListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3494EB16FE8E3D7075771177 /* ExpensesListView.swift */; };
 		E5ACED9A769AE9839BEDFC1D /* ScanQueueWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8ED6EC478BCBD240EAA0050F /* ScanQueueWidget.swift */; };
+		F1627AA4E4F14CF317B85EA0 /* WebPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5D8E3E2BD7A305DF3631ED9 /* WebPage.swift */; };
 		FA5DF750A08C03828757E5DF /* AccountingFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F2A35FD38CA4B1FB78F25A2 /* AccountingFixtures.swift */; };
 /* End PBXBuildFile section */
 
@@ -100,8 +105,10 @@
 		03B76FC8CFA09A49AA89F5F5 /* ExpenseEditorSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExpenseEditorSheet.swift; sourceTree = "<group>"; };
 		04AF93F9B3604332004439F8 /* SolvioWeb.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SolvioWeb.swift; sourceTree = "<group>"; };
 		06CD4E5E4FDEF0C3DCD217B9 /* AccountingModelsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountingModelsTests.swift; sourceTree = "<group>"; };
+		07814345784E7DCA9DC29FCB /* TodoView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodoView.swift; sourceTree = "<group>"; };
 		0DF9CB52B989231633073C82 /* Log.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Log.swift; sourceTree = "<group>"; };
 		12847D3DE1BDF122D29BAC1F /* CrmBankList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CrmBankList.swift; sourceTree = "<group>"; };
+		14C62632DA6BBC33FDEAF9D7 /* EntityChoice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntityChoice.swift; sourceTree = "<group>"; };
 		1742A6614EA92186A6F8CD79 /* CrmClientEditorSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CrmClientEditorSheet.swift; sourceTree = "<group>"; };
 		17A4F49BB292C8C28F382C82 /* ObligationRemindersTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ObligationRemindersTests.swift; sourceTree = "<group>"; };
 		1DE1E9E2CA1F78B679AFA117 /* AppDataStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDataStore.swift; sourceTree = "<group>"; };
@@ -120,6 +127,7 @@
 		3CFDBF024B26A7FCCA6A16C5 /* AccountingStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountingStoreTests.swift; sourceTree = "<group>"; };
 		3D4EC60218A13476B2BF499D /* CrmRegistryRepo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CrmRegistryRepo.swift; sourceTree = "<group>"; };
 		3F2A35FD38CA4B1FB78F25A2 /* AccountingFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountingFixtures.swift; sourceTree = "<group>"; };
+		4266CB477F7419144A794211 /* EntityChoiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntityChoiceTests.swift; sourceTree = "<group>"; };
 		45CD193F6DE0F55C943947B8 /* ExpenseDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExpenseDetailView.swift; sourceTree = "<group>"; };
 		4CC5F0C4642F9C8B2107CCD0 /* ScanQueueManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanQueueManager.swift; sourceTree = "<group>"; };
 		4D1835BA3160285A014F04A5 /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
@@ -154,6 +162,7 @@
 		9755877589FFA795EC11F719 /* CrmClientsList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CrmClientsList.swift; sourceTree = "<group>"; };
 		9A369D38E658BB9CAE76CF9E /* CrmEntriesList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CrmEntriesList.swift; sourceTree = "<group>"; };
 		A04F16831ED2984BDFFAE63B /* FXRatesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FXRatesTests.swift; sourceTree = "<group>"; };
+		A5D8E3E2BD7A305DF3631ED9 /* WebPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebPage.swift; sourceTree = "<group>"; };
 		A81D6450186675A06F613D5F /* ObligationsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ObligationsView.swift; sourceTree = "<group>"; };
 		A9CA1344A468B5F4E85C770E /* ApiErrorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApiErrorTests.swift; sourceTree = "<group>"; };
 		B10D3E9CE6CCFBC02615C0DE /* ObligationScheduleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ObligationScheduleTests.swift; sourceTree = "<group>"; };
@@ -170,6 +179,7 @@
 		DDC3F0358A2CEC41460FBEB1 /* pl */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = pl; path = pl.lproj/Localizable.strings; sourceTree = "<group>"; };
 		E591F749BA4183920637E825 /* pl */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = pl; path = pl.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		E671FC545380F28AA93954A9 /* DocumentsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentsView.swift; sourceTree = "<group>"; };
+		F8B0350D82C7B5374833A71E /* NewDocument.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewDocument.swift; sourceTree = "<group>"; };
 		F97FF74B94CD0518150E1087 /* L10n.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = L10n.swift; sourceTree = "<group>"; };
 		FEB07D1CDE44309DFDE8E5B8 /* CrmStore+Registry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CrmStore+Registry.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -179,6 +189,7 @@
 			isa = PBXGroup;
 			children = (
 				3B1B9231B29DEA5E88D4FF5A /* AccountingStore.swift */,
+				14C62632DA6BBC33FDEAF9D7 /* EntityChoice.swift */,
 				97349ADC9CE849C006426F92 /* ObligationReminders.swift */,
 				DA9FE0B507B48CF2C50C3BCE /* ObligationSchedule.swift */,
 				82A7C9360DCFB8E30780DF94 /* PagedList.swift */,
@@ -369,7 +380,9 @@
 				BF740E9588115A778DDBFBC2 /* CompanyView.swift */,
 				E671FC545380F28AA93954A9 /* DocumentsView.swift */,
 				9516DAFFCE196738F20558FF /* JpkView.swift */,
+				F8B0350D82C7B5374833A71E /* NewDocument.swift */,
 				A81D6450186675A06F613D5F /* ObligationsView.swift */,
+				07814345784E7DCA9DC29FCB /* TodoView.swift */,
 			);
 			path = Company;
 			sourceTree = "<group>";
@@ -382,6 +395,7 @@
 				3CFDBF024B26A7FCCA6A16C5 /* AccountingStoreTests.swift */,
 				A9CA1344A468B5F4E85C770E /* ApiErrorTests.swift */,
 				8A670B8F8F085320EB70C49D /* CrmStoreTests.swift */,
+				4266CB477F7419144A794211 /* EntityChoiceTests.swift */,
 				2EC1C0E07371022FBCD08A3F /* FmtTests.swift */,
 				A04F16831ED2984BDFFAE63B /* FXRatesTests.swift */,
 				2999640B213E6BD7C92E0B5A /* MoneyStringTests.swift */,
@@ -413,6 +427,7 @@
 				7067708AD65AA9D19404060F /* Components.swift */,
 				5E64076544EF5CE90D9DA407 /* Haptics.swift */,
 				8ED6EC478BCBD240EAA0050F /* ScanQueueWidget.swift */,
+				A5D8E3E2BD7A305DF3631ED9 /* WebPage.swift */,
 			);
 			path = UI;
 			sourceTree = "<group>";
@@ -546,6 +561,7 @@
 				61C41E7A97C4FC7113BEEC4C /* DashboardModel.swift in Sources */,
 				172C21721BB0EB38FB037439 /* DashboardView.swift in Sources */,
 				9C2D82DD5888D2EE1803082B /* DocumentsView.swift in Sources */,
+				5A02069BDD4655D36C1A02B7 /* EntityChoice.swift in Sources */,
 				A2E5237C8208BD47B5B3DBE7 /* ExpenseDetailView.swift in Sources */,
 				4B4636DA5BE9860C3E7D62AD /* ExpenseEditorSheet.swift in Sources */,
 				E42161C793ABA1780DDFE2AF /* ExpensesListView.swift in Sources */,
@@ -560,6 +576,7 @@
 				26C8F9BA9D9AFF91F5C8B609 /* MainTabView.swift in Sources */,
 				46CF9F3ABB7B375C33AEBA3B /* Models.swift in Sources */,
 				CD88D9BC7B018AD0FF2E6DDF /* Money.swift in Sources */,
+				69E88A372590BCAE3409D438 /* NewDocument.swift in Sources */,
 				6C89849BA942BBC0F89FEEF7 /* ObligationReminders.swift in Sources */,
 				5ADAD8B24F5D7A9055C6A106 /* ObligationSchedule.swift in Sources */,
 				2590AD26915661159492695C /* ObligationsView.swift in Sources */,
@@ -575,6 +592,8 @@
 				22C6B4D802B9FC4F781EC1CC /* SolvioWeb.swift in Sources */,
 				0D739ACCF86CE4500D1AA177 /* Theme.swift in Sources */,
 				7A2C515B2E4669D2C802BD8B /* ToastCenter.swift in Sources */,
+				2CD52E2F037B53639830E494 /* TodoView.swift in Sources */,
+				F1627AA4E4F14CF317B85EA0 /* WebPage.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -587,6 +606,7 @@
 				4B12943760C51264B3BB84D8 /* AccountingStoreTests.swift in Sources */,
 				1F2B56393D967AEA2697DAD5 /* ApiErrorTests.swift in Sources */,
 				79B489FC857A862489B5775A /* CrmStoreTests.swift in Sources */,
+				94E089687405B6C4F12E96BF /* EntityChoiceTests.swift in Sources */,
 				BB97BCB60279142B0E34B137 /* FXRatesTests.swift in Sources */,
 				C310FE286F798C01254CF2BA /* FmtTests.swift in Sources */,
 				3E2F8961E28399A577EBEE15 /* MoneyStringTests.swift in Sources */,
@@ -662,7 +682,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = H7DS3ZG67S;
 				ENABLE_NS_ASSERTIONS = NO;
@@ -761,7 +781,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = H7DS3ZG67S;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;

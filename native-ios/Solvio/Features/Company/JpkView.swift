@@ -8,7 +8,7 @@ struct JpkView: View {
     var body: some View {
         ZStack {
             PaperBackground()
-            JpkList(list: accounting.jpk())
+            JpkList(list: accounting.jpk(), visit: accounting.webVisits)
         }
         .navigationTitle(locale.t("company.jpk"))
         .navigationBarTitleDisplayMode(.inline)
@@ -17,8 +17,9 @@ struct JpkView: View {
 
 private struct JpkList: View {
     @ObservedObject var list: PagedList<AccountingJpk>
+    let visit: Int
     @EnvironmentObject private var locale: AppLocale
-    @Environment(\.openURL) private var openURL
+    @EnvironmentObject private var router: AppRouter
 
     var body: some View {
         ScrollView {
@@ -26,8 +27,8 @@ private struct JpkList: View {
                 if list.failed { StaleNotice { Task { await list.refresh() } } }
                 if !list.items.isEmpty {
                     RowsCard(items: list.items) { item in
-                        if let url = SolvioWeb.url(path: SolvioWeb.entityPath(item.entityKey, tab: "jpk")) {
-                            Button { openURL(url) } label: { row(item) }
+                        if let page = WebPage(path: SolvioWeb.entityPath(item.entityKey, tab: "jpk")) {
+                            Button { router.web = page } label: { row(item) }
                                 .buttonStyle(.plain)
                                 .accessibilityHint(locale.t("company.openInSolvio"))
                         } else {
@@ -48,12 +49,12 @@ private struct JpkList: View {
             .padding(.bottom, 96)
         }
         .refreshable { await list.refresh() }
-        .task { await list.ensureFresh() }
+        .task(id: visit) { await list.ensureFresh() }
     }
 
     private func row(_ item: AccountingJpk) -> some View {
         CompanyRow(
-            lead: item.createdAt.map { Fmt.dayMonth($0) },
+            lead: item.createdAt.map { Fmt.dayMonth(instant: $0) },
             title: [item.entityName, CompanyFormat.period(item.period)].filter { !$0.isEmpty }.joined(separator: " · "),
             subtitle: [item.statusLabel, item.isTest ? locale.t("company.jpkTest") : ""].filter { !$0.isEmpty }.joined(separator: " · "),
             value: item.hasUpo ? "UPO" : "—",

@@ -50,7 +50,10 @@ struct SolvioApp: App {
                 .task {
                     await session.restore()
                     // Wylogowanie mogło przerwać zamknięcie apki.
-                    if session.currentUser == nil { reminders.setAccount(nil) }
+                    if session.currentUser == nil {
+                        reminders.setAccount(nil)
+                        WebPage.signOut()
+                    }
                 }
                 .onAppear {
                     // Komunikaty błędów kolejki mają być zlokalizowane,
@@ -66,7 +69,11 @@ struct SolvioApp: App {
                     accounting.reset()
                     router.reset()
                     reminders.setAccount(email)
-                    guard email != nil else { return }
+                    guard email != nil else {
+                        // Sesja weba w apce należy do poprzedniego konta.
+                        WebPage.signOut()
+                        return
+                    }
                     // Rozgrzewamy cache w chwili logowania, żeby pierwszy
                     // ekran nie miał spinnera.
                     dataStore.refreshAll(force: true)
@@ -85,8 +92,10 @@ struct SolvioApp: App {
                         reminders.clear()
                         router.leaveCompany()
                     case nil:
-                        // Nowy klucz albo inne konto: nie wiadomo, czyje to dane.
+                        // Nowy klucz albo inne konto: nie wiadomo, czyje to dane,
+                        // a otwarte ekrany trzymają dokumenty poprzedniej firmy.
                         accounting.reset()
+                        router.leaveCompany()
                     }
                 }
                 .onChange(of: appLocale.language) { _ in reminders.reschedule() }

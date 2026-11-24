@@ -36,13 +36,24 @@ struct DocumentsView: View {
                     }
                 }
                 EntityChips(selection: $entity)
-                DocumentsList(list: accounting.documents(query), filtered: status != nil || entity != nil || !phrase.isEmpty)
+                DocumentsList(
+                    list: accounting.documents(query),
+                    filtered: status != nil || entity != nil || !phrase.isEmpty,
+                    visit: accounting.webVisits
+                )
                     .id(query)
             }
             .padding(.top, Theme.Spacing.sm)
         }
         .navigationTitle(locale.t(direction.titleKey))
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                NewDocumentButton(direction: direction, entity: entity) { Image(systemName: "plus") }
+                    .foregroundColor(Theme.primary)
+                    .accessibilityLabel(locale.t(direction.newKey))
+            }
+        }
         .task(id: text) {
             let next = text.trimmingCharacters(in: .whitespacesAndNewlines)
             guard next != phrase else { return }
@@ -80,6 +91,7 @@ struct DocumentsView: View {
 private struct DocumentsList: View {
     @ObservedObject var list: PagedList<AccountingDocument>
     let filtered: Bool
+    let visit: Int
 
     @EnvironmentObject private var locale: AppLocale
     @EnvironmentObject private var router: AppRouter
@@ -114,7 +126,7 @@ private struct DocumentsList: View {
         }
         .scrollDismissesKeyboard(.immediately)
         .refreshable { await list.refresh() }
-        .task { await list.ensureFresh() }
+        .task(id: visit) { await list.ensureFresh() }
     }
 }
 
@@ -259,12 +271,12 @@ struct DocumentDetailView: View {
         Task {
             defer { saving = false }
             do {
-                try await accounting.setPaid(item, paid: target)
+                let fresh = try await accounting.setPaid(item, paid: target)
                 // CRM zapisał wpis; czy dokument poszedł za nim, mówi jego odpowiedź.
-                if item.paid == target {
+                if fresh?.paid == target {
                     toast.success(locale.t("crm.saved"))
                 } else {
-                    toast.info(locale.t("company.paidPending"))
+                    toast.info(locale.t(fresh == nil ? "company.paidUnknown" : "company.paidPending"))
                 }
                 await crm.reload()
             } catch {
