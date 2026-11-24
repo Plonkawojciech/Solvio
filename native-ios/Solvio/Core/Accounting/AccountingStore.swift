@@ -1,7 +1,8 @@
 import Foundation
 import SwiftUI
 
-/// Księgowość firmy z CRM-a: terminy, przegląd podmiotów, dokumenty, JPK.
+/// Księgowość firmy z CRM-a: terminy, przegląd podmiotów, dokumenty, JPK,
+/// wyjątki „Wymaga uwagi".
 /// Stale-while-revalidate jak `CrmStore`; dane żyją tylko w pamięci procesu.
 ///
 /// `available == false` znaczy „nie ma czego pokazać" (backend albo CRM bez
@@ -12,18 +13,27 @@ final class AccountingStore: ObservableObject {
     @Published private(set) var overview: AccountingOverview?
     /// Komplet otwartych terminów — z niego liczy się „Do zapłaty" i przypomnienia.
     @Published private(set) var openObligations: [AccountingObligation] = []
+    /// Wyjątki do rozstrzygnięcia. Puste także wtedy, gdy CRM nie ma tej trasy.
+    @Published private(set) var todo: [AccountingTodoItem] = []
+    @Published private(set) var todoFailed = false
     @Published private(set) var loading = false
     @Published private(set) var failed = false
     @Published private(set) var loadedAt: Date?
+    /// Rośnie po każdym zamknięciu weba; otwarta lista odświeża się wtedy sama.
+    @Published private(set) var webVisits = 0
     /// Ostatnia znana wersja dokumentu — szczegół odświeża się razem z listą.
     @Published private var documentIndex: [String: AccountingDocument] = [:]
+    @Published private var obligationIndex: [String: AccountingObligation] = [:]
 
     /// Wołane po każdym udanym odświeżeniu terminów.
     var onObligations: (([AccountingObligation]) -> Void)?
 
     private let api: AccountingAPI
     private let ttl: TimeInterval = 120
+    /// Czyje to dane: rośnie przy czyszczeniu.
     private var generation = 0
+    /// Które to wczytanie: wynik starszego jest odrzucany.
+    private var loadId = 0
     private var task: Task<Void, Never>?
     private var documentLists: [DocumentQuery: PagedList<AccountingDocument>] = [:]
     private var obligationLists: [String: PagedList<AccountingObligation>] = [:]
@@ -46,10 +56,28 @@ final class AccountingStore: ObservableObject {
 
     func refresh() async { await start().value }
 
+    /// Odświeżenie po zapisie. Żądanie w locie mogło ruszyć przed nim i przyniosłoby
+    /// stan sprzed zmiany, więc nie dołączamy do niego.
+    func reload() async {
+        task?.cancel()
+        task = nil
+        await start().value
+    }
+
+    /// Zamknięto web: wszystko, co firmowe, mogło się tam zmienić.
+    func webClosed() async {
+        documentLists.values.forEach { $0.markStale() }
+        obligationLists.values.forEach { $0.markStale() }
+        jpkList?.markStale()
+        webVisits += 1
+        await reload()
+    }
+
     @discardableResult
     private func start() -> Task<Void, Never> {
         if let task { return task }
-        let mine = generation
+        loadId += 1
+        let mine = loadId
         let work = Task { await load(mine) }
         task = work
         return work
@@ -57,10 +85,10 @@ final class AccountingStore: ObservableObject {
 
     private func load(_ mine: Int) async {
         // Wylogowanie mogło nastąpić, zanim zadanie w ogóle ruszyło.
-        guard mine == generation else { return }
+        guard mine == loadId else { return }
         loading = true
         defer {
-            if mine == generation {
+            if mine == loadId {
                 loading = false
                 task = nil
             }
@@ -70,11 +98,14 @@ final class AccountingStore: ObservableObject {
         var known = available == true
         do {
             let fresh = try await api.overview()
-            guard mine == generation else { return }
+            guard mine == loadId else { return }
             guard !fresh.entities.isEmpty else { return hide(cancelReminders: true) }
             known = true
+            async let exceptions = fetchTodo()
             let open = try await allOpenObligations()
-            guard mine == generation else { return }
+            let found = await exceptions
+            guard mine == loadId else { return }
+            show(found)
             overview = fresh
             openObligations = ObligationSchedule.sorted(open)
             available = true
@@ -82,11 +113,33 @@ final class AccountingStore: ObservableObject {
             loadedAt = Date()
             onObligations?(openObligations)
         } catch {
-            guard mine == generation else { return }
+            guard mine == loadId else { return }
             if case ApiError.cancelled = error { return }
             if case ApiError.notFound = error, !known { return hide(cancelReminders: false) }
             failed = true
             Log.error(.crm, "nie udało się wczytać księgowości", error)
+        }
+    }
+
+    private func fetchTodo() async -> Result<[AccountingTodoItem], Error> {
+        do { return .success(try await api.todo()) } catch { return .failure(error) }
+    }
+
+    /// Brak trasy (404) chowa kartę; awaria zostawia to, co widać, i mówi o tym,
+    /// bo brak wyjątków wyglądałby jak „wszystko w porządku".
+    private func show(_ result: Result<[AccountingTodoItem], Error>) {
+        switch result {
+        case .success(let items):
+            todo = items
+            todoFailed = false
+        case .failure(ApiError.notFound):
+            todo = []
+            todoFailed = false
+        case .failure(ApiError.cancelled):
+            break
+        case .failure(let error):
+            todoFailed = true
+            Log.error(.crm, "nie udało się wczytać wyjątków", error)
         }
     }
 
@@ -110,6 +163,8 @@ final class AccountingStore: ObservableObject {
         available = false
         overview = nil
         openObligations = []
+        todo = []
+        todoFailed = false
         failed = false
         loadedAt = Date()
         if cancelReminders { onObligations?([]) }
@@ -134,9 +189,10 @@ final class AccountingStore: ObservableObject {
     func allObligations(entity: String?) -> PagedList<AccountingObligation> {
         let key = entity ?? ""
         if let list = obligationLists[key] { return list }
-        let list = PagedList<AccountingObligation>(fetch: { [api] cursor in
-            try await api.obligations(open: false, entity: entity, cursor: cursor)
-        })
+        let list = PagedList<AccountingObligation>(
+            onItems: { [weak self] in self?.remember($0) },
+            fetch: { [api] cursor in try await api.obligations(open: false, entity: entity, cursor: cursor) }
+        )
         obligationLists[key] = list
         return list
     }
@@ -154,37 +210,84 @@ final class AccountingStore: ObservableObject {
         documentIndex[document.id] ?? document
     }
 
+    func current(_ obligation: AccountingObligation) -> AccountingObligation {
+        openObligations.first { $0.id == obligation.id } ?? obligationIndex[obligation.id] ?? obligation
+    }
+
+    /// Termin zniknął z otwartych, czyli ktoś go odhaczył na webie. Nowy status
+    /// zna tylko pełna lista, od najnowszych.
+    func settleObligation(_ obligation: AccountingObligation) async {
+        guard available == true, current(obligation).isOpen,
+              !openObligations.contains(where: { $0.id == obligation.id })
+        else { return }
+        let mine = generation
+        let entity = obligation.entityKey.isEmpty ? nil : obligation.entityKey
+        var cursor: String?
+        for _ in 0..<Self.lookupPages {
+            guard let page = try? await api.obligations(open: false, entity: entity, cursor: cursor),
+                  mine == generation
+            else { return }
+            if let fresh = page.items.first(where: { $0.id == obligation.id }) { return remember([fresh]) }
+            guard let next = page.nextCursor, next != cursor else { return }
+            cursor = next
+        }
+    }
+
+    private func remember(_ obligations: [AccountingObligation]) {
+        for obligation in obligations { obligationIndex[obligation.id] = obligation }
+    }
+
     private func remember(_ documents: [AccountingDocument]) {
         for document in documents { documentIndex[document.id] = document }
     }
 
     // MARK: - Zapłata
 
+    /// Tyle stron przeglądamy, szukając jednego wiersza.
+    private static let lookupPages = 10
+
     /// Zmienia status wpisu w Finansach i pyta CRM o dokument. Wynik jest
-    /// tym, co CRM odpowiedział, a nie tym, o co poprosiliśmy.
-    func setPaid(_ document: AccountingDocument, paid: Bool) async throws {
-        guard let entryId = document.financeEntryId else { return }
+    /// tym, co CRM odpowiedział, a nie tym, o co poprosiliśmy; `nil` znaczy, że
+    /// zapis przeszedł, ale dokumentu nie udało się odczytać.
+    @discardableResult
+    func setPaid(_ document: AccountingDocument, paid: Bool) async throws -> AccountingDocument? {
+        guard let entryId = document.financeEntryId else { return nil }
         let mine = generation
         try await api.setEntryPaid(id: entryId, paid: paid)
-        guard mine == generation else { return }
+        guard mine == generation else { return nil }
 
         let lookup = DocumentQuery(direction: document.direction, entity: document.entityKey.isEmpty ? nil : document.entityKey, status: nil, text: document.number)
-        if let page = try? await api.documents(lookup, cursor: nil), mine == generation,
-           let fresh = page.items.first(where: { $0.id == document.id }) {
+        let fresh = await find(document.id, in: lookup)
+        guard mine == generation else { return nil }
+        if let fresh {
             remember([fresh])
             documentLists.values.forEach { $0.replace(fresh) }
         }
-        guard mine == generation else { return }
         for (query, list) in documentLists where query.direction == document.direction && list.loadedAt != nil {
-            Task { await list.refresh() }
+            Task { await list.refresh(keepingDepth: true) }
         }
-        Task { await refresh() }
+        Task { await reload() }
+        return fresh
+    }
+
+    /// Fraza to tylko zawężenie (numer bywa pusty albo wspólny dla wielu),
+    /// więc dokument może leżeć na dalszej stronie.
+    private func find(_ id: String, in query: DocumentQuery) async -> AccountingDocument? {
+        var cursor: String?
+        for _ in 0..<Self.lookupPages {
+            guard let page = try? await api.documents(query, cursor: cursor) else { return nil }
+            if let found = page.items.first(where: { $0.id == id }) { return found }
+            guard let next = page.nextCursor, next != cursor else { return nil }
+            cursor = next
+        }
+        return nil
     }
 
     // MARK: - Czyszczenie
 
     func reset() {
         generation += 1
+        loadId += 1
         task?.cancel()
         task = nil
         documentLists.values.forEach { $0.invalidate() }
@@ -194,9 +297,12 @@ final class AccountingStore: ObservableObject {
         obligationLists = [:]
         jpkList = nil
         documentIndex = [:]
+        obligationIndex = [:]
         available = nil
         overview = nil
         openObligations = []
+        todo = []
+        todoFailed = false
         loading = false
         failed = false
         loadedAt = nil

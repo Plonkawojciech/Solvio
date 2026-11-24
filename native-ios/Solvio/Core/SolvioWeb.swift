@@ -24,5 +24,10 @@ enum SolvioWeb {
         return "/ksiegowosc/\(key)" + (tab.map { "?tab=\($0)" } ?? "")
     }
 
+    /// Formularz nowego dokumentu. Wystawia i zapisuje człowiek na webie.
+    static func newDocumentPath(_ key: String, _ direction: DocumentDirection) -> String? {
+        entityPath(key, tab: direction == .sale ? "faktury" : "koszty").map { $0 + "&nowa=1" }
+    }
+
     static let bankPath = "/finanse/bank"
 }

@@ -7,6 +7,7 @@ protocol AccountingAPI: Sendable {
     func obligations(open: Bool, entity: String?, cursor: String?) async throws -> AccountingPage<AccountingObligation>
     func documents(_ query: DocumentQuery, cursor: String?) async throws -> AccountingPage<AccountingDocument>
     func jpk() async throws -> [AccountingJpk]
+    func todo() async throws -> [AccountingTodoItem]
     func setEntryPaid(id: String, paid: Bool) async throws
 }
 
@@ -38,6 +39,11 @@ struct AccountingRepo: AccountingAPI {
     func jpk() async throws -> [AccountingJpk] {
         let res: AccountingJpkResponse = try await ApiClient.shared.get("\(base)/jpk")
         return res.submissions
+    }
+
+    func todo() async throws -> [AccountingTodoItem] {
+        let res: AccountingTodoResponse = try await ApiClient.shared.get("\(base)/todo")
+        return res.items
     }
 
     /// Zapłata idzie wyłącznie istniejącym mostem wpisu w Finansach.
