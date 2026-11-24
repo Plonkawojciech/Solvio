@@ -32,6 +32,8 @@ struct CompanyView: View {
             .padding(Theme.Spacing.md)
             .padding(.bottom, 96)
         }
+        // Stos nawigacji kładzie pod spodem biel systemu i zasłania papier.
+        .background(PaperBackground())
         .refreshable { await refresh() }
         .task {
             crm.ensureLoaded()
@@ -264,7 +266,7 @@ private struct DueCard: View {
                                     .font(AppFont.captionMedium)
                                     .foregroundColor(Theme.primary)
                                     .frame(maxWidth: .infinity, alignment: .leading)
-                                    .padding(.vertical, 11)
+                                    .padding(.top, 11)
                             }
                         }
                     }

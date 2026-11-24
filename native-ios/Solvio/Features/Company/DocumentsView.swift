@@ -226,23 +226,31 @@ struct DocumentDetailView: View {
     private var actions: some View {
         VStack(spacing: Theme.Spacing.sm) {
             if item.financeEntryId != nil {
-                Button {
-                    togglePaid()
-                } label: {
-                    HStack(spacing: 6) {
-                        if saving {
-                            ProgressView().controlSize(.small)
-                        } else {
-                            Image(systemName: item.paid ? "circle" : "checkmark.circle")
-                        }
-                        Text(locale.t(item.paid ? "crm.markUnpaid" : "crm.markPaid"))
-                    }
+                // Cofnięcie zapłaty to wyjątek, a nie zachęta.
+                if item.paid {
+                    paidButton.buttonStyle(SecondaryButtonStyle())
+                } else {
+                    paidButton.buttonStyle(PrimaryButtonStyle())
                 }
-                .buttonStyle(PrimaryButtonStyle())
-                .disabled(saving)
             }
             SolvioWebLink(path: item.webPath)
         }
+    }
+
+    private var paidButton: some View {
+        Button {
+            togglePaid()
+        } label: {
+            HStack(spacing: 6) {
+                if saving {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Image(systemName: item.paid ? "circle" : "checkmark.circle")
+                }
+                Text(locale.t(item.paid ? "crm.markUnpaid" : "crm.markPaid"))
+            }
+        }
+        .disabled(saving)
     }
 
     private func togglePaid() {
