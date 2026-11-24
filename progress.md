@@ -6,6 +6,19 @@
 
 ---
 
+## 2026-11-24 — Most do księgowości CRM-a (backend)
+
+Pierwszy krok do Firmy na iPhonie zgodnej z nowym webem finansów. Trasy sesyjne
+`GET /api/crm/accounting/{overview,obligations,documents,jpk}`, tylko odczyt.
+
+- `lib/crm/accounting.ts` + `readQuery` w `route-helpers.ts`: do CRM-a idą
+  wyłącznie znane i sprawdzone parametry, zła wartość to 400. 403 i 404
+  z CRM-a = pusty wynik bez wpisu w `last_error`, więc można to wdrożyć przed
+  CRM-em.
+- Kwota, której CRM nie podał, zostaje `null`. `webPath` przechodzi tylko jako
+  ścieżka od `/`, bo apka skleja go z domeną.
+- Testy: `lib/__tests__/crm-accounting.test.ts`. Kontrakt: `docs/API.md`.
+
 ## 2026-11-13 — Dane z banku CRM-a w karcie Firma i zakładce Firma
 
 CRM wystawił `/api/v1/bank/{accounts,transactions}`. Solvio tylko czyta —
