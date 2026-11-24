@@ -77,6 +77,9 @@ final class AppRouter: ObservableObject {
     /// Ustawiane w arkuszu wyboru, konsumowane po jego zamknięciu.
     var pendingWeb: WebPage?
 
+    /// Web i droga do niego: potwierdzenie paragonu czeka, aż się zamkną.
+    var holdsReview: Bool { web != nil || newDocument != nil || pendingWeb != nil }
+
     func push(_ route: AppRoute) {
         switch selectedTab {
         case .dashboard: dashboardStack.append(route)

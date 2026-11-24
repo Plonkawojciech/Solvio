@@ -157,12 +157,17 @@ struct MainTabView: View {
 
     /// Jak przy skanie: cover nie może wejść, zanim arkusz naprawdę zejdzie.
     private func openPendingWeb() {
-        guard let page = router.pendingWeb else { return }
-        router.pendingWeb = nil
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { router.web = page }
+        guard router.pendingWeb != nil else { return scanQueue.presentHeldReview() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            // Do tej chwili `pendingWeb` wstrzymuje potwierdzenie paragonu.
+            router.web = router.pendingWeb
+            router.pendingWeb = nil
+            scanQueue.presentHeldReview()
+        }
     }
 
     private func refreshAfterWeb() {
+        scanQueue.presentHeldReview()
         guard crm.connected == true else { return }
         Task {
             async let books: Void = accounting.webClosed()

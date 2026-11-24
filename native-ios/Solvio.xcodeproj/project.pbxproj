@@ -79,6 +79,7 @@
 		CBE95E9B4761D4413D569D4E /* ApiClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 655947DC980C807CA7A2CD49 /* ApiClient.swift */; };
 		CCEEF2E4A71330A7D8DC6714 /* CrmEntryEditorSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 720DDDBC05720D48B1163A12 /* CrmEntryEditorSheet.swift */; };
 		CD88D9BC7B018AD0FF2E6DDF /* Money.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6BD460121BBB810C4F316D07 /* Money.swift */; };
+		D1999F0DA425B19AD3D6BB6F /* ScanReviewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8838A628A9E658F0DF939E9 /* ScanReviewTests.swift */; };
 		D7410D9A0D3B31EE3B3B6A27 /* L10n+EN.swift in Sources */ = {isa = PBXBuildFile; fileRef = 530336B12374C171AD5989AF /* L10n+EN.swift */; };
 		E39EDC02CF739209126B264F /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D1835BA3160285A014F04A5 /* LoginView.swift */; };
 		E407080350525E2B13E789DE /* CrmSummaryCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87CD3E7643B3FEDAFB89E949 /* CrmSummaryCard.swift */; };
@@ -167,6 +168,7 @@
 		A9CA1344A468B5F4E85C770E /* ApiErrorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApiErrorTests.swift; sourceTree = "<group>"; };
 		B10D3E9CE6CCFBC02615C0DE /* ObligationScheduleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ObligationScheduleTests.swift; sourceTree = "<group>"; };
 		B8727C6B896D2A937FEBF0FC /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
+		B8838A628A9E658F0DF939E9 /* ScanReviewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanReviewTests.swift; sourceTree = "<group>"; };
 		BADCF30C6EE9DE05E2B12928 /* AppConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfig.swift; sourceTree = "<group>"; };
 		BBA4FAA0DB438737C72D8317 /* CrmModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CrmModels.swift; sourceTree = "<group>"; };
 		BF740E9588115A778DDBFBC2 /* CompanyView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanyView.swift; sourceTree = "<group>"; };
@@ -401,6 +403,7 @@
 				2999640B213E6BD7C92E0B5A /* MoneyStringTests.swift */,
 				17A4F49BB292C8C28F382C82 /* ObligationRemindersTests.swift */,
 				B10D3E9CE6CCFBC02615C0DE /* ObligationScheduleTests.swift */,
+				B8838A628A9E658F0DF939E9 /* ScanReviewTests.swift */,
 			);
 			path = SolvioTests;
 			sourceTree = "<group>";
@@ -612,6 +615,7 @@
 				3E2F8961E28399A577EBEE15 /* MoneyStringTests.swift in Sources */,
 				2A7FA13C0AFFAC070CFD1C67 /* ObligationRemindersTests.swift in Sources */,
 				9A780F66CD515F30582D3D9A /* ObligationScheduleTests.swift in Sources */,
+				D1999F0DA425B19AD3D6BB6F /* ScanReviewTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
