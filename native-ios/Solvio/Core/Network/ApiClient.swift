@@ -321,6 +321,10 @@ final class ApiClient {
         }
         if !query.isEmpty {
             components.queryItems = query
+            // `URLQueryItem` zostawia `+`, a serwer czyta go jako spację —
+            // kursor albo szukana fraza dojechałyby przekręcone.
+            components.percentEncodedQuery = components.percentEncodedQuery?
+                .replacingOccurrences(of: "+", with: "%2B")
         }
         guard let url = components.url else { throw ApiError.invalidURL }
         return url
