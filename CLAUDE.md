@@ -88,7 +88,8 @@ gdyby kiedyś wrócił.
 ## Directory Structure
 
 Po redesignie 2026-08-22 aplikacja ma **dwa ekrany produktowe** (Panel,
-Wydatki) plus Ustawienia jako narzędzie. Wszystko inne zostało usunięte —
+Wydatki) plus Ustawienia jako narzędzie; iOS od 2026-11-24 ma też zakładkę
+Firma, widoczną tylko przy wpiętym CRM-ie. Wszystko inne zostało usunięte —
 patrz `docs/plans/redesign-2-ekrany-i-api-crm.md`.
 
 ```
@@ -122,8 +123,9 @@ native-ios/Solvio/
   Core/Theme/Theme.swift       # Design system "Notes Classic"
   Core/UI/Components.swift     # SectionLabel, PaperCard, StatTile, BudgetBar…
   Core/AppDataStore.swift      # Cache SWR — jeden slajs (panel)
+  Core/Accounting/             # Księgowość firmy: store, terminy, przypomnienia
   Core/Network/Repositories.swift
-  Features/{Dashboard,Expenses,Auth,Root,Settings}/
+  Features/{Dashboard,Expenses,Company,Crm,Auth,Root,Settings}/
 docs/
   API.md                       # Publiczne API v1 + most do CRM-a
   plans/                       # Plany wielopikowych zadań

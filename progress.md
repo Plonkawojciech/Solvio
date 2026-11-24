@@ -6,6 +6,30 @@
 
 ---
 
+## 2026-11-24 — Zakładka Firma na iPhonie
+
+Trzecia zakładka (Panel, Wydatki, FAB, Firma), tylko przy wpiętym CRM-ie. Bez
+niego apka wygląda jak wcześniej.
+
+- **Firma:** terminy do zapłaty (po czasie i 30 dni), bank, należności
+  i dostawcy, wynik miesiąca, podmioty. Listy: Terminy, Faktury, Koszty, JPK,
+  Wpisy, Bank, Zobowiązania, Klienci. Segment Firma zniknął z Panelu i Wydatków;
+  dotychczasowe widoki CRM są przeniesione (`CrmSectionScreen`).
+- **Zapłata dokumentu** idzie tylko mostem wpisu w Finansach
+  (`financeEntryId`). Podatki, JPK i bank są do podglądu, z linkiem do weba;
+  `SolvioWeb` przepuszcza wyłącznie ścieżkę od pojedynczego `/`.
+- **Przypomnienia o terminach:** Ustawienia, domyślnie wyłączone, osobno dla
+  konta. 3 dni przed i w dniu terminu o 9:00, najwyżej 40, bez kwot.
+- **404 z `/api/crm/accounting/*`** (backend sprzed mostu) chowa sekcje
+  księgowe bez błędu. Błąd sieci nie czyści ekranu. Zmiana konta czyści stan
+  Firmy, stosy nawigacji, przypomnienia i dyskowy cache odpowiedzi.
+- **Naprawione przy okazji:** wpis dodany w Firmie trafiał do CRM-a jako
+  PRYWATNY i znikał z listy (`createEntry` bierze teraz zakres od wywołującego,
+  wypchnięte wydatki zostają prywatne); sumy nad Wpisami zawsze dotyczyły
+  bieżącego miesiąca; stan „CRM wpięty" bierze się z `/api/crm/connection`,
+  a nie z tego, że CRM akurat nie odpowiedział.
+- **Testy:** target `SolvioTests` jest w `project.yml` i ma wspólny schemat.
+
 ## 2026-11-24 — Most do księgowości CRM-a (backend)
 
 Pierwszy krok do Firmy na iPhonie zgodnej z nowym webem finansów. Trasy sesyjne
