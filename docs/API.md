@@ -257,7 +257,7 @@ Odwzorowanie ekranu `/finanse` w CRM-ie. Wpis to `FinanceEntry`:
 | Metoda | Ścieżka | Co robi |
 |---|---|---|
 | `GET` | `/api/crm/entries` | wpisy (`from`, `to`, `type`, `limit`) plus podsumowanie miesiąca/roku/MRR |
-| `POST` | `/api/crm/entries` | nowy wpis — `{ type, date, amount, title, category?, paid?, note?, clientId? }` |
+| `POST` | `/api/crm/entries` | nowy wpis firmowy (zakres `FIRMA`) — `{ type, date, amount, title, category?, paid?, note?, clientId? }` |
 | `PATCH` | `/api/crm/entries/{id}` | dowolny podzbiór pól. **`{"paid": true}` to najczęstsza operacja** na tym ekranie |
 | `DELETE` | `/api/crm/entries/{id}` | usuwa wpis |
 | `GET` | `/api/crm/context` | klienci (do przypisania wpisu) + zobowiązania cykliczne |

@@ -298,6 +298,9 @@ export async function maybePushToCrm(
   if (!conn) return row
   if (explicit !== true && !conn.autoPush) return row
 
+  // Wydatek z Solvio jest PRYWATNY: ma być w CRM-ie widoczny, ale nigdy
+  // nie może wchodzić do wyniku firmy ani do podatków. CRM domyślnie
+  // filtruje ekrany i API do zakresu FIRMA.
   const res = await createEntry(userId, {
     title: row.title,
     amount: row.amount,
@@ -305,7 +308,7 @@ export async function maybePushToCrm(
     category: conn.defaultCategory,
     note: row.vendor ? `Solvio · ${row.vendor}` : 'Solvio',
     paid: true,
-  })
+  }, 'PRYWATNE')
   const entryId = res.data?.entry?.id
   if (!res.ok || !entryId) return row
 
