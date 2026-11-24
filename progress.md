@@ -6,6 +6,30 @@
 
 ---
 
+## 2026-11-24 — Firma: „Wymaga uwagi", szybkie działania, web w apce
+
+- **Backend:** `GET /api/crm/accounting/todo` (sesja), ten sam wzorzec co reszta
+  mostu. Można wdrożyć przed CRM-em: 403 i 404 z CRM-a to 404 „niedostępne".
+- **Firma:** karta „Wymaga uwagi" nad „Do zapłaty" (do 3 pozycji, reszta na
+  liście pilne/ważne/informacja). 404 z samego `todo` chowa tylko kartę; inna
+  awaria zostawia ostatnią listę i pokazuje baner.
+- **Web w apce:** `WebPage` powstaje wyłącznie ze sprawdzonej ścieżki, więc host
+  to zawsze `AppConfig.apiBaseURL`. Na cały ekran, bo ściągnięcie arkusza palcem
+  zabrałoby niezapisany formularz. Po zamknięciu dane księgowe i Finanse
+  odświeżają się z pominięciem TTL; żądanie wysłane wcześniej jest odrzucane.
+  Wylogowanie z apki czyści sesję weba.
+- **„Wystaw fakturę" / „Dodaj koszt"** (Firma, listy Faktury i Koszty): wybór
+  podmiotu, ostatni osobno dla konta, potem `?tab=faktury|koszty&nowa=1` na
+  webie. Apka niczego nie wystawia ani nie zapisuje.
+- **Panel:** przy wpiętym CRM-ie sekcje „Prywatnie" i „Firma" (Firma pod
+  prywatnymi, tylko we „Wszystkie"). Segmenty bez zmian.
+- **Poprawki z recenzji:** nowy klucz CRM zamyka ekrany Firmy; zapłata dokumentu
+  spoza pierwszej strony nie zwija list, a nieodczytany status nie udaje
+  poprzedniego; odhaczony na webie termin pokazuje nowy status; odświeżenie po
+  zapłacie nie dołącza do starszego żądania; „Brak terminów" dopiero po
+  wczytaniu; data JPK w strefie telefonu, nie UTC.
+- `CFBundleVersion` bierze się z `CURRENT_PROJECT_VERSION` (teraz 2).
+
 ## 2026-11-24 — Zakładka Firma na iPhonie
 
 Trzecia zakładka (Panel, Wydatki, FAB, Firma), tylko przy wpiętym CRM-ie. Bez
