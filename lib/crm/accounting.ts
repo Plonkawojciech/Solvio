@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { isQueryError, parseSince } from '../api-query'
 import { toNumber, toText } from './bank'
+import type { CrmConnection } from './connection'
 import { call, withConnection, type CrmResult } from './http'
 
 /**
@@ -10,8 +11,9 @@ import { call, withConnection, type CrmResult } from './http'
  * Odhaczanie podatków, potwierdzanie przelewów i wysyłka zostają na webie
  * w sesji człowieka; apka dostaje `webPath` i odsyła tam.
  *
- * 403 i 404 z CRM-a to „brak danych", nie awaria: klucz bez dostępu albo
- * starsza wersja CRM-a, która nie ma jeszcze `/api/v1/accounting`.
+ * 403 i 404 z CRM-a (klucz bez dostępu albo wersja CRM-a bez
+ * `/api/v1/accounting`) wychodzą jako 404 „niedostępne", nigdy jako pusta
+ * lista: puste terminy znaczą „nic do zapłaty" i odwołują przypomnienia.
  *
  * Kwoty, których CRM nie oddał, zostają nullem. Zmyślone „0,00 zł do zapłaty"
  * jest gorsze niż puste miejsce.
@@ -289,28 +291,37 @@ export function toAccountingJpk(raw: Raw): AccountingJpk {
 
 // ── odczyty ────────────────────────────────────────────────────────────
 
-/** Jeden GET do CRM-a. 403 i 404 wracają jako sukces z pustym ciałem, żeby
- *  `withConnection` nie zapisał ich w ustawieniach jako błędu połączenia. */
+/** Jeden GET do CRM-a. Niedostępnej księgowości (404) nie odnotowujemy na
+ *  połączeniu: to ani jego błąd, ani dowód, że działa. Odpowiedź 200 bez listy
+ *  `listField` (strona logowania, komunikat błędu) to awaria, nie pusty wynik. */
 function read<T>(
   userId: string,
   resource: string,
+  listField: string,
   params: Record<string, string | number | undefined>,
   map: (raw: Raw) => T,
 ): Promise<CrmResult<T>> {
-  return withConnection<T>(userId, async (conn) => {
+  const work = async (conn: CrmConnection): Promise<CrmResult<T>> => {
     const q = new URLSearchParams()
     for (const [key, value] of Object.entries(params)) {
       if (value !== undefined) q.set(key, String(value))
     }
     const query = q.toString()
     const res = await call<Raw>(conn, `/api/v1/accounting/${resource}${query ? `?${query}` : ''}`)
-    if (!res.ok && res.status !== 403 && res.status !== 404) return { ...res, data: null }
-    return { ok: true, status: 200, data: map(res.data ?? {}), error: null }
-  })
+    if (res.status === 403 || res.status === 404) {
+      return { ok: false, status: 404, data: null, error: 'Księgowość niedostępna' }
+    }
+    if (!res.ok) return { ...res, data: null }
+    if (!Array.isArray(res.data?.[listField])) {
+      return { ok: false, status: 502, data: null, error: 'CRM oddał nieoczekiwaną odpowiedź' }
+    }
+    return { ok: true, status: 200, data: map(res.data), error: null }
+  }
+  return withConnection<T>(userId, work, (res) => res.status !== 404)
 }
 
 export function accountingOverview(userId: string, params: z.infer<typeof overviewQuery>) {
-  return read<AccountingOverview>(userId, 'overview', params, (raw) => ({
+  return read<AccountingOverview>(userId, 'overview', 'entities', params, (raw) => ({
     period: toText(raw.period) ?? params.period ?? null,
     periodLabel: str(raw.periodLabel),
     entities: rows(raw.entities, 'key').map(toAccountingEntity),
@@ -318,21 +329,21 @@ export function accountingOverview(userId: string, params: z.infer<typeof overvi
 }
 
 export function listObligations(userId: string, params: z.infer<typeof obligationsQuery>) {
-  return read(userId, 'obligations', params, (raw) => ({
+  return read(userId, 'obligations', 'obligations', params, (raw) => ({
     obligations: rows(raw.obligations).map(toAccountingObligation),
     nextCursor: toText(raw.nextCursor),
   }))
 }
 
 export function listDocuments(userId: string, params: z.infer<typeof documentsQuery>) {
-  return read(userId, 'documents', params, (raw) => ({
+  return read(userId, 'documents', 'documents', params, (raw) => ({
     documents: rows(raw.documents).map(toAccountingDocument),
     nextCursor: toText(raw.nextCursor),
   }))
 }
 
 export function listJpk(userId: string, params: z.infer<typeof jpkQuery>) {
-  return read(userId, 'jpk', params, (raw) => ({
+  return read(userId, 'jpk', 'submissions', params, (raw) => ({
     submissions: rows(raw.submissions).map(toAccountingJpk),
   }))
 }

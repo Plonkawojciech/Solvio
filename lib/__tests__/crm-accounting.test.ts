@@ -145,9 +145,33 @@ describe('trasy /api/crm/accounting', () => {
     jpk: { submissions: [] },
   }
 
+  const LIST: Record<Resource, string> = {
+    overview: 'entities', obligations: 'obligations', documents: 'documents', jpk: 'submissions',
+  }
+
   for (const resource of Object.keys(ROUTES) as Resource[]) {
-    it.each([403, 404])(`${resource}: %i z CRM-a to pusty wynik, nie błąd połączenia`, async (status) => {
+    it.each([403, 404])(`${resource}: %i z CRM-a to 404 „niedostępne", nie pusty wynik, i nie rusza last_error`, async (status) => {
       fetchMock.mockResolvedValueOnce(reply(status, '<html>Not found</html>'))
+      const res = await get(resource)
+      expect(res.status).toBe(404)
+      expect(await res.json()).toEqual({ error: 'Księgowość niedostępna' })
+      expect(markSync).not.toHaveBeenCalled()
+    })
+
+    it.each([
+      ['HTML', '<html>Zaloguj się</html>'],
+      ['puste ciało', ''],
+      ['obiekt bez listy', { error: 'boom' }],
+      ['lista w złym kształcie', { entities: 'x', obligations: {}, documents: null, submissions: 1 }],
+    ])(`${resource}: 200 z CRM-a, ale %s, to 502 z wpisem w last_error`, async (_, body) => {
+      fetchMock.mockResolvedValueOnce(reply(200, body))
+      const res = await get(resource)
+      expect(res.status).toBe(502)
+      expect(markSync).toHaveBeenCalledExactlyOnceWith('u1', 'CRM oddał nieoczekiwaną odpowiedź')
+    })
+
+    it(`${resource}: prawdziwa pusta lista to 200`, async () => {
+      fetchMock.mockResolvedValueOnce(reply(200, { [LIST[resource]]: [] }))
       const res = await get(resource)
       expect(res.status).toBe(200)
       expect(await res.json()).toEqual(EMPTY[resource])
@@ -162,10 +186,8 @@ describe('trasy /api/crm/accounting', () => {
       expect(markSync).toHaveBeenCalledExactlyOnceWith('u1', 'boom')
     })
 
-    it(`${resource}: nieoczekiwane ciało nie wywraca trasy`, async () => {
-      fetchMock.mockResolvedValueOnce(
-        reply(200, { entities: 'x', obligations: {}, documents: [null, 1, { number: 'bez id' }], submissions: null }),
-      )
+    it(`${resource}: nieoczekiwane wiersze nie wywracają trasy`, async () => {
+      fetchMock.mockResolvedValueOnce(reply(200, { [LIST[resource]]: [null, 1, { number: 'bez id' }] }))
       const res = await get(resource)
       expect(res.status).toBe(200)
       expect(await res.json()).toEqual(EMPTY[resource])
@@ -190,13 +212,13 @@ describe('trasy /api/crm/accounting', () => {
   })
 
   it('overview bez okresu zostawia wybór miesiąca CRM-owi', async () => {
-    fetchMock.mockResolvedValueOnce(reply(200, {}))
+    fetchMock.mockResolvedValueOnce(reply(200, { entities: [] }))
     await get('overview')
     expect(fetchMock.mock.calls[0][0]).toBe('https://crm.test/api/v1/accounting/overview')
   })
 
   it('pusty overview pamięta, o jaki okres pytano', async () => {
-    fetchMock.mockResolvedValueOnce(reply(404, {}))
+    fetchMock.mockResolvedValueOnce(reply(200, { entities: [] }))
     expect(await (await get('overview', '?period=2026-09')).json()).toEqual({ period: '2026-09', periodLabel: '', entities: [] })
   })
 

@@ -339,10 +339,13 @@ dokumentu podaje `currency`. Daty `dueDate`, `issueDate`, `paidAt` to
 nullem; brak wartości to `""`. `webPath` jest względny (zawsze od `/`) i klient
 skleja go z `https://solvio.programo.pl`.
 
-**403 i 404 z CRM-a oddajemy jako `200` z pustą listą** i nie zapisujemy ich
-w `last_error`: klucz bez dostępu albo starszy CRM bez tego API ma dać apkę
-bez sekcji księgowości, nie błąd. Pusty `entities` znaczy właśnie to, bo CRM
-z tym API zawsze ma podmioty. Pozostałe awarie CRM-a i brak połączenia: `502`.
+**403 i 404 z CRM-a oddajemy jako `404 { error }`** i nie ruszamy `last_error`:
+klucz bez dostępu albo starszy CRM bez tego API ma dać apkę bez sekcji
+księgowości. Pustą listą być nie mogą, bo pusta lista terminów znaczy „nic do
+zapłaty" i odwołuje przypomnienia. `200` z CRM-a bez oczekiwanej listy (nie-JSON,
+komunikat błędu), pozostałe awarie CRM-a i brak połączenia: `502`. Apka chowa
+sekcje tylko wtedy, gdy `404` przyjdzie z `overview`, zanim cokolwiek wczytała;
+później traktuje je jak awarię i zostawia to, co widać.
 
 ### Uwagi do rejestrów
 
