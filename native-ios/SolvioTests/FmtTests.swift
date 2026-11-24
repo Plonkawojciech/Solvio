@@ -40,6 +40,19 @@ final class FmtTests: XCTestCase {
         XCTAssertEqual(Fmt.dayMonth(nil), "—")
     }
 
+    func testInstantUsesTheLocalDay() throws {
+        // Każda strefa poza UTC ma godzinę, o której lokalny dzień jest inny niż w tekście.
+        for hour in 0..<24 {
+            let iso = String(format: "2026-11-24T%02d:30:00.000Z", hour)
+            let date = try XCTUnwrap(Fmt.parseISO(iso))
+            let local = Calendar.current.dateComponents([.year, .month, .day], from: date)
+            let day = String(format: "%04d-%02d-%02d", local.year!, local.month!, local.day!)
+            XCTAssertEqual(Fmt.dayMonth(instant: iso), Fmt.dayMonth(day), iso)
+        }
+        XCTAssertEqual(Fmt.dayMonth(instant: "2026-11-24"), Fmt.dayMonth("2026-11-24"))
+        XCTAssertEqual(Fmt.dayMonth(instant: "xyz"), "xyz")
+    }
+
     func testQtyNonEmpty() {
         XCTAssertFalse(Fmt.qty(1.5).isEmpty)
     }

@@ -190,6 +190,150 @@ final class AccountingStoreTests: XCTestCase {
         XCTAssertTrue(store.current(before).paid)
     }
 
+    // MARK: - Wymaga uwagi
+
+    func testTodoLoadsWithTheOverview() async {
+        api.todoResult = .success([Fixture.todo("a", "pilne"), Fixture.todo("b")])
+        let store = AccountingStore(api: api)
+        await store.refresh()
+        XCTAssertEqual(store.todo.map(\.key), ["a", "b"])
+        XCTAssertFalse(store.todoFailed)
+        store.reset()
+        XCTAssertTrue(store.todo.isEmpty, "wyjątki nie przechodzą na następne konto")
+    }
+
+    func testMissingTodoRouteHidesOnlyTheCard() async {
+        api.todoResult = .success([Fixture.todo("a")])
+        let store = AccountingStore(api: api)
+        await store.refresh()
+        api.todoResult = .failure(ApiError.notFound)
+        await store.refresh()
+        XCTAssertTrue(store.todo.isEmpty)
+        XCTAssertFalse(store.todoFailed)
+        XCTAssertFalse(store.failed)
+        XCTAssertEqual(store.available, true)
+    }
+
+    func testTodoFailureKeepsRowsAndTheRestOfTheScreen() async {
+        api.todoResult = .success([Fixture.todo("a")])
+        let store = AccountingStore(api: api)
+        await store.refresh()
+        api.todoResult = .failure(offline)
+        api.obligationPages = ["": page([Fixture.obligation(id: "o", due: "2026-12-10")])]
+        await store.refresh()
+        XCTAssertEqual(store.todo.map(\.key), ["a"])
+        XCTAssertTrue(store.todoFailed)
+        XCTAssertFalse(store.failed)
+        XCTAssertEqual(store.openObligations.map(\.id), ["o"], "terminy nie czekają na wyjątki")
+    }
+
+    // MARK: - Powrót z weba
+
+    func testClosingWebSkipsTTL() async {
+        let store = AccountingStore(api: api)
+        await store.refresh()
+        store.ensureLoaded()
+        XCTAssertEqual(api.overviewCalls, 1, "świeże dane nie pytają ponownie")
+        api.todoResult = .success([Fixture.todo("a")])
+        await store.webClosed()
+        XCTAssertEqual(api.overviewCalls, 2)
+        XCTAssertEqual(store.todo.map(\.key), ["a"])
+        XCTAssertEqual(store.webVisits, 1)
+    }
+
+    func testClosingWebDoesNotJoinAnOlderRequest() async {
+        let gate = Gate()
+        api.gate = { await gate.wait() }
+        let store = AccountingStore(api: api)
+        let before = Task { await store.refresh() }
+        while await gate.arrived == 0 { await Task.yield() }
+        // Zmiana na webie zaszła, gdy pierwsze żądanie już było w drodze.
+        api.overviewResult = .success(Fixture.overview(entities: 3))
+        let after = Task { await store.webClosed() }
+        while await gate.arrived < 2 { await Task.yield() }
+        await gate.release()
+        await before.value
+        await after.value
+        XCTAssertEqual(store.entities.count, 3)
+        XCTAssertFalse(store.loading)
+    }
+
+    func testClosingWebRefreshesListsAtTheirDepth() async {
+        api.documentPages = [
+            "": page([Fixture.document(id: "1"), Fixture.document(id: "2")], "c2"),
+            "c2": page([Fixture.document(id: "3")], "c3"),
+            "c3": page([Fixture.document(id: "4")]),
+        ]
+        let store = AccountingStore(api: api)
+        let list = store.documents(DocumentQuery(direction: .sale))
+        await list.refresh()
+        await list.loadMore()
+        await list.ensureFresh()
+        api.documentPages[""] = page([Fixture.document(id: "new"), Fixture.document(id: "1"), Fixture.document(id: "2")], "c2")
+        await list.ensureFresh()
+        XCTAssertEqual(list.items.map(\.id), ["1", "2", "3"], "bez wizyty na webie obowiązuje TTL")
+        await store.webClosed()
+        await list.ensureFresh()
+        XCTAssertEqual(list.items.map(\.id), ["new", "1", "2"])
+        XCTAssertTrue(list.hasMore)
+
+        // Nieudane odświeżenie zostawia wiersze i ponawia przy następnym wejściu.
+        await store.webClosed()
+        api.documentPages[""] = .failure(offline)
+        await list.ensureFresh()
+        XCTAssertEqual(list.items.count, 3)
+        api.documentPages[""] = page([Fixture.document(id: "9")])
+        await list.ensureFresh()
+        XCTAssertEqual(list.items.map(\.id), ["9"])
+    }
+
+    func testObligationSettledOnTheWebShowsItsNewStatus() async {
+        let open = Fixture.obligation(id: "a", due: "2026-11-20")
+        api.obligationPages = ["": page([open])]
+        let store = AccountingStore(api: api)
+        await store.refresh()
+        await store.settleObligation(open)
+        XCTAssertTrue(store.current(open).isOpen)
+
+        api.obligationPages = ["": page([])]
+        api.allObligationPages = [
+            "": page([Fixture.obligation(id: "z", due: "2026-12-20")], "c2"),
+            "c2": page([Fixture.obligation(id: "a", due: "2026-11-20", status: "DONE")]),
+        ]
+        await store.webClosed()
+        await store.settleObligation(open)
+        XCTAssertEqual(store.current(open).status, .done)
+        store.reset()
+        XCTAssertEqual(store.current(open).status, .pending, "status nie przechodzi na następne konto")
+    }
+
+    // MARK: - Zapłata poza pierwszą stroną
+
+    func testPaidDocumentIsFoundOnALaterPage() async throws {
+        let before = Fixture.document(id: "x")
+        api.documentPages = ["": page([Fixture.document(id: "1")], "c2"), "c2": page([before])]
+        let store = AccountingStore(api: api)
+        let list = store.documents(DocumentQuery(direction: .sale))
+        await list.refresh()
+        await list.loadMore()
+
+        api.documentPages["c2"] = page([Fixture.document(id: "x", paid: true)])
+        let fresh = try await store.setPaid(before, paid: true)
+        XCTAssertEqual(fresh?.paid, true)
+        XCTAssertTrue(store.current(before).paid)
+        while list.isLoading { await Task.yield() }
+        XCTAssertEqual(list.items.map(\.id), ["1", "x"], "lista nie zwija się do pierwszej strony")
+    }
+
+    func testPaidDocumentThatCannotBeReadIsUnknown() async throws {
+        let before = Fixture.document(id: "x")
+        let store = AccountingStore(api: api)
+        api.documentPages = ["": .failure(offline)]
+        let fresh = try await store.setPaid(before, paid: true)
+        XCTAssertNil(fresh)
+        XCTAssertEqual(api.paidCalls.map(\.id), ["fe1"])
+    }
+
     func testDocumentWithoutFinanceEntryIsNeverWritten() async throws {
         try await AccountingStore(api: api).setPaid(Fixture.document(id: "1", financeEntryId: nil), paid: true)
         XCTAssertTrue(api.paidCalls.isEmpty)
